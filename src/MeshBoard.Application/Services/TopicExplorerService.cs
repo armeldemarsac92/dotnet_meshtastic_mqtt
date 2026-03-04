@@ -89,7 +89,10 @@ public sealed class TopicExplorerService : ITopicExplorerService
             return null;
         }
 
-        if (!string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase))
+        var transport = segments[3];
+
+        if (!string.Equals(transport, "e", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(transport, "json", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }

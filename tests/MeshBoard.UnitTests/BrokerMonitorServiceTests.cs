@@ -19,7 +19,12 @@ public sealed class BrokerMonitorServiceTests
         await service.SubscribeToTopic("  msh/US/2/e/LongFast/#  ");
 
         Assert.Equal(1, mqttSession.ConnectCalls);
-        Assert.Equal("msh/US/2/e/LongFast/#", mqttSession.LastSubscribedFilter);
+        Assert.Equal(
+            [
+                "msh/US/2/e/LongFast/#",
+                "msh/US/2/json/LongFast/#"
+            ],
+            mqttSession.SubscribedFilters);
     }
 
     [Fact]
@@ -30,7 +35,12 @@ public sealed class BrokerMonitorServiceTests
 
         await service.UnsubscribeFromTopic("  msh/US/2/e/LongFast/#  ");
 
-        Assert.Equal("msh/US/2/e/LongFast/#", mqttSession.LastUnsubscribedFilter);
+        Assert.Equal(
+            [
+                "msh/US/2/e/LongFast/#",
+                "msh/US/2/json/LongFast/#"
+            ],
+            mqttSession.UnsubscribedFilters);
     }
 
     [Fact]
@@ -39,6 +49,28 @@ public sealed class BrokerMonitorServiceTests
         var service = CreateService(new FakeMqttSession(isConnected: true));
 
         await Assert.ThrowsAsync<BadRequestException>(() => service.SubscribeToTopic(" "));
+    }
+
+    [Fact]
+    public void GetBrokerStatus_ShouldNormalizeJsonTopicFilters_ForDisplay()
+    {
+        var mqttSession = new FakeMqttSession(
+            isConnected: true,
+            [
+                "msh/US/2/e/LongFast/#",
+                "msh/US/2/json/LongFast/#",
+                "msh/EU_868/2/json/MediumFast/#"
+            ]);
+        var service = CreateService(mqttSession);
+
+        var status = service.GetBrokerStatus();
+
+        Assert.Equal(
+            [
+                "msh/EU_868/2/e/MediumFast/#",
+                "msh/US/2/e/LongFast/#"
+            ],
+            status.TopicFilters);
     }
 
     private static BrokerMonitorService CreateService(IMqttSession mqttSession)
@@ -52,9 +84,12 @@ public sealed class BrokerMonitorServiceTests
 #pragma warning disable CS0067
     private sealed class FakeMqttSession : IMqttSession
     {
-        public FakeMqttSession(bool isConnected)
+        private readonly List<string> _topicFilters;
+
+        public FakeMqttSession(bool isConnected, IEnumerable<string>? topicFilters = null)
         {
             IsConnected = isConnected;
+            _topicFilters = topicFilters?.ToList() ?? [];
         }
 
         public int ConnectCalls { get; private set; }
@@ -63,11 +98,11 @@ public sealed class BrokerMonitorServiceTests
 
         public string? LastStatusMessage => null;
 
-        public string? LastSubscribedFilter { get; private set; }
+        public List<string> SubscribedFilters { get; } = [];
 
-        public string? LastUnsubscribedFilter { get; private set; }
+        public List<string> UnsubscribedFilters { get; } = [];
 
-        public IReadOnlyCollection<string> TopicFilters => [];
+        public IReadOnlyCollection<string> TopicFilters => _topicFilters.ToList();
 
         public event Func<bool, Task>? ConnectionStateChanged;
 
@@ -93,13 +128,15 @@ public sealed class BrokerMonitorServiceTests
 
         public Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
         {
-            LastSubscribedFilter = topicFilter;
+            SubscribedFilters.Add(topicFilter);
+            _topicFilters.Add(topicFilter);
             return Task.CompletedTask;
         }
 
         public Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
         {
-            LastUnsubscribedFilter = topicFilter;
+            UnsubscribedFilters.Add(topicFilter);
+            _topicFilters.RemoveAll(filter => string.Equals(filter, topicFilter, StringComparison.Ordinal));
             return Task.CompletedTask;
         }
     }

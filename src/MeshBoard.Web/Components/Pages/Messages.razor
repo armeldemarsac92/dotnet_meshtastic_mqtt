@@ -312,7 +312,8 @@
 
         if (segments.Length < 5 ||
             !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase))
+            (!string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }

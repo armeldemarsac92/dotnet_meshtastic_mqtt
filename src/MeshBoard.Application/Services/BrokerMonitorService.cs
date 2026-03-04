@@ -54,7 +54,7 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
             Port = _brokerOptions.Port,
             IsConnected = _mqttSession.IsConnected,
             LastStatusMessage = _mqttSession.LastStatusMessage,
-            TopicFilters = _mqttSession.TopicFilters.ToList()
+            TopicFilters = NormalizeTopicFiltersForDisplay(_mqttSession.TopicFilters)
         };
     }
 
@@ -68,7 +68,11 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
         _logger.LogInformation("Attempting to subscribe to topic filter: {TopicFilter}", topicFilter);
 
         await EnsureConnected(cancellationToken);
-        await _mqttSession.SubscribeAsync(topicFilter.Trim(), cancellationToken);
+
+        foreach (var filter in ExpandWithCompanionFilter(topicFilter.Trim()))
+        {
+            await _mqttSession.SubscribeAsync(filter, cancellationToken);
+        }
     }
 
     public async Task UnsubscribeFromTopic(string topicFilter, CancellationToken cancellationToken = default)
@@ -80,6 +84,88 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
 
         _logger.LogInformation("Attempting to unsubscribe from topic filter: {TopicFilter}", topicFilter);
 
-        await _mqttSession.UnsubscribeAsync(topicFilter.Trim(), cancellationToken);
+        foreach (var filter in ExpandWithCompanionFilter(topicFilter.Trim()))
+        {
+            await _mqttSession.UnsubscribeAsync(filter, cancellationToken);
+        }
+    }
+
+    private static List<string> ExpandWithCompanionFilter(string topicFilter)
+    {
+        var expanded = new HashSet<string>(StringComparer.Ordinal)
+        {
+            topicFilter
+        };
+
+        if (TryMapCompanionFilter(topicFilter, out var companionFilter))
+        {
+            expanded.Add(companionFilter);
+        }
+
+        return expanded.ToList();
+    }
+
+    private static List<string> NormalizeTopicFiltersForDisplay(IEnumerable<string> topicFilters)
+    {
+        return topicFilters
+            .Select(NormalizeTopicFilterForDisplay)
+            .Where(filter => !string.IsNullOrWhiteSpace(filter))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(filter => filter, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static string NormalizeTopicFilterForDisplay(string topicFilter)
+    {
+        if (!TrySplitMeshtasticTopic(topicFilter, out var segments))
+        {
+            return topicFilter;
+        }
+
+        if (string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase))
+        {
+            segments[3] = "e";
+        }
+
+        return string.Join('/', segments);
+    }
+
+    private static bool TryMapCompanionFilter(string topicFilter, out string companionFilter)
+    {
+        companionFilter = string.Empty;
+
+        if (!TrySplitMeshtasticTopic(topicFilter, out var segments))
+        {
+            return false;
+        }
+
+        if (string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase))
+        {
+            segments[3] = "json";
+        }
+        else if (string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase))
+        {
+            segments[3] = "e";
+        }
+        else
+        {
+            return false;
+        }
+
+        companionFilter = string.Join('/', segments);
+        return true;
+    }
+
+    private static bool TrySplitMeshtasticTopic(string topicFilter, out string[] segments)
+    {
+        segments = topicFilter
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length < 4)
+        {
+            return false;
+        }
+
+        return string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase);
     }
 }

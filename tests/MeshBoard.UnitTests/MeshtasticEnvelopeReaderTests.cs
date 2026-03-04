@@ -2,6 +2,7 @@ using Google.Protobuf;
 using MeshBoard.Infrastructure.Meshtastic.Decoding;
 using MeshBoard.Infrastructure.Meshtastic.Protobuf;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Text;
 
 namespace MeshBoard.UnitTests;
 
@@ -87,5 +88,59 @@ public sealed class MeshtasticEnvelopeReaderTests
         Assert.Equal(54.2d, envelope.RelativeHumidity.Value, 1);
         Assert.Equal(1012.7d, envelope.BarometricPressure.Value, 1);
         Assert.Contains("Environment metrics", envelope.PayloadPreview);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeTextMessage_FromJsonTypePayload()
+    {
+        var reader = new MeshtasticEnvelopeReader(NullLogger<MeshtasticEnvelopeReader>.Instance);
+        var jsonPayload = """
+                          {
+                            "type": "text",
+                            "payload": "Hello from JSON topic",
+                            "fromId": "!1234abcd",
+                            "toId": "!ffffffff",
+                            "id": 305419896,
+                            "timestamp": 1762112400
+                          }
+                          """;
+
+        var envelope = await reader.Read("msh/EU_868/2/json/LongFast/!1234abcd", Encoding.UTF8.GetBytes(jsonPayload));
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Text Message", envelope.PacketType);
+        Assert.Equal("Hello from JSON topic", envelope.PayloadPreview);
+        Assert.Equal("!1234abcd", envelope.FromNodeId);
+        Assert.Null(envelope.ToNodeId);
+        Assert.Equal((uint)305419896, envelope.PacketId);
+        Assert.Equal("EU_868/LongFast", envelope.LastHeardChannel);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeTextMessage_FromJsonDecodedPayload()
+    {
+        var reader = new MeshtasticEnvelopeReader(NullLogger<MeshtasticEnvelopeReader>.Instance);
+        var base64Text = Convert.ToBase64String(Encoding.UTF8.GetBytes("Decoded text from payload"));
+        var jsonPayload = $$"""
+                            {
+                              "decoded": {
+                                "portnum": "TEXT_MESSAGE_APP",
+                                "payload": "{{base64Text}}",
+                                "source": 2596069104,
+                                "dest": 4294967295
+                              },
+                              "id": 3405691582
+                            }
+                            """;
+
+        var envelope = await reader.Read("msh/US/2/json/MediumFast/!9abcdef0", Encoding.UTF8.GetBytes(jsonPayload));
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Text Message", envelope.PacketType);
+        Assert.Equal("Decoded text from payload", envelope.PayloadPreview);
+        Assert.Equal("!9abcdef0", envelope.FromNodeId);
+        Assert.Null(envelope.ToNodeId);
+        Assert.Equal((uint)3405691582, envelope.PacketId);
+        Assert.Equal("US/MediumFast", envelope.LastHeardChannel);
     }
 }

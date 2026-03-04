@@ -71,8 +71,11 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
         try
         {
-            await _mqttSession.ConnectAsync(cancellationToken);
-            await _mqttSession.SubscribeAsync(_brokerOptions.DefaultTopicPattern, cancellationToken);
+            using var scope = _serviceScopeFactory.CreateScope();
+            var brokerMonitorService = scope.ServiceProvider.GetRequiredService<IBrokerMonitorService>();
+
+            await brokerMonitorService.EnsureConnected(cancellationToken);
+            await brokerMonitorService.SubscribeToTopic(_brokerOptions.DefaultTopicPattern, cancellationToken);
         }
         catch (OperationCanceledException)
         {

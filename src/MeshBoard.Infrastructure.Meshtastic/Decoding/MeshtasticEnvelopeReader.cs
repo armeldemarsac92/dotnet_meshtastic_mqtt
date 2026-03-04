@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Google.Protobuf;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Contracts.Meshtastic;
@@ -54,6 +55,11 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             return MapEnvelope(topic, directPacket, payload.Length);
         }
 
+        if (TryParseJsonEnvelope(topic, payload, out var jsonEnvelope) && jsonEnvelope is not null)
+        {
+            return jsonEnvelope;
+        }
+
         return null;
     }
 
@@ -96,6 +102,181 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         envelope.PayloadPreview = BuildPayloadPreview(envelope, decoded);
 
         return envelope;
+    }
+
+    private bool TryParseJsonEnvelope(string topic, byte[] payload, out MeshtasticEnvelope? envelope)
+    {
+        var trimmedPayload = TrimLeadingWhitespace(payload);
+
+        if (trimmedPayload.Length == 0 || trimmedPayload[0] != '{')
+        {
+            envelope = null;
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                envelope = null;
+                return false;
+            }
+
+            envelope = MapJsonEnvelope(topic, document.RootElement, payload.Length);
+            return true;
+        }
+        catch (JsonException)
+        {
+            envelope = null;
+            return false;
+        }
+    }
+
+    private MeshtasticEnvelope MapJsonEnvelope(string topic, JsonElement root, int payloadLength)
+    {
+        var envelope = new MeshtasticEnvelope
+        {
+            Topic = topic,
+            LastHeardChannel = TryExtractChannelFromTopic(topic),
+            FromNodeId = TryGetNodeId(root, "fromId", "from_id", "from", "sender"),
+            ToNodeId = TryGetNodeId(root, "toId", "to_id", "to"),
+            PacketId = TryGetUInt(root, "id", "packetId", "packet_id"),
+            ReceivedAtUtc = ResolveJsonReceivedAtUtc(root)
+        };
+
+        if (TryGetProperty(root, out var decodedElement, "decoded") && decodedElement.ValueKind == JsonValueKind.Object)
+        {
+            envelope.FromNodeId ??= TryGetNodeId(decodedElement, "source", "from", "fromId");
+            envelope.ToNodeId ??= TryGetNodeId(decodedElement, "dest", "to", "toId");
+            envelope.PacketId ??= TryGetUInt(decodedElement, "id", "packetId", "packet_id");
+        }
+
+        envelope.FromNodeId ??= TryExtractNodeIdFromTopic(topic);
+
+        if (IsBroadcastNodeId(envelope.ToNodeId))
+        {
+            envelope.ToNodeId = null;
+        }
+
+        envelope.IsPrivate = !string.IsNullOrWhiteSpace(envelope.ToNodeId);
+
+        if (TryMapJsonDecodedPayload(root, envelope, out var decodedPacketType, out var decodedPayloadPreview))
+        {
+            envelope.PacketType = decodedPacketType;
+            envelope.PayloadPreview = decodedPayloadPreview;
+            return envelope;
+        }
+
+        var typeToken = TryGetString(root, "type", "packetType", "packet_type");
+        envelope.PacketType = MapJsonTypeToPacketType(typeToken);
+        envelope.PayloadPreview = BuildJsonPayloadPreview(envelope.PacketType, root, payloadLength);
+
+        return envelope;
+    }
+
+    private bool TryMapJsonDecodedPayload(
+        JsonElement root,
+        MeshtasticEnvelope envelope,
+        out string packetType,
+        out string payloadPreview)
+    {
+        packetType = string.Empty;
+        payloadPreview = string.Empty;
+
+        if (!TryGetProperty(root, out var decodedElement, "decoded") ||
+            decodedElement.ValueKind != JsonValueKind.Object ||
+            !TryGetProperty(decodedElement, out var portElement, "portnum", "portNum") ||
+            !TryParsePortNum(portElement, out var portNum))
+        {
+            return false;
+        }
+
+        if (TryGetProperty(decodedElement, out var payloadElement, "payload") &&
+            payloadElement.ValueKind == JsonValueKind.String)
+        {
+            var payloadString = payloadElement.GetString() ?? string.Empty;
+
+            if (TryDecodeBase64(payloadString, out var payloadBytes))
+            {
+                var decodedData = new Data
+                {
+                    Portnum = portNum,
+                    Payload = ByteString.CopyFrom(payloadBytes)
+                };
+
+                packetType = GetPacketType(portNum);
+                payloadPreview = BuildPayloadPreview(envelope, decodedData);
+                return true;
+            }
+
+            if (portNum == PortNum.TextMessageApp)
+            {
+                packetType = "Text Message";
+                payloadPreview = NormalizeTextPayload(payloadString);
+                return true;
+            }
+        }
+
+        if (portNum == PortNum.TextMessageApp)
+        {
+            var text = TryGetString(decodedElement, "text", "message") ??
+                TryGetString(root, "payload", "text", "message");
+
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                packetType = "Text Message";
+                payloadPreview = NormalizeTextPayload(text);
+                return true;
+            }
+        }
+
+        packetType = GetPacketType(portNum);
+        payloadPreview = $"{packetType} payload (json)";
+        return true;
+    }
+
+    private static string BuildJsonPayloadPreview(string packetType, JsonElement root, int payloadLength)
+    {
+        return packetType switch
+        {
+            "Text Message" => BuildJsonTextPayloadPreview(root, payloadLength),
+            _ => $"JSON {packetType.ToLowerInvariant()} payload ({payloadLength} bytes)"
+        };
+    }
+
+    private static string BuildJsonTextPayloadPreview(JsonElement root, int payloadLength)
+    {
+        if (TryGetProperty(root, out var payloadElement, "payload"))
+        {
+            if (payloadElement.ValueKind == JsonValueKind.String)
+            {
+                var payloadText = payloadElement.GetString() ?? string.Empty;
+
+                if (TryDecodeBase64(payloadText, out var decodedBytes))
+                {
+                    return NormalizeTextPayload(Encoding.UTF8.GetString(decodedBytes));
+                }
+
+                return NormalizeTextPayload(payloadText);
+            }
+
+            if (payloadElement.ValueKind == JsonValueKind.Object)
+            {
+                var text = TryGetString(payloadElement, "text", "message");
+
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return NormalizeTextPayload(text);
+                }
+            }
+        }
+
+        var fallbackText = TryGetString(root, "text", "message");
+        return !string.IsNullOrWhiteSpace(fallbackText)
+            ? NormalizeTextPayload(fallbackText)
+            : $"Text message payload ({payloadLength} bytes)";
     }
 
     private string BuildPayloadPreview(MeshtasticEnvelope envelope, Data decoded)
@@ -267,12 +448,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             return "(empty text message)";
         }
 
-        var text = Encoding.UTF8.GetString(payload.Span);
-        text = text.Replace("\r\n", " ", StringComparison.Ordinal)
-            .Replace('\n', ' ')
-            .Trim();
-
-        return string.IsNullOrWhiteSpace(text) ? "(empty text message)" : text;
+        return NormalizeTextPayload(Encoding.UTF8.GetString(payload.Span));
     }
 
     private static string GetPacketType(PortNum portNum)
@@ -364,8 +540,11 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             return null;
         }
 
+        var topicType = segments[3];
+
         if (!string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase))
+            (!string.Equals(topicType, "e", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(topicType, "json", StringComparison.OrdinalIgnoreCase)))
         {
             return null;
         }
@@ -379,6 +558,248 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         }
 
         return $"{region}/{channel}";
+    }
+
+    private static string NormalizeTextPayload(string value)
+    {
+        var text = value.Replace("\r\n", " ", StringComparison.Ordinal)
+            .Replace('\n', ' ')
+            .Trim();
+
+        return string.IsNullOrWhiteSpace(text) ? "(empty text message)" : text;
+    }
+
+    private static DateTimeOffset ResolveJsonReceivedAtUtc(JsonElement root)
+    {
+        if (TryGetProperty(root, out var timestampElement, "rxTime", "rx_time", "timestamp", "receivedAt", "received_at"))
+        {
+            if (timestampElement.ValueKind == JsonValueKind.Number && timestampElement.TryGetInt64(out var unixSeconds))
+            {
+                return unixSeconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(unixSeconds) : DateTimeOffset.UtcNow;
+            }
+
+            if (timestampElement.ValueKind == JsonValueKind.String)
+            {
+                var timestampText = timestampElement.GetString();
+
+                if (long.TryParse(timestampText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedUnixSeconds))
+                {
+                    return parsedUnixSeconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(parsedUnixSeconds) : DateTimeOffset.UtcNow;
+                }
+
+                if (DateTimeOffset.TryParse(
+                    timestampText,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out var parsedTimestamp))
+                {
+                    return parsedTimestamp;
+                }
+            }
+        }
+
+        return DateTimeOffset.UtcNow;
+    }
+
+    private static string MapJsonTypeToPacketType(string? jsonType)
+    {
+        if (string.IsNullOrWhiteSpace(jsonType))
+        {
+            return "Unknown Packet";
+        }
+
+        var normalized = NormalizeToken(jsonType);
+
+        return normalized switch
+        {
+            "text" or "textmessage" or "textmessageapp" => "Text Message",
+            "nodeinfo" or "nodeinformation" or "nodeinfoapp" => "Node Info",
+            "position" or "positionupdate" or "positionapp" => "Position Update",
+            "telemetry" or "telemetryapp" => "Telemetry",
+            "encrypted" or "encryptedpacket" => "Encrypted Packet",
+            _ => jsonType
+        };
+    }
+
+    private static bool TryParsePortNum(JsonElement element, out PortNum portNum)
+    {
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var numericValue))
+        {
+            portNum = Enum.IsDefined(typeof(PortNum), numericValue)
+                ? (PortNum)numericValue
+                : PortNum.UnknownApp;
+            return true;
+        }
+
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var value = element.GetString();
+
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out numericValue))
+            {
+                portNum = Enum.IsDefined(typeof(PortNum), numericValue)
+                    ? (PortNum)numericValue
+                    : PortNum.UnknownApp;
+                return true;
+            }
+
+            var normalized = NormalizeToken(value);
+            portNum = normalized switch
+            {
+                "text" or "textmessageapp" => PortNum.TextMessageApp,
+                "textmessagecompressedapp" => PortNum.TextMessageCompressedApp,
+                "position" or "positionapp" => PortNum.PositionApp,
+                "nodeinfo" or "nodeinfoapp" => PortNum.NodeinfoApp,
+                "telemetry" or "telemetryapp" => PortNum.TelemetryApp,
+                _ => PortNum.UnknownApp
+            };
+
+            return true;
+        }
+
+        portNum = PortNum.UnknownApp;
+        return false;
+    }
+
+    private static string NormalizeToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return value
+            .Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+    }
+
+    private static bool TryDecodeBase64(string value, out byte[] decodedBytes)
+    {
+        try
+        {
+            decodedBytes = Convert.FromBase64String(value);
+            return true;
+        }
+        catch (FormatException)
+        {
+            decodedBytes = [];
+            return false;
+        }
+    }
+
+    private static string? TryGetNodeId(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var valueElement, propertyNames))
+        {
+            return null;
+        }
+
+        return valueElement.ValueKind switch
+        {
+            JsonValueKind.String => NormalizeNodeId(valueElement.GetString()),
+            JsonValueKind.Number => valueElement.TryGetUInt32(out var nodeNumber) ? FormatNodeId(nodeNumber) : null,
+            _ => null
+        };
+    }
+
+    private static uint? TryGetUInt(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var valueElement, propertyNames))
+        {
+            return null;
+        }
+
+        if (valueElement.ValueKind == JsonValueKind.Number && valueElement.TryGetUInt32(out var numericValue))
+        {
+            return numericValue;
+        }
+
+        if (valueElement.ValueKind == JsonValueKind.String &&
+            uint.TryParse(valueElement.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out numericValue))
+        {
+            return numericValue;
+        }
+
+        return null;
+    }
+
+    private static string? TryGetString(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var valueElement, propertyNames))
+        {
+            return null;
+        }
+
+        return valueElement.ValueKind == JsonValueKind.String ? valueElement.GetString() : null;
+    }
+
+    private static bool TryGetProperty(JsonElement element, out JsonElement value, params string[] propertyNames)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            value = default;
+            return false;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (propertyNames.Any(
+                    propertyName => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? NormalizeNodeId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+
+        if (trimmed.StartsWith('!'))
+        {
+            return trimmed;
+        }
+
+        if (uint.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var decimalNode))
+        {
+            return FormatNodeId(decimalNode);
+        }
+
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
+            uint.TryParse(trimmed[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hexNode))
+        {
+            return FormatNodeId(hexNode);
+        }
+
+        return trimmed;
+    }
+
+    private static bool IsBroadcastNodeId(string? nodeId)
+    {
+        return string.Equals(nodeId, "!ffffffff", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ReadOnlySpan<byte> TrimLeadingWhitespace(ReadOnlySpan<byte> value)
+    {
+        var startIndex = 0;
+
+        while (startIndex < value.Length && char.IsWhiteSpace((char)value[startIndex]))
+        {
+            startIndex++;
+        }
+
+        return value[startIndex..];
     }
 
     private static bool TryParseMeshPacket(byte[] payload, out MeshPacket? meshPacket)

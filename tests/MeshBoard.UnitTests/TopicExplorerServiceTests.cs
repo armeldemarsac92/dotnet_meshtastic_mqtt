@@ -25,7 +25,9 @@ public sealed class TopicExplorerServiceTests
         [
             "msh/US/2/e/LongFast/!abc12345",
             "msh/US/2/e/LongFast/!def67890",
+            "msh/US/2/json/LongFast/!fedcba09",
             "msh/EU_433/2/e/LongSlow/!00112233",
+            "msh/EU_433/2/json/LongSlow/!99887766",
             "msh/US/2/e/#",
             "invalid/topic/value"
         ]);

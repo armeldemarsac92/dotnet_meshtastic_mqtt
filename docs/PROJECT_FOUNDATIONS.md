@@ -281,6 +281,7 @@ Current implementation status:
 - The current decoder supports:
   - Meshtastic `ServiceEnvelope` parsing
   - direct `MeshPacket` fallback parsing for broker payloads that are not wrapped the same way
+  - MQTT JSON payload fallback parsing for `msh/<region>/<version>/json/...` traffic
   - node sender extraction from packet metadata and MQTT topic suffixes
   - text message payload previews
   - node-info payload decoding into short name and long name
@@ -315,6 +316,7 @@ Current implementation status:
 - Recommended channel catalog now explicitly includes `MediumFast` variants so EU MediumFast can be discovered/saved/subscribed directly.
 - The `/messages` stream table now renders only the normalized `<region>/<channel>` badge in the channel column instead of raw full MQTT topic strings.
 - The `/messages` stream now renders sender display names with short-name priority when available, and each sender links directly to `/nodes/details/{nodeId}`.
+- Topic subscriptions now auto-expand `e <-> json` companions for Meshtastic channel filters so users can keep encrypted packet visibility while also ingesting decoded JSON traffic when available.
 
 ## Initial Functional Slices
 
