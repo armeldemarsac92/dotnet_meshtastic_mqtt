@@ -29,9 +29,9 @@
         </label>
         <div class="self-end space-y-3">
             <p class="text-xs leading-6 text-cinder-800/78">
-                Click <strong class="text-cinder-950">Save preset</strong> to persist a topic pattern, and
-                <strong class="text-cinder-950">Subscribe</strong> to start listening immediately.
-                Use <strong class="text-cinder-950">Probe MQTT</strong> to actively discover channels from broker traffic.
+                Use <strong class="text-cinder-950">Subscribe</strong> to start listening immediately and use
+                <strong class="text-cinder-950">Live broker status</strong> to save custom presets.
+                <strong class="text-cinder-950">Probe MQTT</strong> actively discovers channels from broker traffic.
             </p>
             <button type="button"
                     class="liquid-inline-action liquid-inline-action-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
@@ -76,11 +76,6 @@
                                         class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
                                         @onclick="() => OpenChannelDetails(entry.Region, entry.Channel)">
                                     Details
-                                </button>
-                                <button type="button"
-                                        class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
-                                        @onclick="() => SavePresetAsync(entry.TopicPattern, TopicExplorerService.CreatePresetName(entry))">
-                                    Save preset
                                 </button>
                                 <button type="button"
                                         class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(IsActiveSubscription(entry.TopicPattern) ? "liquid-inline-action-active" : "liquid-inline-action-accent")"
@@ -155,7 +150,7 @@
                             <li class="flex flex-wrap items-center gap-2">
                                 <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@topicFilter</code>
                                 <button type="button"
-                                        class="liquid-inline-action liquid-inline-action-active cursor-pointer rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
+                                        class="liquid-inline-action liquid-inline-action-danger cursor-pointer rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
                                         @onclick="() => UnsubscribeAsync(topicFilter)">
                                     Unsubscribe
                                 </button>
