@@ -86,17 +86,17 @@
                         </section>
 
                         <section class="grid gap-4 xl:grid-cols-2">
-                            <article class="liquid-panel flex h-[34rem] min-h-[24rem] flex-col overflow-hidden rounded-[1.6rem]">
+                            <article class="liquid-panel overflow-hidden rounded-[1.6rem]">
                                 <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
                                     <h3 class="font-display text-3xl text-cinder-950">Top nodes</h3>
                                 </div>
                                 @if (_topNodes.Count == 0)
                                 {
-                                    <div class="flex flex-1 items-center p-6 text-cinder-800/78">No traffic observed for this channel yet.</div>
+                                    <div class="p-6 text-cinder-800/78">No traffic observed for this channel yet.</div>
                                 }
                                 else
                                 {
-                                    <div class="fade-scroll-frame flex-1">
+                                    <div class="fade-scroll-frame">
                                         <div class="fade-scroll-content">
                                             <table class="min-w-full border-collapse">
                                                 <thead class="liquid-table-head sticky top-0 z-10">
@@ -126,17 +126,17 @@
                                 }
                             </article>
 
-                            <article class="liquid-panel flex h-[34rem] min-h-[24rem] flex-col overflow-hidden rounded-[1.6rem]">
+                            <article class="liquid-panel overflow-hidden rounded-[1.6rem]">
                                 <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
                                     <h3 class="font-display text-3xl text-cinder-950">Recent messages</h3>
                                 </div>
                                 @if (_channelMessages.Count == 0)
                                 {
-                                    <div class="flex flex-1 items-center p-6 text-cinder-800/78">No recent messages for this channel.</div>
+                                    <div class="p-6 text-cinder-800/78">No recent messages for this channel.</div>
                                 }
                                 else
                                 {
-                                    <div class="fade-scroll-frame flex-1">
+                                    <div class="fade-scroll-frame">
                                         <ul class="fade-scroll-content space-y-3 p-5 text-sm text-cinder-900">
                                             @foreach (var message in _channelMessages.Take(40))
                                             {
