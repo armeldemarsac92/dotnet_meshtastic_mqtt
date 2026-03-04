@@ -15,6 +15,7 @@ internal static class TopicPresetQueries
             id AS Id,
             name AS Name,
             topic_pattern AS TopicPattern,
+            encryption_key_base64 AS EncryptionKeyBase64,
             is_default AS IsDefault,
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
@@ -27,6 +28,7 @@ internal static class TopicPresetQueries
             id AS Id,
             name AS Name,
             topic_pattern AS TopicPattern,
+            encryption_key_base64 AS EncryptionKeyBase64,
             is_default AS IsDefault,
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
@@ -39,12 +41,14 @@ internal static class TopicPresetQueries
             id,
             name,
             topic_pattern,
+            encryption_key_base64,
             is_default,
             created_at_utc)
         VALUES (
             @Id,
             @Name,
             @TopicPattern,
+            @EncryptionKeyBase64,
             @IsDefault,
             @CreatedAtUtc);
         """;
@@ -55,16 +59,19 @@ internal static class TopicPresetQueries
             id,
             name,
             topic_pattern,
+            encryption_key_base64,
             is_default,
             created_at_utc)
         VALUES (
             @Id,
             @Name,
             @TopicPattern,
+            @EncryptionKeyBase64,
             @IsDefault,
             @CreatedAtUtc)
         ON CONFLICT(topic_pattern) DO UPDATE SET
             name = excluded.name,
+            encryption_key_base64 = excluded.encryption_key_base64,
             is_default = excluded.is_default;
         """;
 }

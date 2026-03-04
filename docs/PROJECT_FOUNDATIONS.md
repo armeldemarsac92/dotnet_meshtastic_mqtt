@@ -319,6 +319,13 @@ Current implementation status:
 - The `/messages` stream now renders sender display names with short-name priority when available, and each sender links directly to `/nodes/details/{nodeId}`.
 - Topic subscriptions now auto-expand `e <-> json` companions for Meshtastic channel filters so users can keep encrypted packet visibility while also ingesting decoded JSON traffic when available.
 - The `/messages` stream now keeps previews truncated in-table with a `See message` modal for full payload text, and refreshes every second so decoded replacements appear faster.
+- Encrypted Meshtastic packets are now decrypted locally before classification using the Meshtastic AES-CTR scheme (nonce = packet id + sender node id), then parsed as protobuf `Data` when successful.
+- The default decryption key is now configurable as `Broker:DefaultEncryptionKeyBase64` and defaults to the Meshtastic public key (`1PG7OiApB1nwvP+rz05pAQ==`).
+- Topic presets now support optional `encryption_key_base64` overrides in SQLite (`topic_presets.encryption_key_base64`) with additive migration support for existing databases.
+- Channel-level key overrides can now be saved from channel details (base64 or hex input), and topic-preset save paths now validate and normalize keys to canonical base64.
+- Node details and channel details are now available as large in-page modal popups from `/messages`, `/nodes`, and `/topics` (instead of forcing route navigation).
+- `/topics` explorer cards and saved-preset rows now expose direct channel `Details` actions.
+- `/messages` now shows `Listening channels` from active broker subscriptions only (stable list based on subscribed topic filters), rather than combining discovered/recent channel candidates.
 
 ## Initial Functional Slices
 
@@ -525,3 +532,4 @@ When coding begins, the preferred order is:
 - Meshtastic public MQTT connection notes: https://meshtastic.org/docs/software/integrations/mqtt/connect-to-public-server/
 - Meshtastic MQTT module configuration: https://meshtastic.org/docs/configuration/module/mqtt/
 - Meshtastic protobuf definitions: https://github.com/meshtastic/protobufs
+- Meshtastic C# crypto reference (`NonceGenerator`, `PacketEncryption`, `DEFAULT_PSK`): https://github.com/meshtastic/c-sharp

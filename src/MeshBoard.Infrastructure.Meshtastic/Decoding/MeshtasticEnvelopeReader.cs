@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Google.Protobuf;
@@ -12,21 +13,25 @@ namespace MeshBoard.Infrastructure.Meshtastic.Decoding;
 internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
 {
     private const uint BroadcastNodeNumber = uint.MaxValue;
+    private readonly ITopicEncryptionKeyResolver _topicEncryptionKeyResolver;
     private readonly ILogger<MeshtasticEnvelopeReader> _logger;
 
-    public MeshtasticEnvelopeReader(ILogger<MeshtasticEnvelopeReader> logger)
+    public MeshtasticEnvelopeReader(
+        ITopicEncryptionKeyResolver topicEncryptionKeyResolver,
+        ILogger<MeshtasticEnvelopeReader> logger)
     {
+        _topicEncryptionKeyResolver = topicEncryptionKeyResolver;
         _logger = logger;
     }
 
-    public Task<MeshtasticEnvelope?> Read(
+    public async Task<MeshtasticEnvelope?> Read(
         string topic,
         byte[] payload,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            return Task.FromResult(ReadCore(topic, payload));
+            return await ReadCore(topic, payload, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -35,11 +40,14 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
                 "Skipping Meshtastic payload that could not be decoded for topic: {Topic}",
                 topic);
 
-            return Task.FromResult<MeshtasticEnvelope?>(null);
+            return null;
         }
     }
 
-    private MeshtasticEnvelope? ReadCore(string topic, byte[] payload)
+    private async Task<MeshtasticEnvelope?> ReadCore(
+        string topic,
+        byte[] payload,
+        CancellationToken cancellationToken)
     {
         if (TryParseServiceEnvelope(payload, out var serviceEnvelope) &&
             serviceEnvelope is not null &&
@@ -47,12 +55,12 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             TryParseMeshPacket(serviceEnvelope.Packet.ToByteArray(), out var servicePacket) &&
             servicePacket is not null)
         {
-            return MapEnvelope(topic, servicePacket, payload.Length);
+            return await MapEnvelope(topic, servicePacket, payload.Length, cancellationToken);
         }
 
         if (TryParseMeshPacket(payload, out var directPacket) && directPacket is not null)
         {
-            return MapEnvelope(topic, directPacket, payload.Length);
+            return await MapEnvelope(topic, directPacket, payload.Length, cancellationToken);
         }
 
         if (TryParseJsonEnvelope(topic, payload, out var jsonEnvelope) && jsonEnvelope is not null)
@@ -63,7 +71,11 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         return null;
     }
 
-    private MeshtasticEnvelope MapEnvelope(string topic, MeshPacket packet, int payloadLength)
+    private async Task<MeshtasticEnvelope> MapEnvelope(
+        string topic,
+        MeshPacket packet,
+        int payloadLength,
+        CancellationToken cancellationToken)
     {
         var envelope = new MeshtasticEnvelope
         {
@@ -76,7 +88,17 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             ReceivedAtUtc = ResolveReceivedAtUtc(packet.RxTime)
         };
 
-        if (packet.PayloadVariantCase != MeshPacket.PayloadVariantOneofCase.Decoded)
+        var decodedPayload = packet.PayloadVariantCase switch
+        {
+            MeshPacket.PayloadVariantOneofCase.Decoded => packet.Decoded,
+            MeshPacket.PayloadVariantOneofCase.Encrypted => await TryDecryptPayload(
+                topic,
+                packet,
+                cancellationToken),
+            _ => null
+        };
+
+        if (decodedPayload is null)
         {
             envelope.PacketType = packet.PayloadVariantCase == MeshPacket.PayloadVariantOneofCase.Encrypted
                 ? "Encrypted Packet"
@@ -85,7 +107,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             return envelope;
         }
 
-        var decoded = packet.Decoded;
+        var decoded = decodedPayload;
 
         if (string.IsNullOrWhiteSpace(envelope.FromNodeId) && decoded.Source != 0)
         {
@@ -102,6 +124,46 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         envelope.PayloadPreview = BuildPayloadPreview(envelope, decoded);
 
         return envelope;
+    }
+
+    private async Task<Data?> TryDecryptPayload(
+        string topic,
+        MeshPacket packet,
+        CancellationToken cancellationToken)
+    {
+        if (packet.Encrypted.IsEmpty || packet.From == 0 || packet.Id == 0)
+        {
+            return null;
+        }
+
+        var nonce = BuildNonce(packet.From, packet.Id);
+        var candidateKeys = await _topicEncryptionKeyResolver.ResolveCandidateKeysAsync(topic, cancellationToken);
+
+        foreach (var key in candidateKeys)
+        {
+            try
+            {
+                var decryptedBytes = AesCtrCipher.Transform(packet.Encrypted.Span, nonce, key);
+                return Data.Parser.ParseFrom(decryptedBytes);
+            }
+            catch (Exception exception) when (exception is CryptographicException or InvalidProtocolBufferException)
+            {
+                _logger.LogDebug(
+                    exception,
+                    "Failed to decrypt Meshtastic packet for topic {Topic} with a candidate key",
+                    topic);
+            }
+        }
+
+        return null;
+    }
+
+    private static byte[] BuildNonce(uint fromNodeNumber, uint packetId)
+    {
+        var nonce = new byte[16];
+        Buffer.BlockCopy(BitConverter.GetBytes((ulong)packetId), 0, nonce, 0, sizeof(ulong));
+        Buffer.BlockCopy(BitConverter.GetBytes(fromNodeNumber), 0, nonce, sizeof(ulong), sizeof(uint));
+        return nonce;
     }
 
     private bool TryParseJsonEnvelope(string topic, byte[] payload, out MeshtasticEnvelope? envelope)

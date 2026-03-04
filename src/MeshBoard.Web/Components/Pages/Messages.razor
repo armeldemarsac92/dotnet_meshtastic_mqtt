@@ -2,8 +2,6 @@
 @implements IAsyncDisposable
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IMessageService MessageService
-@inject ITopicExplorerService TopicExplorerService
-@inject ITopicPresetService TopicPresetService
 
 <PageTitle>Messages</PageTitle>
 
@@ -23,14 +21,14 @@
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Listening channels</span>
             @if (ChannelEntries.Count == 0)
             {
-                <span class="text-xs text-cinder-800/78">No channel candidates found yet. Open <a href="/topics" class="underline underline-offset-4">Topics</a> to browse recommendations.</span>
+                <span class="text-xs text-cinder-800/78">No active subscriptions. Open <a href="/topics" class="underline underline-offset-4">Topics</a> to subscribe.</span>
             }
             else
             {
                 @foreach (var channelEntry in ChannelEntries)
                 {
                     <button type="button"
-                            class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsActiveSubscription(channelEntry.TopicPattern) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200")"
+                            class="cursor-pointer rounded-full bg-signal-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600"
                             @onclick="() => ToggleSubscriptionAsync(channelEntry.TopicPattern)">
                         @channelEntry.Label
                     </button>
@@ -105,12 +103,13 @@
                                 <span class="@GetPacketTypeBadgeClass(message.PacketType)">@message.PacketType</span>
                             </td>
                             <td class="px-5 py-4">
-                                @if (TryGetChannelDetailsHref(message.Topic, out var channelHref, out var channelLabel))
+                                @if (TryGetChannelLabel(message.Topic, out var channelLabel, out var region, out var channel))
                                 {
-                                    <a href="@channelHref"
-                                       class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-cinder-900/15">
+                                    <button type="button"
+                                            class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                            @onclick="() => OpenChannelDetails(region, channel)">
                                         @channelLabel
-                                    </a>
+                                    </button>
                                 }
                                 else
                                 {
@@ -120,10 +119,11 @@
                                 }
                             </td>
                             <td class="px-5 py-4 font-medium">
-                                <a href="@GetNodeDetailsHref(message.FromNodeId)"
-                                   class="underline-offset-4 hover:underline">
+                                <button type="button"
+                                        class="cursor-pointer underline-offset-4 hover:underline"
+                                        @onclick="() => OpenNodeDetails(message.FromNodeId)">
                                     @GetSenderDisplayName(message)
-                                </a>
+                                </button>
                             </td>
                             <td class="px-5 py-4 text-cinder-800/80">@(message.ToNodeId ?? "Broadcast")</td>
                             <td class="px-5 py-4">
@@ -164,17 +164,19 @@
             <div class="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4 text-sm text-cinder-900">
                 <div class="flex flex-wrap gap-2">
                     <span class="@GetPacketTypeBadgeClass(_previewMessage.PacketType)">@_previewMessage.PacketType</span>
-                    @if (TryGetChannelDetailsHref(_previewMessage.Topic, out var channelHref, out var channelLabel))
+                    @if (TryGetChannelLabel(_previewMessage.Topic, out var channelLabel, out var region, out var channel))
                     {
-                        <a href="@channelHref"
-                           class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-cinder-900/15">
+                        <button type="button"
+                                class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                @onclick="() => OpenChannelDetails(region, channel)">
                             @channelLabel
-                        </a>
+                        </button>
                     }
-                    <a href="@GetNodeDetailsHref(_previewMessage.FromNodeId)"
-                       class="inline-flex rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-sand-200">
+                    <button type="button"
+                            class="cursor-pointer rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-sand-200"
+                            @onclick="() => OpenNodeDetails(_previewMessage.FromNodeId)">
                         @GetSenderDisplayName(_previewMessage)
-                    </a>
+                    </button>
                 </div>
                 <p class="text-cinder-800/82">To: @(_previewMessage.ToNodeId ?? "Broadcast")</p>
                 <section class="rounded-2xl border border-sand-200 bg-sand-50/70 p-4">
@@ -186,36 +188,42 @@
     </div>
 }
 
+<NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
+                  NodeId="@(_selectedNodeId ?? string.Empty)"
+                  OnClose="CloseNodeDetails"
+                  OnOpenChannel="OpenChannelDetailsFromKeyAsync" />
+
+<ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedRegion) && !string.IsNullOrWhiteSpace(_selectedChannel))"
+                     Region="@(_selectedRegion ?? string.Empty)"
+                     Channel="@(_selectedChannel ?? string.Empty)"
+                     OnClose="CloseChannelDetails"
+                     OnOpenNode="OpenNodeDetailsFromModalAsync" />
+
 @code {
     private const int PreviewLength = 140;
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private BrokerStatus _brokerStatus = new();
-    private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
     private readonly MessageFilters _filters = new();
     private IReadOnlyCollection<MessageSummary> _messages = [];
     private MessageSummary? _previewMessage;
-    private IReadOnlyCollection<TopicPreset> _topicPresets = [];
     private Task? _refreshTask;
+    private string? _selectedChannel;
+    private string? _selectedNodeId;
+    private string? _selectedRegion;
     private string? _subscriptionStatusMessage;
-    private IReadOnlyCollection<TopicCatalogEntry> ChannelEntries => _topicPresets
-        .Select(preset => TopicExplorerService.GetDiscoveredTopics([preset.TopicPattern]).FirstOrDefault())
-        .Where(entry => entry is not null)
-        .Select(entry => entry!)
-        .Concat(_discoveredTopics)
-        .Concat(_brokerStatus.TopicFilters
-            .Select(topicFilter => TopicExplorerService.GetDiscoveredTopics([topicFilter]).FirstOrDefault())
-            .Where(entry => entry is not null)
-            .Select(entry => entry!))
-        .GroupBy(entry => entry.TopicPattern, StringComparer.Ordinal)
-        .Select(group => group.First())
-        .OrderBy(entry => entry.Region, StringComparer.OrdinalIgnoreCase)
-        .ThenBy(entry => entry.Channel, StringComparer.OrdinalIgnoreCase)
+
+    private IReadOnlyCollection<ListeningChannelEntry> ChannelEntries => _brokerStatus.TopicFilters
+        .Select(CreateListeningChannelEntry)
+        .DistinctBy(entry => entry.TopicPattern)
+        .OrderBy(entry => entry.Label, StringComparer.OrdinalIgnoreCase)
         .ToList();
+
     private IReadOnlyCollection<MessageSummary> FilteredMessages => _messages
         .Where(ApplyVisibilityFilter)
         .Where(ApplyPacketTypeFilter)
         .Where(ApplySearchFilter)
         .ToList();
+
     private IReadOnlyCollection<string> PacketTypes => _messages
         .Select(message => message.PacketType)
         .Where(packetType => !string.IsNullOrWhiteSpace(packetType))
@@ -254,18 +262,8 @@
 
     private async Task LoadAsync()
     {
-        var messagesTask = MessageService.GetRecentMessages();
-        var topicPresetsTask = TopicPresetService.GetTopicPresets();
-
-        await Task.WhenAll(messagesTask, topicPresetsTask);
-
-        _messages = await messagesTask;
-        _topicPresets = await topicPresetsTask;
+        _messages = await MessageService.GetRecentMessages();
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
-        _discoveredTopics = TopicExplorerService.GetDiscoveredTopics(
-            _messages.Select(message => message.Topic)
-                .Concat(_brokerStatus.TopicFilters)
-                .Concat(_topicPresets.Select(preset => preset.TopicPattern)));
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -351,10 +349,11 @@
         await LoadAsync();
     }
 
-    private static bool TryGetChannelDetailsHref(string topic, out string href, out string label)
+    private static bool TryGetChannelLabel(string topic, out string label, out string region, out string channel)
     {
-        href = string.Empty;
         label = string.Empty;
+        region = string.Empty;
+        channel = string.Empty;
 
         if (string.IsNullOrWhiteSpace(topic))
         {
@@ -371,22 +370,36 @@
             return false;
         }
 
-        var region = segments[1];
-        var channel = segments[4];
+        region = segments[1];
+        channel = segments[4];
 
-        if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(channel))
+        if (string.IsNullOrWhiteSpace(region) ||
+            string.IsNullOrWhiteSpace(channel) ||
+            channel is "#" or "+")
         {
             return false;
         }
 
-        href = $"/channels/{Uri.EscapeDataString(region)}/{Uri.EscapeDataString(channel)}";
         label = $"{region}/{channel}";
         return true;
     }
 
-    private static string GetNodeDetailsHref(string nodeId)
+    private static ListeningChannelEntry CreateListeningChannelEntry(string topicFilter)
     {
-        return $"/nodes/details/{Uri.EscapeDataString(nodeId)}";
+        if (TryGetChannelLabel(topicFilter, out var label, out _, out _))
+        {
+            return new ListeningChannelEntry
+            {
+                Label = label,
+                TopicPattern = topicFilter
+            };
+        }
+
+        return new ListeningChannelEntry
+        {
+            Label = topicFilter,
+            TopicPattern = topicFilter
+        };
     }
 
     private static string GetSenderDisplayName(MessageSummary message)
@@ -431,6 +444,71 @@
         _previewMessage = null;
     }
 
+    private void OpenNodeDetails(string nodeId)
+    {
+        _previewMessage = null;
+        _selectedNodeId = nodeId;
+    }
+
+    private void OpenChannelDetails(string region, string channel)
+    {
+        _previewMessage = null;
+        _selectedRegion = region;
+        _selectedChannel = channel;
+    }
+
+    private Task CloseNodeDetails()
+    {
+        _selectedNodeId = null;
+        return Task.CompletedTask;
+    }
+
+    private Task CloseChannelDetails()
+    {
+        _selectedRegion = null;
+        _selectedChannel = null;
+        return Task.CompletedTask;
+    }
+
+    private Task OpenChannelDetailsFromKeyAsync(string channelKey)
+    {
+        if (TrySplitChannelKey(channelKey, out var region, out var channel))
+        {
+            OpenChannelDetails(region, channel);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task OpenNodeDetailsFromModalAsync(string nodeId)
+    {
+        OpenNodeDetails(nodeId);
+        return Task.CompletedTask;
+    }
+
+    private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)
+    {
+        region = string.Empty;
+        channel = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(channelKey))
+        {
+            return false;
+        }
+
+        var segments = channelKey.Split('/', 2, StringSplitOptions.TrimEntries);
+
+        if (segments.Length != 2)
+        {
+            return false;
+        }
+
+        region = segments[0];
+        channel = segments[1];
+
+        return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
     private sealed class MessageFilters
     {
         public string PacketType { get; set; } = string.Empty;
@@ -446,5 +524,12 @@
         DecodedOnly,
         OpaqueOnly,
         PrivateOnly
+    }
+
+    private sealed class ListeningChannelEntry
+    {
+        public required string Label { get; set; }
+
+        public required string TopicPattern { get; set; }
     }
 }

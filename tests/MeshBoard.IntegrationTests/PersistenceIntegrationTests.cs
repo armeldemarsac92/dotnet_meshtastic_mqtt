@@ -6,6 +6,7 @@ using MeshBoard.Contracts.Favorites;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
+using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
@@ -363,6 +364,48 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal(1, favoritesOnly.TotalCount);
                 var favoriteNode = Assert.Single(favoritesOnly.Items);
                 Assert.Equal("!node0002", favoriteNode.NodeId);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task TopicPreset_ShouldPersistEncryptionKeyOverride()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var topicPresetService = scope.ServiceProvider.GetRequiredService<ITopicPresetService>();
+
+                var savedPreset = await topicPresetService.SaveTopicPreset(
+                    new SaveTopicPresetRequest
+                    {
+                        Name = "EU MediumFast",
+                        TopicPattern = "msh/EU_868/2/e/MediumFast/#",
+                        EncryptionKeyBase64 = "d4f1bb3a20290759f0bcffabcf4e6901",
+                        IsDefault = false
+                    });
+
+                Assert.Equal("1PG7OiApB1nwvP+rz05pAQ==", savedPreset.EncryptionKeyBase64);
+
+                var presets = await topicPresetService.GetTopicPresets();
+                var reloaded = presets.Single(preset => preset.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
+                Assert.Equal("1PG7OiApB1nwvP+rz05pAQ==", reloaded.EncryptionKeyBase64);
             }
             finally
             {

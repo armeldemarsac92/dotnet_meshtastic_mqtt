@@ -6,5 +6,7 @@ public sealed class SaveTopicPresetRequest
 
     public required string TopicPattern { get; set; }
 
+    public string? EncryptionKeyBase64 { get; set; }
+
     public bool IsDefault { get; set; }
 }

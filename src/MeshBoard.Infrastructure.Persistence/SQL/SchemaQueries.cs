@@ -19,6 +19,7 @@ internal static class SchemaQueries
             id TEXT NOT NULL PRIMARY KEY,
             name TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
+            encryption_key_base64 TEXT NULL,
             is_default INTEGER NOT NULL,
             created_at_utc TEXT NOT NULL
         );
@@ -115,6 +116,17 @@ internal static class SchemaQueries
     public static string GetNodeColumns =>
         """
         PRAGMA table_info(nodes);
+        """;
+
+    public static string GetTopicPresetColumns =>
+        """
+        PRAGMA table_info(topic_presets);
+        """;
+
+    public static string AddTopicPresetsEncryptionKeyBase64Column =>
+        """
+        ALTER TABLE topic_presets
+        ADD COLUMN encryption_key_base64 TEXT NULL;
         """;
 
     public static string AddNodesBatteryLevelPercentColumn =>

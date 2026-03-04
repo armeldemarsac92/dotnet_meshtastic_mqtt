@@ -107,9 +107,11 @@
                                 </button>
                             </td>
                             <td class="px-5 py-4">
-                                <a href="@GetNodeDetailsHref(node.NodeId)" class="font-medium text-cinder-950 underline-offset-4 hover:underline">
+                                <button type="button"
+                                        class="cursor-pointer font-medium text-cinder-950 underline-offset-4 hover:underline"
+                                        @onclick="() => OpenNodeDetails(node.NodeId)">
                                     @(node.LongName ?? node.ShortName ?? node.NodeId)
-                                </a>
+                                </button>
                                 <span class="mt-1 block text-xs text-cinder-800/70">
                                     <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@node.NodeId</code>
                                 </span>
@@ -121,10 +123,11 @@
                                 }
                                 else
                                 {
-                                    <a href="@GetChannelDetailsHref(node.LastHeardChannel)"
-                                       class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 hover:bg-cinder-900/15">
+                                    <button type="button"
+                                            class="cursor-pointer inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 transition hover:bg-cinder-900/15"
+                                            @onclick="() => OpenChannelDetailsFromKey(node.LastHeardChannel!)">
                                         @node.LastHeardChannel
-                                    </a>
+                                    </button>
                                 }
                             </td>
                             <td class="px-5 py-4 text-cinder-800/82">@FormatPosition(node)</td>
@@ -151,6 +154,17 @@
     }
 </div>
 
+<NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
+                  NodeId="@(_selectedNodeId ?? string.Empty)"
+                  OnClose="CloseNodeDetails"
+                  OnOpenChannel="OpenChannelDetailsAsync" />
+
+<ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedRegion) && !string.IsNullOrWhiteSpace(_selectedChannel))"
+                     Region="@(_selectedRegion ?? string.Empty)"
+                     Channel="@(_selectedChannel ?? string.Empty)"
+                     OnClose="CloseChannelDetails"
+                     OnOpenNode="OpenNodeDetailsAsync" />
+
 @code {
     private string? _favoriteActionNodeId;
     private readonly HashSet<string> _favoriteNodeIds = new(StringComparer.OrdinalIgnoreCase);
@@ -160,6 +174,9 @@
     private int _maxDisplayed = 100;
     private readonly NodeQuery _query = new();
     private int _requestVersion;
+    private string? _selectedChannel;
+    private string? _selectedNodeId;
+    private string? _selectedRegion;
     private int _totalMatchedNodeCount;
     private int DisplayedNodeCount => _nodes.Count;
 
@@ -299,6 +316,47 @@
         }
     }
 
+    private void OpenNodeDetails(string nodeId)
+    {
+        _selectedNodeId = nodeId;
+    }
+
+    private Task OpenNodeDetailsAsync(string nodeId)
+    {
+        OpenNodeDetails(nodeId);
+        return Task.CompletedTask;
+    }
+
+    private Task CloseNodeDetails()
+    {
+        _selectedNodeId = null;
+        return Task.CompletedTask;
+    }
+
+    private void OpenChannelDetailsFromKey(string channelKey)
+    {
+        if (!TrySplitChannelKey(channelKey, out var region, out var channel))
+        {
+            return;
+        }
+
+        _selectedRegion = region;
+        _selectedChannel = channel;
+    }
+
+    private Task OpenChannelDetailsAsync(string channelKey)
+    {
+        OpenChannelDetailsFromKey(channelKey);
+        return Task.CompletedTask;
+    }
+
+    private Task CloseChannelDetails()
+    {
+        _selectedRegion = null;
+        _selectedChannel = null;
+        return Task.CompletedTask;
+    }
+
     private static string FormatPosition(NodeSummary node)
     {
         return node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue
@@ -424,25 +482,25 @@
         return $"{uptime.Minutes}m";
     }
 
-    private static string GetChannelDetailsHref(string channelKey)
+    private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)
     {
+        region = string.Empty;
+        channel = string.Empty;
+
         if (string.IsNullOrWhiteSpace(channelKey))
         {
-            return "/channels";
+            return false;
         }
 
         var segments = channelKey.Split('/', 2, StringSplitOptions.TrimEntries);
 
         if (segments.Length != 2)
         {
-            return "/channels";
+            return false;
         }
 
-        return $"/channels/{Uri.EscapeDataString(segments[0])}/{Uri.EscapeDataString(segments[1])}";
-    }
-
-    private static string GetNodeDetailsHref(string nodeId)
-    {
-        return $"/nodes/details/{Uri.EscapeDataString(nodeId)}";
+        region = segments[0];
+        channel = segments[1];
+        return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
     }
 }

@@ -1,5 +1,7 @@
+using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace MeshBoard.Application.DependencyInjection;
 
@@ -7,6 +9,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
+        services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();

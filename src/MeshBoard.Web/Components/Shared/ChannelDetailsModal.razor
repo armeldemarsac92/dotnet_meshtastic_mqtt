@@ -1,0 +1,423 @@
+@inject IBrokerMonitorService BrokerMonitorService
+@inject IMessageService MessageService
+@inject ITopicPresetService TopicPresetService
+@inject IOptions<BrokerOptions> BrokerOptions
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/45 p-4"
+         @onclick="CloseAsync">
+        <article class="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[1.8rem] border border-white/60 bg-white shadow-panel"
+                 @onclick:stopPropagation="true">
+            <header class="flex items-center justify-between border-b border-sand-100/80 px-5 py-4">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Channel details</p>
+                    <p class="text-sm text-cinder-900">@Region / @Channel</p>
+                </div>
+                <button type="button"
+                        class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                        @onclick="CloseAsync">
+                    Back to channels
+                </button>
+            </header>
+
+            <div class="max-h-[84vh] overflow-y-auto px-5 py-4">
+                @if (_isLoading)
+                {
+                    <p class="text-sm text-cinder-800/78">Loading channel details...</p>
+                }
+                else
+                {
+                    <div class="space-y-6">
+                        <section class="rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@TopicFilter</code>
+                                <button type="button"
+                                        class="cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition @(IsSubscribed ? "bg-cinder-900 hover:bg-cinder-800" : "bg-signal-500 hover:bg-signal-600")"
+                                        @onclick="ToggleSubscriptionAsync">
+                                    @(IsSubscribed ? "Unsubscribe" : "Subscribe")
+                                </button>
+                            </div>
+
+                            <div class="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+                                <label class="space-y-2">
+                                    <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Custom channel key (base64 or hex)</span>
+                                    <input @bind="_encryptionKeyInput"
+                                           class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                                           placeholder="Leave empty to use default key" />
+                                </label>
+                                <div class="self-end">
+                                    <button type="button"
+                                            class="cursor-pointer rounded-full bg-cinder-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800"
+                                            @onclick="SaveChannelPresetAsync">
+                                        Save channel preset
+                                    </button>
+                                </div>
+                            </div>
+
+                            <p class="mt-3 text-xs text-cinder-800/78">
+                                Default channel key:
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@DefaultEncryptionKeyBase64</code>
+                            </p>
+
+                            @if (!string.IsNullOrWhiteSpace(_statusMessage))
+                            {
+                                <p class="mt-3 text-sm text-cinder-800/82">@_statusMessage</p>
+                            }
+                        </section>
+
+                        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Packets</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_channelMessages.Count</strong>
+                            </article>
+                            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Unique senders</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_uniqueSenderCount</strong>
+                            </article>
+                            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Decoded ratio</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_decodedRatio%</strong>
+                            </article>
+                            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last seen</p>
+                                <strong class="mt-2 block text-sm text-cinder-950">@(_lastSeenAtUtc?.ToString("u") ?? "Unknown")</strong>
+                            </article>
+                        </section>
+
+                        <section class="grid gap-4 xl:grid-cols-2">
+                            <article class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+                                <div class="border-b border-sand-100/80 px-5 py-4">
+                                    <h3 class="font-display text-3xl text-cinder-950">Top nodes</h3>
+                                </div>
+                                @if (_topNodes.Count == 0)
+                                {
+                                    <div class="p-6 text-cinder-800/78">No traffic observed for this channel yet.</div>
+                                }
+                                else
+                                {
+                                    <table class="min-w-full border-collapse">
+                                        <thead class="bg-sand-50/80">
+                                            <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                                                <th class="px-5 py-4">Node</th>
+                                                <th class="px-5 py-4">Packets</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var topNode in _topNodes)
+                                            {
+                                                <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                                                    <td class="px-5 py-4">
+                                                        <button type="button"
+                                                                class="cursor-pointer underline-offset-4 hover:underline"
+                                                                @onclick="() => OpenNodeDetailsAsync(topNode.NodeId)">
+                                                            @topNode.DisplayName
+                                                        </button>
+                                                    </td>
+                                                    <td class="px-5 py-4">@topNode.PacketCount</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                }
+                            </article>
+
+                            <article class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+                                <div class="border-b border-sand-100/80 px-5 py-4">
+                                    <h3 class="font-display text-3xl text-cinder-950">Recent messages</h3>
+                                </div>
+                                @if (_channelMessages.Count == 0)
+                                {
+                                    <div class="p-6 text-cinder-800/78">No recent messages for this channel.</div>
+                                }
+                                else
+                                {
+                                    <ul class="space-y-3 p-5 text-sm text-cinder-900">
+                                        @foreach (var message in _channelMessages.Take(25))
+                                        {
+                                            <li class="rounded-2xl border border-sand-200/80 bg-white/70 p-3">
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    <span class="rounded-full bg-sand-100 px-3 py-1 text-xs">@message.PacketType</span>
+                                                    <span class="text-xs text-cinder-800/70">@message.ReceivedAtUtc.ToString("u")</span>
+                                                </div>
+                                                <p class="mt-2">@message.PayloadPreview</p>
+                                                <p class="mt-1 text-xs text-cinder-800/70">From @GetSenderDisplayName(message) to @(message.ToNodeId ?? "Broadcast")</p>
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </article>
+                        </section>
+                    </div>
+                }
+            </div>
+        </article>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public string Region { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Channel { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnOpenNode { get; set; }
+
+    private IReadOnlyCollection<MessageSummary> _channelMessages = [];
+    private int _decodedRatio;
+    private string _encryptionKeyInput = string.Empty;
+    private DateTimeOffset? _lastSeenAtUtc;
+    private string? _loadedChannelKey;
+    private TopicPreset? _matchedPreset;
+    private bool _isLoading;
+    private string? _statusMessage;
+    private IReadOnlyCollection<TopNodeEntry> _topNodes = [];
+    private int _uniqueSenderCount;
+
+    private string DefaultEncryptionKeyBase64 =>
+        string.IsNullOrWhiteSpace(BrokerOptions.Value.DefaultEncryptionKeyBase64)
+            ? TopicEncryptionKey.DefaultKeyBase64
+            : BrokerOptions.Value.DefaultEncryptionKeyBase64;
+
+    private bool IsSubscribed =>
+        BrokerMonitorService.GetBrokerStatus().TopicFilters.Contains(TopicFilter, StringComparer.Ordinal);
+
+    private string TopicFilter => $"msh/{Region}/2/e/{Channel}/#";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsOpen || string.IsNullOrWhiteSpace(Region) || string.IsNullOrWhiteSpace(Channel))
+        {
+            _loadedChannelKey = null;
+            return;
+        }
+
+        var channelKey = $"{Region}/{Channel}";
+
+        if (string.Equals(_loadedChannelKey, channelKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _loadedChannelKey = channelKey;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _statusMessage = null;
+
+        try
+        {
+            var messagesTask = MessageService.GetRecentMessages(5_000);
+            var presetsTask = TopicPresetService.GetTopicPresets();
+
+            await Task.WhenAll(messagesTask, presetsTask);
+
+            var messages = await messagesTask;
+            var presets = await presetsTask;
+
+            _channelMessages = messages
+                .Where(message => IsTopicInChannel(message.Topic, Region, Channel))
+                .OrderByDescending(message => message.ReceivedAtUtc)
+                .ToList();
+
+            _uniqueSenderCount = _channelMessages
+                .Select(message => message.FromNodeId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+
+            _lastSeenAtUtc = _channelMessages.FirstOrDefault()?.ReceivedAtUtc;
+            _decodedRatio = _channelMessages.Count == 0
+                ? 0
+                : (int)Math.Round(
+                    _channelMessages.Count(IsDecodedMessage) * 100d / _channelMessages.Count,
+                    MidpointRounding.AwayFromZero);
+
+            _topNodes = _channelMessages
+                .GroupBy(message => message.FromNodeId, StringComparer.OrdinalIgnoreCase)
+                .Select(
+                    group =>
+                    {
+                        var first = group.First();
+                        var displayName = !string.IsNullOrWhiteSpace(first.FromNodeShortName)
+                            ? first.FromNodeShortName
+                            : !string.IsNullOrWhiteSpace(first.FromNodeLongName)
+                                ? first.FromNodeLongName
+                                : group.Key;
+
+                        return new TopNodeEntry
+                        {
+                            NodeId = group.Key,
+                            DisplayName = displayName,
+                            PacketCount = group.Count()
+                        };
+                    })
+                .OrderByDescending(entry => entry.PacketCount)
+                .Take(12)
+                .ToList();
+
+            _matchedPreset = presets.FirstOrDefault(
+                preset => string.Equals(
+                    NormalizeTransportSegment(preset.TopicPattern),
+                    NormalizeTransportSegment(TopicFilter),
+                    StringComparison.OrdinalIgnoreCase));
+
+            _encryptionKeyInput = _matchedPreset?.EncryptionKeyBase64 ?? string.Empty;
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+            _channelMessages = [];
+            _topNodes = [];
+            _decodedRatio = 0;
+            _uniqueSenderCount = 0;
+            _lastSeenAtUtc = null;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveChannelPresetAsync()
+    {
+        try
+        {
+            var savedPreset = await TopicPresetService.SaveTopicPreset(
+                new SaveTopicPresetRequest
+                {
+                    Name = _matchedPreset?.Name ?? $"{Region} {Channel}",
+                    TopicPattern = TopicFilter,
+                    EncryptionKeyBase64 = string.IsNullOrWhiteSpace(_encryptionKeyInput)
+                        ? null
+                        : _encryptionKeyInput.Trim(),
+                    IsDefault = _matchedPreset?.IsDefault ?? false
+                });
+
+            _matchedPreset = savedPreset;
+            _encryptionKeyInput = savedPreset.EncryptionKeyBase64 ?? string.Empty;
+            _statusMessage = $"Saved preset '{savedPreset.Name}'.";
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+    }
+
+    private async Task ToggleSubscriptionAsync()
+    {
+        try
+        {
+            if (IsSubscribed)
+            {
+                await BrokerMonitorService.UnsubscribeFromTopic(TopicFilter);
+                _statusMessage = $"Unsubscribed from {TopicFilter}.";
+            }
+            else
+            {
+                await BrokerMonitorService.SubscribeToTopic(TopicFilter);
+                _statusMessage = $"Subscribed to {TopicFilter}.";
+            }
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task OpenNodeDetailsAsync(string nodeId)
+    {
+        if (!OnOpenNode.HasDelegate)
+        {
+            return;
+        }
+
+        await OnClose.InvokeAsync();
+        await OnOpenNode.InvokeAsync(nodeId);
+    }
+
+    private static bool IsDecodedMessage(MessageSummary message)
+    {
+        return message.PacketType is not ("Encrypted Packet" or "Unknown Packet" or "Legacy Packet");
+    }
+
+    private static bool IsTopicInChannel(string topic, string region, string channel)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return false;
+        }
+
+        var segments = topic.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length < 5 ||
+            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(segments[1], region, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(segments[4], channel, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetSenderDisplayName(MessageSummary message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.FromNodeShortName))
+        {
+            return message.FromNodeShortName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.FromNodeLongName))
+        {
+            return message.FromNodeLongName;
+        }
+
+        return message.FromNodeId;
+    }
+
+    private static string NormalizeTransportSegment(string topicPattern)
+    {
+        if (string.IsNullOrWhiteSpace(topicPattern))
+        {
+            return string.Empty;
+        }
+
+        var segments = topicPattern
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length >= 4 &&
+            string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase))
+        {
+            segments[3] = "e";
+        }
+
+        return string.Join('/', segments);
+    }
+
+    private sealed class TopNodeEntry
+    {
+        public required string DisplayName { get; set; }
+
+        public required string NodeId { get; set; }
+
+        public int PacketCount { get; set; }
+    }
+}

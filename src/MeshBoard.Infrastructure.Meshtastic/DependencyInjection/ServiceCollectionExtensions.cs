@@ -18,6 +18,7 @@ public static class ServiceCollectionExtensions
             .AddOptions<BrokerOptions>()
             .Bind(configuration.GetSection(BrokerOptions.SectionName));
 
+        services.AddSingleton<ITopicEncryptionKeyResolver, TopicPresetEncryptionKeyResolver>();
         services.AddSingleton<IMeshtasticEnvelopeReader, MeshtasticEnvelopeReader>();
         services.AddSingleton<IMqttSession, MqttSession>();
         services.AddHostedService<MeshtasticMqttHostedService>();

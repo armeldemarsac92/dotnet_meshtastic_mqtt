@@ -8,6 +8,8 @@ internal sealed class TopicPresetSqlResponse
 
     public required string TopicPattern { get; set; }
 
+    public string? EncryptionKeyBase64 { get; set; }
+
     public int IsDefault { get; set; }
 
     public required string CreatedAtUtc { get; set; }

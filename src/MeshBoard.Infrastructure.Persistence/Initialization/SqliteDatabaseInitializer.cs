@@ -38,6 +38,7 @@ internal sealed class SqliteDatabaseInitializer
         await connection.ExecuteAsync(createSchemaCommand);
         await MigrateMessageHistoryAsync(connection, cancellationToken);
         await MigrateNodesAsync(connection, cancellationToken);
+        await MigrateTopicPresetsAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
             SchemaQueries.DeleteExpiredMessages,
@@ -124,6 +125,26 @@ internal sealed class SqliteDatabaseInitializer
         await EnsureColumnAsync(connection, columns, "last_heard_channel", SchemaQueries.AddNodesLastHeardChannelColumn, cancellationToken);
     }
 
+    private static async Task MigrateTopicPresetsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var columnCommand = new CommandDefinition(
+            SchemaQueries.GetTopicPresetColumns,
+            cancellationToken: cancellationToken);
+
+        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand))
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        await EnsureColumnAsync(
+            connection,
+            columns,
+            "encryption_key_base64",
+            SchemaQueries.AddTopicPresetsEncryptionKeyBase64Column,
+            cancellationToken);
+    }
+
     private static Task EnsureColumnAsync(
         SqliteConnection connection,
         ISet<string> columns,
@@ -163,6 +184,7 @@ internal sealed class SqliteDatabaseInitializer
                 Id = Guid.NewGuid().ToString(),
                 Name = name,
                 TopicPattern = topicPattern,
+                EncryptionKeyBase64 = (string?)null,
                 IsDefault = isDefault ? 1 : 0,
                 CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")
             },

@@ -1,4 +1,6 @@
 using Google.Protobuf;
+using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Meshtastic.Decoding;
 using MeshBoard.Infrastructure.Meshtastic.Protobuf;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,7 +13,7 @@ public sealed class MeshtasticEnvelopeReaderTests
     [Fact]
     public async Task Read_ShouldDecodeDeviceTelemetry_FromDirectMeshPacket()
     {
-        var reader = new MeshtasticEnvelopeReader(NullLogger<MeshtasticEnvelopeReader>.Instance);
+        var reader = CreateReader();
         var telemetryPayload = new Telemetry
         {
             DeviceMetrics = new DeviceMetrics
@@ -55,7 +57,7 @@ public sealed class MeshtasticEnvelopeReaderTests
     [Fact]
     public async Task Read_ShouldDecodeEnvironmentTelemetry_FromDirectMeshPacket()
     {
-        var reader = new MeshtasticEnvelopeReader(NullLogger<MeshtasticEnvelopeReader>.Instance);
+        var reader = CreateReader();
         var telemetryPayload = new Telemetry
         {
             EnvironmentMetrics = new EnvironmentMetrics
@@ -93,7 +95,7 @@ public sealed class MeshtasticEnvelopeReaderTests
     [Fact]
     public async Task Read_ShouldDecodeTextMessage_FromJsonTypePayload()
     {
-        var reader = new MeshtasticEnvelopeReader(NullLogger<MeshtasticEnvelopeReader>.Instance);
+        var reader = CreateReader();
         var jsonPayload = """
                           {
                             "type": "text",
@@ -119,7 +121,7 @@ public sealed class MeshtasticEnvelopeReaderTests
     [Fact]
     public async Task Read_ShouldDecodeTextMessage_FromJsonDecodedPayload()
     {
-        var reader = new MeshtasticEnvelopeReader(NullLogger<MeshtasticEnvelopeReader>.Instance);
+        var reader = CreateReader();
         var base64Text = Convert.ToBase64String(Encoding.UTF8.GetBytes("Decoded text from payload"));
         var jsonPayload = $$"""
                             {
@@ -142,5 +144,51 @@ public sealed class MeshtasticEnvelopeReaderTests
         Assert.Null(envelope.ToNodeId);
         Assert.Equal((uint)3405691582, envelope.PacketId);
         Assert.Equal("US/MediumFast", envelope.LastHeardChannel);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecryptEncryptedMeshtasticPayload_WithDefaultKey()
+    {
+        var reader = CreateReader();
+        var meshPacket = new MeshPacket
+        {
+            From = 4202784164,
+            To = uint.MaxValue,
+            Id = 1777428186,
+            Encrypted = ByteString.CopyFrom(
+                Convert.FromBase64String(
+                    "kiDV39nDDsi8AON+Czei6zUpy+F/7E+lyIpicxJR40KXBFmPkqFUEnobI5voQadha+s="))
+        };
+
+        var envelope = await reader.Read("msh/US/2/e/LongFast/!fa8165a4", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Node Info", envelope.PacketType);
+        Assert.Equal("Meshtastic 65a4", envelope.LongName);
+        Assert.Equal("65a4", envelope.ShortName);
+    }
+
+    private static MeshtasticEnvelopeReader CreateReader()
+    {
+        return new MeshtasticEnvelopeReader(
+            new FakeTopicEncryptionKeyResolver(),
+            NullLogger<MeshtasticEnvelopeReader>.Instance);
+    }
+
+    private sealed class FakeTopicEncryptionKeyResolver : ITopicEncryptionKeyResolver
+    {
+        public void InvalidateCache()
+        {
+        }
+
+        public Task<IReadOnlyCollection<byte[]>> ResolveCandidateKeysAsync(
+            string topic,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<byte[]>>(
+            [
+                TopicEncryptionKey.DefaultKeyBytes
+            ]);
+        }
     }
 }

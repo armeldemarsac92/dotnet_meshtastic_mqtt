@@ -73,6 +73,11 @@
                             <code class="mt-3 block rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@entry.TopicPattern</code>
                             <div class="mt-4 flex flex-wrap gap-2">
                                 <button type="button"
+                                        class="cursor-pointer rounded-full bg-cinder-900/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                        @onclick="() => OpenChannelDetails(entry.Region, entry.Channel)">
+                                    Details
+                                </button>
+                                <button type="button"
                                         class="cursor-pointer rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-950 transition hover:bg-sand-100"
                                         @onclick="() => SavePresetAsync(entry.TopicPattern, TopicExplorerService.CreatePresetName(entry))">
                                     Save preset
@@ -113,6 +118,10 @@
                     <InputText @bind-Value="_topicRequest.Name"
                                class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
                                placeholder="US LongFast" />
+                    <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Channel key (optional)</label>
+                    <InputText @bind-Value="_topicRequest.EncryptionKeyBase64"
+                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
+                               placeholder="Base64 or hex key" />
                     <div class="flex flex-wrap gap-2">
                         <button type="submit"
                                 class="cursor-pointer rounded-full bg-signal-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600">
@@ -185,6 +194,14 @@
                             <td class="px-5 py-4 font-medium">@topicPreset.Name</td>
                             <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@topicPreset.TopicPattern</code></td>
                             <td class="px-5 py-4">
+                                @if (TryExtractChannelFromTopicPattern(topicPreset.TopicPattern, out var region, out var channel))
+                                {
+                                    <button type="button"
+                                            class="mr-2 cursor-pointer rounded-full bg-cinder-900/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                            @onclick="() => OpenChannelDetails(region, channel)">
+                                        Details
+                                    </button>
+                                }
                                 <button type="button"
                                         class="cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition @(IsActiveSubscription(topicPreset.TopicPattern) ? "bg-cinder-900 hover:bg-cinder-800" : "bg-signal-500 hover:bg-signal-600")"
                                         @onclick="() => ToggleSubscriptionAsync(topicPreset.TopicPattern)">
@@ -199,12 +216,26 @@
     </section>
 </div>
 
+<ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedRegion) && !string.IsNullOrWhiteSpace(_selectedChannel))"
+                     Region="@(_selectedRegion ?? string.Empty)"
+                     Channel="@(_selectedChannel ?? string.Empty)"
+                     OnClose="CloseChannelDetails"
+                     OnOpenNode="OpenNodeDetailsAsync" />
+
+<NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
+                  NodeId="@(_selectedNodeId ?? string.Empty)"
+                  OnClose="CloseNodeDetails"
+                  OnOpenChannel="OpenChannelDetailsFromKeyAsync" />
+
 @code {
     private BrokerStatus _brokerStatus = new();
     private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
     private string _explorerSearchText = string.Empty;
     private IReadOnlyCollection<TopicCatalogEntry> _recommendedTopics = [];
     private bool _isProbingTopics;
+    private string? _selectedChannel;
+    private string? _selectedNodeId;
+    private string? _selectedRegion;
     private string? _statusMessage;
     private TopicRequest _topicRequest = new();
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
@@ -263,10 +294,16 @@
         }
 
         var defaultName = _topicRequest.TopicFilter.Trim();
-        await SavePresetAsync(_topicRequest.TopicFilter.Trim(), string.IsNullOrWhiteSpace(_topicRequest.Name) ? defaultName : _topicRequest.Name.Trim());
+        await SavePresetAsync(
+            _topicRequest.TopicFilter.Trim(),
+            string.IsNullOrWhiteSpace(_topicRequest.Name) ? defaultName : _topicRequest.Name.Trim(),
+            _topicRequest.EncryptionKeyBase64);
     }
 
-    private async Task SavePresetAsync(string topicPattern, string name)
+    private async Task SavePresetAsync(
+        string topicPattern,
+        string name,
+        string? encryptionKeyBase64 = null)
     {
         try
         {
@@ -275,6 +312,9 @@
                 {
                     Name = name,
                     TopicPattern = topicPattern,
+                    EncryptionKeyBase64 = string.IsNullOrWhiteSpace(encryptionKeyBase64)
+                        ? null
+                        : encryptionKeyBase64.Trim(),
                     IsDefault = false
                 });
 
@@ -374,8 +414,93 @@
         await LoadAsync();
     }
 
+    private void OpenChannelDetails(string region, string channel)
+    {
+        _selectedRegion = region;
+        _selectedChannel = channel;
+    }
+
+    private Task CloseChannelDetails()
+    {
+        _selectedRegion = null;
+        _selectedChannel = null;
+        return Task.CompletedTask;
+    }
+
+    private Task OpenNodeDetailsAsync(string nodeId)
+    {
+        _selectedNodeId = nodeId;
+        return Task.CompletedTask;
+    }
+
+    private Task CloseNodeDetails()
+    {
+        _selectedNodeId = null;
+        return Task.CompletedTask;
+    }
+
+    private Task OpenChannelDetailsFromKeyAsync(string channelKey)
+    {
+        if (TrySplitChannelKey(channelKey, out var region, out var channel))
+        {
+            OpenChannelDetails(region, channel);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static bool TryExtractChannelFromTopicPattern(string topicPattern, out string region, out string channel)
+    {
+        region = string.Empty;
+        channel = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(topicPattern))
+        {
+            return false;
+        }
+
+        var segments = topicPattern.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length < 5 ||
+            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
+            (!string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase)) ||
+            string.Equals(segments[4], "#", StringComparison.Ordinal) ||
+            string.Equals(segments[4], "+", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        region = segments[1];
+        channel = segments[4];
+        return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
+    private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)
+    {
+        region = string.Empty;
+        channel = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(channelKey))
+        {
+            return false;
+        }
+
+        var segments = channelKey.Split('/', 2, StringSplitOptions.TrimEntries);
+        if (segments.Length != 2)
+        {
+            return false;
+        }
+
+        region = segments[0];
+        channel = segments[1];
+        return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
     private sealed class TopicRequest
     {
+        public string EncryptionKeyBase64 { get; set; } = string.Empty;
+
         public string Name { get; set; } = string.Empty;
 
         public string TopicFilter { get; set; } = string.Empty;

@@ -16,6 +16,7 @@ internal static class TopicPresetMapping
             Id = Guid.NewGuid().ToString(),
             Name = request.Name,
             TopicPattern = request.TopicPattern,
+            EncryptionKeyBase64 = request.EncryptionKeyBase64,
             IsDefault = request.IsDefault ? 1 : 0,
             CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")
         };
@@ -28,6 +29,7 @@ internal static class TopicPresetMapping
             Id = ParseOrDeriveGuid(response.Id),
             Name = response.Name,
             TopicPattern = response.TopicPattern,
+            EncryptionKeyBase64 = response.EncryptionKeyBase64,
             IsDefault = response.IsDefault == 1,
             CreatedAtUtc = ParseOrDefault(response.CreatedAtUtc)
         };
