@@ -108,32 +108,27 @@
         return Task.CompletedTask;
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _cancellationTokenSource.Cancel();
-
-        if (_refreshTask is not null)
-        {
-            try
-            {
-                await _refreshTask;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
         _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-
-        while (await timer.WaitForNextTickAsync(cancellationToken))
+        try
         {
-            RefreshStatus();
-            await InvokeAsync(StateHasChanged);
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                RefreshStatus();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
     }
 

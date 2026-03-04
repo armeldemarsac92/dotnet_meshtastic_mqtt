@@ -220,6 +220,7 @@
 
 @code {
     private const int PreviewLength = 140;
+    private const int RecentMessageTake = 180;
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private BrokerStatus _brokerStatus = new();
     private readonly MessageFilters _filters = new();
@@ -264,26 +265,15 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadAsync();
+        await LoadAsync(_cancellationTokenSource.Token);
         _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _cancellationTokenSource.Cancel();
-
-        if (_refreshTask is not null)
-        {
-            try
-            {
-                await _refreshTask;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
         _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     private bool IsActiveSubscription(string topicPattern)
@@ -291,27 +281,33 @@
         return _brokerStatus.TopicFilters.Contains(topicPattern, StringComparer.Ordinal);
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        _messages = await MessageService.GetRecentMessages();
+        _messages = await MessageService.GetRecentMessages(RecentMessageTake, cancellationToken);
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            var refreshDelaySeconds = _refreshDelaySeconds;
-
-            if (refreshDelaySeconds <= 0)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(400), cancellationToken);
-                continue;
-            }
+                var refreshDelaySeconds = _refreshDelaySeconds;
 
-            await Task.Delay(TimeSpan.FromSeconds(refreshDelaySeconds), cancellationToken);
-            await LoadAsync();
-            await InvokeAsync(StateHasChanged);
+                if (refreshDelaySeconds <= 0)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(400), cancellationToken);
+                    continue;
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(refreshDelaySeconds), cancellationToken);
+                await LoadAsync(cancellationToken);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
     }
 
@@ -384,7 +380,7 @@
             _subscriptionStatusMessage = exception.Message;
         }
 
-        await LoadAsync();
+        await LoadAsync(_cancellationTokenSource.Token);
     }
 
     private static bool TryGetChannelLabel(string topic, out string label, out string region, out string channel)
