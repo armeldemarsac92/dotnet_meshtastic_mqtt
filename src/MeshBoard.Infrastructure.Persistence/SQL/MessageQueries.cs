@@ -2,6 +2,12 @@ namespace MeshBoard.Infrastructure.Persistence.SQL;
 
 internal static class MessageQueries
 {
+    public static string DeleteMessagesOlderThan =>
+        """
+        DELETE FROM message_history
+        WHERE received_at_utc < @CutoffUtc;
+        """;
+
     public static string GetRecentMessages =>
         """
         SELECT

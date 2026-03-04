@@ -162,6 +162,71 @@ public sealed class PersistenceIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task RetentionService_ShouldDeleteMessagesOutsideRetentionWindow()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+        var fixedUtcNow = new DateTimeOffset(2026, 3, 20, 12, 0, 0, TimeSpan.Zero);
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                messageRetentionDays: 7,
+                timeProvider: new FixedTimeProvider(fixedUtcNow));
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var messageRepository = scope.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
+                var retentionService = scope.ServiceProvider.GetRequiredService<IMessageRetentionService>();
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/retention",
+                        PacketType = "Text Message",
+                        MessageKey = "retention-old-msg",
+                        FromNodeId = "!retention1",
+                        PayloadPreview = "old packet",
+                        IsPrivate = false,
+                        ReceivedAtUtc = fixedUtcNow.AddDays(-8)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/retention",
+                        PacketType = "Text Message",
+                        MessageKey = "retention-fresh-msg",
+                        FromNodeId = "!retention1",
+                        PayloadPreview = "fresh packet",
+                        IsPrivate = false,
+                        ReceivedAtUtc = fixedUtcNow.AddDays(-2)
+                    });
+
+                var deletedCount = await retentionService.PruneExpiredMessages();
+                Assert.Equal(1, deletedCount);
+
+                var messages = await messageService.GetRecentMessages(10);
+                var remainingMessage = Assert.Single(messages);
+                Assert.Equal("fresh packet", remainingMessage.PayloadPreview);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
     private static async Task SeedLegacyDatabaseAsync(string databasePath)
     {
         await using var connection = new SqliteConnection($"Data Source={databasePath}");
@@ -230,13 +295,17 @@ public sealed class PersistenceIntegrationTests
         await command.ExecuteNonQueryAsync();
     }
 
-    private static ServiceProvider CreateServiceProvider(string databasePath, bool includeApplicationServices)
+    private static ServiceProvider CreateServiceProvider(
+        string databasePath,
+        bool includeApplicationServices,
+        int messageRetentionDays = 30,
+        TimeProvider? timeProvider = null)
     {
         var settings = new Dictionary<string, string?>
         {
             [$"{PersistenceOptions.SectionName}:Provider"] = "SQLite",
             [$"{PersistenceOptions.SectionName}:ConnectionString"] = $"Data Source={databasePath}",
-            [$"{PersistenceOptions.SectionName}:MessageRetentionDays"] = "30",
+            [$"{PersistenceOptions.SectionName}:MessageRetentionDays"] = messageRetentionDays.ToString(),
             [$"{BrokerOptions.SectionName}:DefaultTopicPattern"] = "msh/US/2/e/#",
             [$"{BrokerOptions.SectionName}:DownlinkTopic"] = "msh/US/2/json/mqtt/"
         };
@@ -251,6 +320,11 @@ public sealed class PersistenceIntegrationTests
         if (includeApplicationServices)
         {
             services.AddApplicationServices();
+
+            if (timeProvider is not null)
+            {
+                services.AddSingleton(timeProvider);
+            }
         }
 
         services.AddPersistenceInfrastructure(configuration);
@@ -284,6 +358,21 @@ public sealed class PersistenceIntegrationTests
         if (File.Exists(databasePath))
         {
             File.Delete(databasePath);
+        }
+    }
+
+    private sealed class FixedTimeProvider : TimeProvider
+    {
+        private readonly DateTimeOffset _utcNow;
+
+        public FixedTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return _utcNow;
         }
     }
 }

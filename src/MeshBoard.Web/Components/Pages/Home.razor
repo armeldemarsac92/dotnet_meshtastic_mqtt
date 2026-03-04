@@ -17,8 +17,8 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Dependency-inverted Blazor shell</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            The app now has real SQLite persistence and a live MQTT client. The remaining infrastructure work is
-            focused on decoding Meshtastic protobuf packets instead of storing only raw packet metadata.
+            The app now has real SQLite persistence, live MQTT ingestion, and protobuf decoding for key Meshtastic
+            packet types. Current hardening work is focused on retention, diagnostics, and send-path safety.
         </p>
     </header>
 
@@ -81,9 +81,9 @@
                 <h2 class="font-display text-3xl text-cinder-950">Current slice</h2>
                 <ul class="mt-4 list-disc space-y-3 pl-5 text-cinder-800/85">
                     <li>MQTT connects on startup and subscribes to the default Meshtastic topic.</li>
-                    <li>Incoming packets are persisted into SQLite through application services.</li>
+                    <li>Incoming packets are decoded and persisted into SQLite through application services.</li>
                     <li>The dashboard, nodes, and messages views refresh every 3 seconds.</li>
-                    <li>The next Meshtastic step is replacing the raw packet placeholder reader with protobuf decoding.</li>
+                    <li>Current hardening adds retention controls and richer integration-test coverage.</li>
                 </ul>
             </article>
         </section>

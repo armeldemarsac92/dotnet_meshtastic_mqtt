@@ -303,6 +303,7 @@ Current implementation status:
 - The `/favorites` page is now actionable: favorite nodes can be removed directly from the table while preserving service-layer transaction and exception behavior.
 - Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
 - Integration tests now cover duplicate packet ingestion rollback semantics end-to-end against SQLite/Dapper to ensure duplicate packets do not mutate node state.
+- Message retention is now exposed through an application-level retention service and a manual prune action on `/settings`.
 
 ## Initial Functional Slices
 
@@ -463,6 +464,7 @@ Current coverage includes:
 - legacy-schema startup migration/backfill for `message_history` and `nodes`
 - dedup conflict behavior through backfilled `message_key`
 - duplicate ingestion rollback behavior through `MeshtasticIngestionService` with real persistence infrastructure
+- retention-window pruning through `IMessageRetentionService` against SQLite
 
 ## Delivery Order
 

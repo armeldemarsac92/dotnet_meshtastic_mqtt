@@ -31,6 +31,16 @@ internal sealed class MessageRepository : IMessageRepository
         return rowsAffected > 0;
     }
 
+    public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Attempting to delete messages older than {CutoffUtc}", cutoffUtc);
+
+        return _dbContext.ExecuteAsync(
+            MessageQueries.DeleteMessagesOlderThan,
+            new { CutoffUtc = cutoffUtc.ToString("O") },
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(
         int take,
         CancellationToken cancellationToken = default)
