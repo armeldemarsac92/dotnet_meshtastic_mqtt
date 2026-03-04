@@ -24,5 +24,21 @@ public sealed class MeshtasticEnvelope
 
     public double? Longitude { get; set; }
 
+    public int? BatteryLevelPercent { get; set; }
+
+    public double? Voltage { get; set; }
+
+    public double? ChannelUtilization { get; set; }
+
+    public double? AirUtilTx { get; set; }
+
+    public long? UptimeSeconds { get; set; }
+
+    public double? TemperatureCelsius { get; set; }
+
+    public double? RelativeHumidity { get; set; }
+
+    public double? BarometricPressure { get; set; }
+
     public DateTimeOffset ReceivedAtUtc { get; set; }
 }

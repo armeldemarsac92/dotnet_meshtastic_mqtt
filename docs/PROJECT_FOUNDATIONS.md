@@ -283,11 +283,15 @@ Current implementation status:
   - text message payload previews
   - node-info payload decoding into short name and long name
   - position payload decoding into latitude and longitude
+  - telemetry payload decoding for device metrics and environment metrics
 - Encrypted or otherwise non-decoded packets are still persisted as opaque payload previews so the message stream remains complete.
 - Message ingestion now computes a stable message key and uses it for repository-level deduplication, which prevents repeated broker packets from flooding local history.
 - The Meshtastic MQTT hosted service now delays connect and subscribe until `ApplicationStarted`, which avoids racing persistence initialization during host startup.
 - Live verification against the public broker has already produced decoded node identities such as `Meshtastic Salz (Salz)` and `Russell WSGP797 (Ru97)` in SQLite.
 - The `/messages` page now supports practical client-side filtering by visibility, packet type, and free-text search over recent persisted traffic.
+- The `nodes` table now stores a small telemetry set: battery level, voltage, channel utilization, air util TX, uptime, temperature, humidity, and barometric pressure.
+- `/nodes` now renders position plus the currently persisted device and environment telemetry fields.
+- Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
 
 ## Initial Functional Slices
 

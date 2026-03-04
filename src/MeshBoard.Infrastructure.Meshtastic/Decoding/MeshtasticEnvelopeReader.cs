@@ -105,7 +105,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             PortNum.TextMessageCompressedApp => $"Compressed text payload ({decoded.Payload.Length} bytes)",
             PortNum.PositionApp => DecodePositionPayload(envelope, decoded.Payload),
             PortNum.NodeinfoApp => DecodeNodeInfoPayload(envelope, decoded.Payload),
-            PortNum.TelemetryApp => $"Telemetry payload ({decoded.Payload.Length} bytes)",
+            PortNum.TelemetryApp => DecodeTelemetryPayload(envelope, decoded.Payload),
             _ => $"{GetPacketType(decoded.Portnum)} payload ({decoded.Payload.Length} bytes)"
         };
     }
@@ -173,6 +173,92 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         }
     }
 
+    private string DecodeTelemetryPayload(MeshtasticEnvelope envelope, ByteString payload)
+    {
+        try
+        {
+            var telemetry = Telemetry.Parser.ParseFrom(payload);
+
+            return telemetry.VariantCase switch
+            {
+                Telemetry.VariantOneofCase.DeviceMetrics => DecodeDeviceMetrics(envelope, telemetry.DeviceMetrics),
+                Telemetry.VariantOneofCase.EnvironmentMetrics => DecodeEnvironmentMetrics(envelope, telemetry.EnvironmentMetrics),
+                _ => "Telemetry update"
+            };
+        }
+        catch (InvalidProtocolBufferException exception)
+        {
+            _logger.LogDebug(exception, "Unable to decode Meshtastic telemetry payload");
+            return $"Telemetry payload ({payload.Length} bytes)";
+        }
+    }
+
+    private static string DecodeDeviceMetrics(MeshtasticEnvelope envelope, DeviceMetrics metrics)
+    {
+        envelope.BatteryLevelPercent = metrics.BatteryLevel == 0 && metrics.Voltage == 0
+            ? null
+            : (int?)metrics.BatteryLevel;
+        envelope.Voltage = metrics.Voltage == 0 ? null : metrics.Voltage;
+        envelope.ChannelUtilization = metrics.ChannelUtilization == 0 ? null : metrics.ChannelUtilization;
+        envelope.AirUtilTx = metrics.AirUtilTx == 0 ? null : metrics.AirUtilTx;
+        envelope.UptimeSeconds = metrics.UptimeSeconds == 0 ? null : metrics.UptimeSeconds;
+
+        var parts = new List<string>();
+
+        if (envelope.BatteryLevelPercent.HasValue)
+        {
+            parts.Add($"{envelope.BatteryLevelPercent.Value}% battery");
+        }
+
+        if (envelope.Voltage.HasValue)
+        {
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{envelope.Voltage.Value:F2}V"));
+        }
+
+        if (envelope.ChannelUtilization.HasValue)
+        {
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{envelope.ChannelUtilization.Value:F1}% channel"));
+        }
+
+        if (envelope.AirUtilTx.HasValue)
+        {
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{envelope.AirUtilTx.Value:F1}% TX"));
+        }
+
+        if (envelope.UptimeSeconds.HasValue)
+        {
+            parts.Add($"uptime {FormatDuration(envelope.UptimeSeconds.Value)}");
+        }
+
+        return parts.Count == 0 ? "Telemetry update" : $"Device metrics: {string.Join(", ", parts)}";
+    }
+
+    private static string DecodeEnvironmentMetrics(MeshtasticEnvelope envelope, EnvironmentMetrics metrics)
+    {
+        envelope.TemperatureCelsius = metrics.Temperature == 0 ? null : metrics.Temperature;
+        envelope.RelativeHumidity = metrics.RelativeHumidity == 0 ? null : metrics.RelativeHumidity;
+        envelope.BarometricPressure = metrics.BarometricPressure == 0 ? null : metrics.BarometricPressure;
+
+        var parts = new List<string>();
+
+        if (envelope.TemperatureCelsius.HasValue)
+        {
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{envelope.TemperatureCelsius.Value:F1}C"));
+        }
+
+        if (envelope.RelativeHumidity.HasValue)
+        {
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{envelope.RelativeHumidity.Value:F1}% RH"));
+        }
+
+        if (envelope.BarometricPressure.HasValue)
+        {
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{envelope.BarometricPressure.Value:F1} hPa"));
+        }
+
+        return parts.Count == 0 ? "Telemetry update" : $"Environment metrics: {string.Join(", ", parts)}";
+    }
+
     private static string DecodeTextPayload(ByteString payload)
     {
         if (payload.IsEmpty)
@@ -226,6 +312,23 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
     private static string? NullIfWhiteSpace(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string FormatDuration(long uptimeSeconds)
+    {
+        var uptime = TimeSpan.FromSeconds(uptimeSeconds);
+
+        if (uptime.TotalDays >= 1)
+        {
+            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        }
+
+        if (uptime.TotalHours >= 1)
+        {
+            return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+        }
+
+        return $"{uptime.Minutes}m";
     }
 
     private static string? TryExtractNodeIdFromTopic(string topic)

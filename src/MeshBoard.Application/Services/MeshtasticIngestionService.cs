@@ -73,7 +73,15 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                             ? envelope.ReceivedAtUtc
                             : null,
                         LastKnownLatitude = envelope.Latitude,
-                        LastKnownLongitude = envelope.Longitude
+                        LastKnownLongitude = envelope.Longitude,
+                        BatteryLevelPercent = envelope.BatteryLevelPercent,
+                        Voltage = envelope.Voltage,
+                        ChannelUtilization = envelope.ChannelUtilization,
+                        AirUtilTx = envelope.AirUtilTx,
+                        UptimeSeconds = envelope.UptimeSeconds,
+                        TemperatureCelsius = envelope.TemperatureCelsius,
+                        RelativeHumidity = envelope.RelativeHumidity,
+                        BarometricPressure = envelope.BarometricPressure
                     },
                     cancellationToken);
             }

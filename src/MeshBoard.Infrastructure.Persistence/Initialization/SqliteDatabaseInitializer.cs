@@ -37,6 +37,7 @@ internal sealed class SqliteDatabaseInitializer
 
         await connection.ExecuteAsync(createSchemaCommand);
         await MigrateMessageHistoryAsync(connection, cancellationToken);
+        await MigrateNodesAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
             SchemaQueries.DeleteExpiredMessages,
@@ -64,7 +65,7 @@ internal sealed class SqliteDatabaseInitializer
             SchemaQueries.GetMessageHistoryColumns,
             cancellationToken: cancellationToken);
 
-        var columns = (await connection.QueryAsync<MessageHistoryColumnSqlResponse>(columnCommand))
+        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand))
             .Select(column => column.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -98,6 +99,43 @@ internal sealed class SqliteDatabaseInitializer
             new CommandDefinition(
                 SchemaQueries.CreateMessageHistoryMessageKeyIndex,
                 cancellationToken: cancellationToken));
+    }
+
+    private static async Task MigrateNodesAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var columnCommand = new CommandDefinition(
+            SchemaQueries.GetNodeColumns,
+            cancellationToken: cancellationToken);
+
+        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand))
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        await EnsureColumnAsync(connection, columns, "battery_level_percent", SchemaQueries.AddNodesBatteryLevelPercentColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "voltage", SchemaQueries.AddNodesVoltageColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "channel_utilization", SchemaQueries.AddNodesChannelUtilizationColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "air_util_tx", SchemaQueries.AddNodesAirUtilTxColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "uptime_seconds", SchemaQueries.AddNodesUptimeSecondsColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "temperature_celsius", SchemaQueries.AddNodesTemperatureCelsiusColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "relative_humidity", SchemaQueries.AddNodesRelativeHumidityColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "barometric_pressure", SchemaQueries.AddNodesBarometricPressureColumn, cancellationToken);
+    }
+
+    private static Task EnsureColumnAsync(
+        SqliteConnection connection,
+        ISet<string> columns,
+        string columnName,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        if (columns.Contains(columnName))
+        {
+            return Task.CompletedTask;
+        }
+
+        return connection.ExecuteAsync(new CommandDefinition(sql, cancellationToken: cancellationToken));
     }
 
     private SqliteConnection CreateConnection()

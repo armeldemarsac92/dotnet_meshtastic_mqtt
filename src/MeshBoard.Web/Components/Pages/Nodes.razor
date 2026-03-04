@@ -11,8 +11,8 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Observed nodes</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            This page refreshes every 3 seconds from the latest observed node state. At the moment, nodes are created
-            from packet origin metadata until full Meshtastic node decoding is implemented.
+            This page refreshes every 3 seconds from the latest observed node state, including node identity,
+            position, and the telemetry metrics currently decoded from Meshtastic traffic.
         </p>
     </header>
 
@@ -30,6 +30,9 @@
                     <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <th class="px-5 py-4">Node ID</th>
                         <th class="px-5 py-4">Name</th>
+                        <th class="px-5 py-4">Position</th>
+                        <th class="px-5 py-4">Device</th>
+                        <th class="px-5 py-4">Environment</th>
                         <th class="px-5 py-4">Last heard</th>
                     </tr>
                 </thead>
@@ -38,7 +41,16 @@
                     {
                         <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
                             <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@node.NodeId</code></td>
-                            <td class="px-5 py-4 font-medium">@(node.LongName ?? node.ShortName ?? "Unnamed node")</td>
+                            <td class="px-5 py-4 font-medium">
+                                @(node.LongName ?? node.ShortName ?? "Unnamed node")
+                                @if (!string.IsNullOrWhiteSpace(node.ShortName) && node.LongName is not null)
+                                {
+                                    <span class="block text-xs text-cinder-800/68">@node.ShortName</span>
+                                }
+                            </td>
+                            <td class="px-5 py-4 text-cinder-800/82">@FormatPosition(node)</td>
+                            <td class="px-5 py-4 text-cinder-800/82">@FormatDeviceMetrics(node)</td>
+                            <td class="px-5 py-4 text-cinder-800/82">@FormatEnvironmentMetrics(node)</td>
                             <td class="px-5 py-4">@(node.LastHeardAtUtc?.ToString("u") ?? "Unknown")</td>
                         </tr>
                     }
@@ -91,5 +103,83 @@
             await LoadAsync();
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private static string FormatDeviceMetrics(NodeSummary node)
+    {
+        var parts = new List<string>();
+
+        if (node.BatteryLevelPercent.HasValue)
+        {
+            parts.Add($"{node.BatteryLevelPercent.Value}%");
+        }
+
+        if (node.Voltage.HasValue)
+        {
+            parts.Add($"{node.Voltage.Value:F2}V");
+        }
+
+        if (node.ChannelUtilization.HasValue)
+        {
+            parts.Add($"{node.ChannelUtilization.Value:F1}% ch");
+        }
+
+        if (node.AirUtilTx.HasValue)
+        {
+            parts.Add($"{node.AirUtilTx.Value:F1}% tx");
+        }
+
+        if (node.UptimeSeconds.HasValue)
+        {
+            parts.Add(FormatUptime(node.UptimeSeconds.Value));
+        }
+
+        return parts.Count == 0 ? "No telemetry" : string.Join(" | ", parts);
+    }
+
+    private static string FormatEnvironmentMetrics(NodeSummary node)
+    {
+        var parts = new List<string>();
+
+        if (node.TemperatureCelsius.HasValue)
+        {
+            parts.Add($"{node.TemperatureCelsius.Value:F1}C");
+        }
+
+        if (node.RelativeHumidity.HasValue)
+        {
+            parts.Add($"{node.RelativeHumidity.Value:F1}% RH");
+        }
+
+        if (node.BarometricPressure.HasValue)
+        {
+            parts.Add($"{node.BarometricPressure.Value:F1} hPa");
+        }
+
+        return parts.Count == 0 ? "No telemetry" : string.Join(" | ", parts);
+    }
+
+    private static string FormatPosition(NodeSummary node)
+    {
+        return node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue
+            ? $"{node.LastKnownLatitude.Value:F5}, {node.LastKnownLongitude.Value:F5}"
+            : "Unknown";
+    }
+
+    private static string FormatUptime(long uptimeSeconds)
+    {
+        var uptime = TimeSpan.FromSeconds(uptimeSeconds);
+
+        if (uptime.TotalDays >= 1)
+        {
+            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        }
+
+        if (uptime.TotalHours >= 1)
+        {
+            return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+        }
+
+        return $"{uptime.Minutes}m";
     }
 }

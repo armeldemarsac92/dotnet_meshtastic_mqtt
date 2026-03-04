@@ -33,7 +33,15 @@ internal static class SchemaQueries
             last_heard_at_utc TEXT NULL,
             last_text_message_at_utc TEXT NULL,
             last_known_latitude REAL NULL,
-            last_known_longitude REAL NULL
+            last_known_longitude REAL NULL,
+            battery_level_percent INTEGER NULL,
+            voltage REAL NULL,
+            channel_utilization REAL NULL,
+            air_util_tx REAL NULL,
+            uptime_seconds INTEGER NULL,
+            temperature_celsius REAL NULL,
+            relative_humidity REAL NULL,
+            barometric_pressure REAL NULL
         );
 
         CREATE TABLE IF NOT EXISTS message_history (
@@ -101,5 +109,58 @@ internal static class SchemaQueries
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_message_history_message_key
             ON message_history(message_key);
+        """;
+
+    public static string GetNodeColumns =>
+        """
+        PRAGMA table_info(nodes);
+        """;
+
+    public static string AddNodesBatteryLevelPercentColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN battery_level_percent INTEGER NULL;
+        """;
+
+    public static string AddNodesVoltageColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN voltage REAL NULL;
+        """;
+
+    public static string AddNodesChannelUtilizationColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN channel_utilization REAL NULL;
+        """;
+
+    public static string AddNodesAirUtilTxColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN air_util_tx REAL NULL;
+        """;
+
+    public static string AddNodesUptimeSecondsColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN uptime_seconds INTEGER NULL;
+        """;
+
+    public static string AddNodesTemperatureCelsiusColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN temperature_celsius REAL NULL;
+        """;
+
+    public static string AddNodesRelativeHumidityColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN relative_humidity REAL NULL;
+        """;
+
+    public static string AddNodesBarometricPressureColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN barometric_pressure REAL NULL;
         """;
 }

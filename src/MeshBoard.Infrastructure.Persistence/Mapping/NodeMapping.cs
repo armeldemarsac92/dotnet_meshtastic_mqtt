@@ -21,7 +21,15 @@ internal static class NodeMapping
             LastHeardAtUtc = ParseNullableDateTimeOffset(response.LastHeardAtUtc),
             LastTextMessageAtUtc = ParseNullableDateTimeOffset(response.LastTextMessageAtUtc),
             LastKnownLatitude = response.LastKnownLatitude,
-            LastKnownLongitude = response.LastKnownLongitude
+            LastKnownLongitude = response.LastKnownLongitude,
+            BatteryLevelPercent = response.BatteryLevelPercent,
+            Voltage = response.Voltage,
+            ChannelUtilization = response.ChannelUtilization,
+            AirUtilTx = response.AirUtilTx,
+            UptimeSeconds = response.UptimeSeconds,
+            TemperatureCelsius = response.TemperatureCelsius,
+            RelativeHumidity = response.RelativeHumidity,
+            BarometricPressure = response.BarometricPressure
         };
     }
 

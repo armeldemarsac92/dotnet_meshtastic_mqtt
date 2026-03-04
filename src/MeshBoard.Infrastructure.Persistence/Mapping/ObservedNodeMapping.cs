@@ -15,7 +15,15 @@ internal static class ObservedNodeMapping
             LastHeardAtUtc = request.LastHeardAtUtc?.ToString("O"),
             LastTextMessageAtUtc = request.LastTextMessageAtUtc?.ToString("O"),
             LastKnownLatitude = request.LastKnownLatitude,
-            LastKnownLongitude = request.LastKnownLongitude
+            LastKnownLongitude = request.LastKnownLongitude,
+            BatteryLevelPercent = request.BatteryLevelPercent,
+            Voltage = request.Voltage,
+            ChannelUtilization = request.ChannelUtilization,
+            AirUtilTx = request.AirUtilTx,
+            UptimeSeconds = request.UptimeSeconds,
+            TemperatureCelsius = request.TemperatureCelsius,
+            RelativeHumidity = request.RelativeHumidity,
+            BarometricPressure = request.BarometricPressure
         };
     }
 }
