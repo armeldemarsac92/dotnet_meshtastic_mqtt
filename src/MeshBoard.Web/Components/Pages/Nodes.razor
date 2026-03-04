@@ -16,6 +16,38 @@
         </p>
     </header>
 
+    <section class="grid gap-4 rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur lg:grid-cols-[1.3fr_0.9fr_0.9fr_0.9fr]">
+        <label class="space-y-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search</span>
+            <input @bind="_query.SearchText"
+                   @bind:event="oninput"
+                   @bind:after="LoadAndRefreshAsync"
+                   class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                   placeholder="Node id or name" />
+        </label>
+
+        <label class="space-y-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Sort</span>
+            <select @bind="_query.SortBy"
+                    @bind:after="LoadAndRefreshAsync"
+                    class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none">
+                <option value="@NodeSortOption.LastHeardDesc">Last heard</option>
+                <option value="@NodeSortOption.NameAsc">Name</option>
+                <option value="@NodeSortOption.BatteryDesc">Battery</option>
+            </select>
+        </label>
+
+        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900">
+            <input type="checkbox" @bind="_query.OnlyWithLocation" @bind:after="LoadAndRefreshAsync" />
+            <span>Only with location</span>
+        </label>
+
+        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900">
+            <input type="checkbox" @bind="_query.OnlyWithTelemetry" @bind:after="LoadAndRefreshAsync" />
+            <span>Only with telemetry</span>
+        </label>
+    </section>
+
     <section class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
         @if (_nodes.Count == 0)
         {
@@ -63,6 +95,7 @@
 @code {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private IReadOnlyCollection<NodeSummary> _nodes = [];
+    private readonly NodeQuery _query = new();
     private Task? _refreshTask;
 
     protected override async Task OnInitializedAsync()
@@ -91,7 +124,7 @@
 
     private async Task LoadAsync()
     {
-        _nodes = await NodeService.GetNodes();
+        _nodes = await NodeService.GetNodes(_query);
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -103,6 +136,12 @@
             await LoadAsync();
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private async Task LoadAndRefreshAsync()
+    {
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private static string FormatDeviceMetrics(NodeSummary node)

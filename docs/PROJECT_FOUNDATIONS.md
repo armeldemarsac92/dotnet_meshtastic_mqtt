@@ -291,6 +291,8 @@ Current implementation status:
 - The `/messages` page now supports practical client-side filtering by visibility, packet type, and free-text search over recent persisted traffic.
 - The `nodes` table now stores a small telemetry set: battery level, voltage, channel utilization, air util TX, uptime, temperature, humidity, and barometric pressure.
 - `/nodes` now renders position plus the currently persisted device and environment telemetry fields.
+- Node querying now supports application-layer filtering and sorting by search text, location presence, telemetry presence, and sort mode.
+- The `/nodes` page exposes those filters directly in the UI and uses the application service query path instead of embedding filter rules only in Razor.
 - Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
 
 ## Initial Functional Slices
