@@ -329,6 +329,8 @@ Current implementation status:
 - The `/messages` stream now renders sender display names with short-name priority when available, and each sender links directly to `/nodes/details/{nodeId}`.
 - Topic subscriptions now auto-expand `e <-> json` companions for Meshtastic channel filters so users can keep encrypted packet visibility while also ingesting decoded JSON traffic when available.
 - The `/messages` stream now keeps previews truncated in-table with a `See message` modal for full payload text, and refreshes every second so decoded replacements appear faster.
+- Topic discovery is now persisted in SQLite (`discovered_topics`) from live ingestion, so newly observed channels remain visible in Topic Explorer even after app restart.
+- The `/topics` explorer now reads discovered channels from persisted discovery records rather than deriving discovery only from a short recent-message window.
 - Encrypted Meshtastic packets are now decrypted locally before classification using the Meshtastic AES-CTR scheme (nonce = packet id + sender node id), then parsed as protobuf `Data` when successful.
 - The default decryption key is now configurable as `Broker:DefaultEncryptionKeyBase64` and defaults to Meshtastic short-PSK `AQ==` (which expands to the public key bytes).
 - Topic presets now support optional `encryption_key_base64` overrides in SQLite (`topic_presets.encryption_key_base64`) with additive migration support for existing databases.
@@ -336,6 +338,7 @@ Current implementation status:
 - Node details and channel details are now available as large in-page modal popups from `/messages`, `/nodes`, and `/topics` (instead of forcing route navigation).
 - `/topics` explorer cards and saved-preset rows now expose direct channel `Details` actions.
 - `/messages` now shows `Listening channels` from active broker subscriptions only (stable list based on subscribed topic filters), rather than combining discovered/recent channel candidates.
+- `/messages` now exposes a configurable auto-refresh delay (including paused mode) so operators can reduce UI update frequency during high traffic.
 
 ## Initial Functional Slices
 

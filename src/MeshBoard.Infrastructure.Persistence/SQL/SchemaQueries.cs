@@ -27,6 +27,17 @@ internal static class SchemaQueries
         CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_topic_pattern
             ON topic_presets(topic_pattern);
 
+        CREATE TABLE IF NOT EXISTS discovered_topics (
+            topic_pattern TEXT NOT NULL PRIMARY KEY,
+            region TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            first_observed_at_utc TEXT NOT NULL,
+            last_observed_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_discovered_topics_last_observed_at_utc
+            ON discovered_topics(last_observed_at_utc DESC);
+
         CREATE TABLE IF NOT EXISTS nodes (
             node_id TEXT NOT NULL PRIMARY KEY,
             short_name TEXT NULL,

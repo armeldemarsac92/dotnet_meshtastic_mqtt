@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INodeService, NodeService>();
         services.AddScoped<ISendCapabilityService, SendCapabilityService>();
         services.AddScoped<ITopicExplorerService, TopicExplorerService>();
+        services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
         services.AddScoped<ITopicProbeService, TopicProbeService>();
         services.AddScoped<ITopicPresetService, TopicPresetService>();
 

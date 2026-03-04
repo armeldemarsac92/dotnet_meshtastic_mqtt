@@ -418,6 +418,74 @@ public sealed class PersistenceIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task TopicDiscovery_ShouldPersistObservedTopicPatterns()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var ingestionService = scope.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
+                var topicDiscoveryService = scope.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+
+                await ingestionService.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        Topic = "msh/EU_868/2/e/MediumFast/!abc12345",
+                        PacketType = "Encrypted Packet",
+                        PacketId = 0x00010001,
+                        PayloadPreview = "Non-decoded Meshtastic payload (112 bytes)",
+                        FromNodeId = "!abc12345",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 4, 22, 0, 0, TimeSpan.Zero)
+                    });
+
+                await ingestionService.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        Topic = "msh/EU_868/2/json/MediumFast/!abc12345",
+                        PacketType = "Text Message",
+                        PacketId = 0x00010001,
+                        PayloadPreview = "Decoded payload from json topic",
+                        FromNodeId = "!abc12345",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 4, 22, 0, 1, TimeSpan.Zero)
+                    });
+
+                await ingestionService.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        Topic = "msh/US/2/e/LongFast/!def67890",
+                        PacketType = "Text Message",
+                        PacketId = 0x00020002,
+                        PayloadPreview = "US channel payload",
+                        FromNodeId = "!def67890",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 4, 22, 0, 2, TimeSpan.Zero)
+                    });
+
+                var discoveredTopics = await topicDiscoveryService.GetDiscoveredTopics();
+
+                Assert.Equal(2, discoveredTopics.Count);
+                Assert.Contains(discoveredTopics, topic => topic.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
+                Assert.Contains(discoveredTopics, topic => topic.TopicPattern == "msh/US/2/e/LongFast/#");
+                Assert.All(discoveredTopics, topic => Assert.False(topic.IsRecommended));
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
     private static async Task SeedLegacyDatabaseAsync(string databasePath)
     {
         await using var connection = new SqliteConnection($"Data Source={databasePath}");

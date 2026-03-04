@@ -18,16 +18,19 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     private readonly ILogger<MeshtasticIngestionService> _logger;
     private readonly IMessageRepository _messageRepository;
     private readonly INodeRepository _nodeRepository;
+    private readonly ITopicDiscoveryService _topicDiscoveryService;
     private readonly IUnitOfWork _unitOfWork;
 
     public MeshtasticIngestionService(
         IMessageRepository messageRepository,
         INodeRepository nodeRepository,
+        ITopicDiscoveryService topicDiscoveryService,
         IUnitOfWork unitOfWork,
         ILogger<MeshtasticIngestionService> logger)
     {
         _messageRepository = messageRepository;
         _nodeRepository = nodeRepository;
+        _topicDiscoveryService = topicDiscoveryService;
         _unitOfWork = unitOfWork;
         _logger = logger;
     }
@@ -65,6 +68,11 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 await _unitOfWork.CommitAsync(cancellationToken);
                 return;
             }
+
+            await _topicDiscoveryService.RecordObservedTopic(
+                envelope.Topic,
+                envelope.ReceivedAtUtc,
+                cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
             {
