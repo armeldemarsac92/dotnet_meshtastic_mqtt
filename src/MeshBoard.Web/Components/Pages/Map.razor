@@ -1,0 +1,301 @@
+@page "/map"
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+@inject INodeService NodeService
+
+<PageTitle>Map</PageTitle>
+
+<div class="flex h-[calc(100dvh-3rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100dvh-4rem)] lg:h-[calc(100dvh-5rem)]">
+    <header class="space-y-2">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Geospatial view</p>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
+        </div>
+        <p class="max-w-3xl text-sm leading-7 text-cinder-800 sm:text-base">
+            Browse all observed nodes with coordinates. Click a marker to open node details.
+        </p>
+    </header>
+
+    <section class="liquid-panel grid shrink-0 gap-4 rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_auto_1fr]">
+        <label class="space-y-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search on map</span>
+            <input @bind="_searchText"
+                   @bind:event="oninput"
+                   @bind:after="ApplyClientFilterAsync"
+                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                   placeholder="Node id, short name, long name, or channel" />
+        </label>
+
+        <div class="flex items-end">
+            <button type="button"
+                    class="liquid-button liquid-button-accent cursor-pointer rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                    @onclick="RefreshNodesAsync"
+                    disabled="@_isLoading">
+                @(_isLoading ? "Refreshing..." : "Refresh map")
+            </button>
+        </div>
+
+        <div class="self-end space-y-1 text-sm text-cinder-800/82">
+            <p>Showing @_visibleMapNodes.Count of @_locatedNodeCount located nodes.</p>
+            @if (!string.IsNullOrWhiteSpace(_statusMessage))
+            {
+                <p class="text-xs text-cinder-800/72">@_statusMessage</p>
+            }
+        </div>
+    </section>
+
+    <section class="liquid-panel min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
+        <div id="@MapElementId"
+             class="meshboard-node-map h-full w-full rounded-[1.25rem] border border-sand-200/80"></div>
+    </section>
+</div>
+
+<NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
+                  NodeId="@(_selectedNodeId ?? string.Empty)"
+                  OnClose="CloseNodeDetailsAsync"
+                  OnOpenChannel="OpenChannelDetailsAsync" />
+
+<ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedRegion) && !string.IsNullOrWhiteSpace(_selectedChannel))"
+                     Region="@(_selectedRegion ?? string.Empty)"
+                     Channel="@(_selectedChannel ?? string.Empty)"
+                     OnClose="CloseChannelDetailsAsync"
+                     OnOpenNode="OpenNodeDetailsAsync" />
+
+@code {
+    private const string MapElementId = "meshboard-node-map";
+    private readonly NodeQuery _nodeQuery = new() { OnlyWithLocation = true };
+    private DotNetObjectReference<Map>? _mapCallbackReference;
+    private bool _isLoading;
+    private bool _isMapRenderPending;
+    private IJSObjectReference? _mapModule;
+    private int _locatedNodeCount;
+    private string _searchText = string.Empty;
+    private string? _selectedChannel;
+    private string? _selectedNodeId;
+    private string? _selectedRegion;
+    private string? _statusMessage;
+    private IReadOnlyCollection<NodeSummary> _nodesWithLocation = [];
+    private IReadOnlyCollection<MapNodePoint> _visibleMapNodes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshNodesAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _isMapRenderPending = true;
+        }
+
+        if (_isMapRenderPending)
+        {
+            _isMapRenderPending = false;
+            await RenderMapAsync();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _mapCallbackReference?.Dispose();
+
+        if (_mapModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _mapModule.InvokeVoidAsync("disposeNodeMap", MapElementId);
+            await _mapModule.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnNodeSelectedFromMap(string nodeId)
+    {
+        _selectedNodeId = nodeId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ApplyClientFilterAsync()
+    {
+        ApplyClientFilter();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseChannelDetailsAsync()
+    {
+        _selectedRegion = null;
+        _selectedChannel = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CloseNodeDetailsAsync()
+    {
+        _selectedNodeId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenNodeDetailsAsync(string nodeId)
+    {
+        _selectedNodeId = nodeId;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenChannelDetailsAsync(string channelKey)
+    {
+        if (!TrySplitChannelKey(channelKey, out var region, out var channel))
+        {
+            return Task.CompletedTask;
+        }
+
+        _selectedRegion = region;
+        _selectedChannel = channel;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshNodesAsync()
+    {
+        _isLoading = true;
+        _statusMessage = null;
+
+        try
+        {
+            _nodesWithLocation = await LoadAllLocatedNodesAsync();
+            _locatedNodeCount = _nodesWithLocation.Count;
+            ApplyClientFilter();
+            _statusMessage = $"Loaded {_locatedNodeCount} nodes with coordinates.";
+        }
+        catch (Exception exception)
+        {
+            _nodesWithLocation = [];
+            _visibleMapNodes = [];
+            _locatedNodeCount = 0;
+            _statusMessage = $"Map load failed: {exception.Message}";
+            _isMapRenderPending = true;
+        }
+        finally
+        {
+            _isLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ApplyClientFilter()
+    {
+        IEnumerable<NodeSummary> filteredNodes = _nodesWithLocation;
+
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            filteredNodes = filteredNodes.Where(node =>
+                node.NodeId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (node.ShortName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (node.LongName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (node.LastHeardChannel?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        _visibleMapNodes = filteredNodes
+            .Where(node => node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue)
+            .Select(node => new MapNodePoint
+            {
+                NodeId = node.NodeId,
+                DisplayName = node.LongName ?? node.ShortName ?? node.NodeId,
+                Channel = node.LastHeardChannel,
+                Latitude = node.LastKnownLatitude!.Value,
+                Longitude = node.LastKnownLongitude!.Value,
+                BatteryLevelPercent = node.BatteryLevelPercent
+            })
+            .ToList();
+
+        _isMapRenderPending = true;
+    }
+
+    private async Task RenderMapAsync()
+    {
+        _mapModule ??= await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js");
+        _mapCallbackReference ??= DotNetObjectReference.Create(this);
+
+        await _mapModule.InvokeVoidAsync(
+            "renderNodeMap",
+            MapElementId,
+            _visibleMapNodes,
+            _mapCallbackReference);
+    }
+
+    private async Task<IReadOnlyCollection<NodeSummary>> LoadAllLocatedNodesAsync()
+    {
+        var allNodes = new List<NodeSummary>();
+        var offset = 0;
+        const int batchSize = 1000;
+
+        while (true)
+        {
+            var page = await NodeService.GetNodesPage(_nodeQuery, offset, batchSize);
+
+            if (page.Items.Count == 0)
+            {
+                break;
+            }
+
+            allNodes.AddRange(page.Items);
+            offset += page.Items.Count;
+
+            if (offset >= page.TotalCount)
+            {
+                break;
+            }
+        }
+
+        return allNodes
+            .DistinctBy(node => node.NodeId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)
+    {
+        region = string.Empty;
+        channel = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(channelKey))
+        {
+            return false;
+        }
+
+        var segments = channelKey.Split('/', 2, StringSplitOptions.TrimEntries);
+
+        if (segments.Length != 2)
+        {
+            return false;
+        }
+
+        region = segments[0];
+        channel = segments[1];
+        return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
+    private sealed class MapNodePoint
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("nodeId")]
+        public required string NodeId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("displayName")]
+        public required string DisplayName { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("channel")]
+        public string? Channel { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("latitude")]
+        public required double Latitude { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("longitude")]
+        public required double Longitude { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("batteryLevelPercent")]
+        public int? BatteryLevelPercent { get; set; }
+    }
+}

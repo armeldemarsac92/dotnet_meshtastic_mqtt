@@ -33,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<DapperContext>();
         services.AddScoped<IDbContext>(provider => provider.GetRequiredService<DapperContext>());
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<DapperContext>());
+        services.AddScoped<IDiscoveredTopicRepository, DiscoveredTopicRepository>();
         services.AddScoped<IFavoriteNodeRepository, FavoriteNodeRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<INodeRepository, NodeRepository>();

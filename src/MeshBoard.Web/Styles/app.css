@@ -290,6 +290,38 @@
         color: rgb(111 24 24);
     }
 
+    .meshboard-node-map {
+        background: linear-gradient(165deg, rgb(231 243 255 / 0.88), rgb(212 230 247 / 0.72));
+    }
+
+    .meshboard-node-map .leaflet-tile-pane {
+        filter: saturate(0.95) contrast(0.98);
+    }
+
+    .meshboard-node-map .leaflet-control-zoom a {
+        border-color: rgb(137 170 204 / 0.42);
+        background: linear-gradient(155deg, rgb(255 255 255 / 0.82), rgb(236 247 255 / 0.72));
+        color: rgb(25 52 85);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.72), 0 6px 14px rgb(34 79 126 / 0.12);
+    }
+
+    .meshboard-node-map .leaflet-control-zoom a:hover {
+        background: linear-gradient(155deg, rgb(255 255 255 / 0.92), rgb(226 241 255 / 0.8));
+        color: rgb(15 40 71);
+    }
+
+    .meshboard-node-map .leaflet-popup-content-wrapper {
+        border: 1px solid rgb(255 255 255 / 0.7);
+        border-radius: 1rem;
+        background: linear-gradient(155deg, rgb(255 255 255 / 0.9), rgb(241 249 255 / 0.78));
+        box-shadow: 0 14px 28px rgb(29 74 120 / 0.18);
+        backdrop-filter: blur(10px) saturate(126%);
+    }
+
+    .meshboard-node-map .leaflet-popup-tip {
+        background: rgb(247 252 255 / 0.92);
+    }
+
     .modal-overlay {
         overscroll-behavior: contain;
     }
@@ -340,5 +372,10 @@
         overflow-y: auto;
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
+    }
+
+    .fade-scroll-content-fill {
+        height: 100%;
+        max-height: none;
     }
 }

@@ -1,6 +1,6 @@
 @page "/topics"
 @inject IBrokerMonitorService BrokerMonitorService
-@inject IMessageService MessageService
+@inject ITopicDiscoveryService TopicDiscoveryService
 @inject ITopicExplorerService TopicExplorerService
 @inject ITopicProbeService TopicProbeService
 @inject ITopicPresetService TopicPresetService
@@ -259,12 +259,7 @@
         _topicPresets = await TopicPresetService.GetTopicPresets();
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
         _recommendedTopics = TopicExplorerService.GetRecommendedTopics();
-
-        var recentMessages = await MessageService.GetRecentMessages(500);
-        _discoveredTopics = TopicExplorerService.GetDiscoveredTopics(
-            recentMessages.Select(message => message.Topic)
-                .Concat(_brokerStatus.TopicFilters)
-                .Concat(_topicPresets.Select(preset => preset.TopicPattern)));
+        _discoveredTopics = await TopicDiscoveryService.GetDiscoveredTopics();
     }
 
     private bool MatchesExplorerSearch(TopicCatalogEntry entry)
