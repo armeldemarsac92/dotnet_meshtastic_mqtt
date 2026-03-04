@@ -322,29 +322,6 @@
         background: rgb(247 252 255 / 0.92);
     }
 
-    .meshboard-map-popup {
-        min-width: 11rem;
-        color: rgb(22 46 77 / 0.95);
-    }
-
-    .meshboard-map-popup-title {
-        font-weight: 700;
-        font-size: 0.9rem;
-        line-height: 1.25rem;
-    }
-
-    .meshboard-map-popup-meta {
-        margin-top: 0.2rem;
-        font-size: 0.75rem;
-        opacity: 0.8;
-    }
-
-    .meshboard-map-popup-hint {
-        margin-top: 0.5rem;
-        font-size: 0.72rem;
-        opacity: 0.74;
-    }
-
     .modal-overlay {
         overscroll-behavior: contain;
     }

@@ -8,15 +8,6 @@ const DEFAULT_ZOOM = 2;
 let leafletLoadPromise = null;
 const mapStates = new Map();
 
-function escapeHtml(value) {
-    return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll("\"", "&quot;")
-        .replaceAll("'", "&#39;");
-}
-
 function ensureLeafletCss() {
     if (document.getElementById(LEAFLET_CSS_ID)) {
         return;
@@ -118,21 +109,6 @@ function getOrCreateMapState(containerId) {
     return mapState;
 }
 
-function buildPopupContent(node) {
-    const name = escapeHtml(node.displayName ?? node.nodeId ?? "Unknown");
-    const nodeId = escapeHtml(node.nodeId ?? "");
-    const channel = escapeHtml(node.channel ?? "Unknown");
-
-    return `
-        <div class="meshboard-map-popup">
-            <p class="meshboard-map-popup-title">${name}</p>
-            <p class="meshboard-map-popup-meta">${nodeId}</p>
-            <p class="meshboard-map-popup-meta">Channel: ${channel}</p>
-            <p class="meshboard-map-popup-hint">Click marker to open details</p>
-        </div>
-    `;
-}
-
 export async function renderNodeMap(containerId, nodes, dotNetCallbackRef) {
     await ensureLeaflet();
 
@@ -162,9 +138,16 @@ export async function renderNodeMap(containerId, nodes, dotNetCallbackRef) {
             fillOpacity: 0.9
         });
 
-        marker.bindPopup(buildPopupContent(node), { autoPanPadding: [24, 24] });
-        marker.bindTooltip(node.displayName ?? node.nodeId ?? "Unknown", { direction: "top", offset: [0, -6] });
-        marker.on("click", () => dotNetCallbackRef.invokeMethodAsync("OnNodeSelectedFromMap", node.nodeId));
+        marker.bindTooltip(node.displayName ?? node.nodeId ?? "Unknown", {
+            direction: "top",
+            offset: [0, -6],
+            opacity: 0.9
+        });
+
+        marker.on("click", () => {
+            marker.closeTooltip();
+            dotNetCallbackRef.invokeMethodAsync("OnNodeSelectedFromMap", node.nodeId);
+        });
 
         marker.addTo(mapState.markerLayer);
         markerBounds.push([latitude, longitude]);

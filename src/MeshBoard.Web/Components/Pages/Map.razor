@@ -5,18 +5,18 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="space-y-6">
-    <header class="space-y-3">
+<div class="flex h-[calc(100dvh-3rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100dvh-4rem)] lg:h-[calc(100dvh-5rem)]">
+    <header class="space-y-2">
         <div>
             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Geospatial view</p>
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
         </div>
-        <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            Browse all observed nodes with coordinates. Click any marker to open the node details panel.
+        <p class="max-w-3xl text-sm leading-7 text-cinder-800 sm:text-base">
+            Browse all observed nodes with coordinates. Click a marker to open node details.
         </p>
     </header>
 
-    <section class="liquid-panel grid gap-4 rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_auto_1fr]">
+    <section class="liquid-panel grid shrink-0 gap-4 rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_auto_1fr]">
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search on map</span>
             <input @bind="_searchText"
@@ -35,21 +35,18 @@
             </button>
         </div>
 
-        <div class="self-end text-sm text-cinder-800/82">
-            Showing @_visibleMapNodes.Count of @_locatedNodeCount located nodes.
+        <div class="self-end space-y-1 text-sm text-cinder-800/82">
+            <p>Showing @_visibleMapNodes.Count of @_locatedNodeCount located nodes.</p>
+            @if (!string.IsNullOrWhiteSpace(_statusMessage))
+            {
+                <p class="text-xs text-cinder-800/72">@_statusMessage</p>
+            }
         </div>
     </section>
 
-    @if (!string.IsNullOrWhiteSpace(_statusMessage))
-    {
-        <section class="liquid-panel rounded-[1.4rem] px-5 py-3 text-sm text-cinder-800/82">
-            @_statusMessage
-        </section>
-    }
-
-    <section class="liquid-panel overflow-hidden rounded-[1.6rem] p-4">
+    <section class="liquid-panel min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
         <div id="@MapElementId"
-             class="meshboard-node-map h-[72vh] w-full rounded-[1.25rem] border border-sand-200/80"></div>
+             class="meshboard-node-map h-full w-full rounded-[1.25rem] border border-sand-200/80"></div>
     </section>
 </div>
 
