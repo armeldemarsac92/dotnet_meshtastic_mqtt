@@ -316,6 +316,7 @@ Current implementation status:
 - `/nodes` now links each row to node details and channel details pages, and displays device/environment telemetry in bubble-style badges.
 - The `/nodes` page now also supports in-place favorite toggle actions and a favorites-only view backed by the existing favorite-node service and repository flow.
 - `/nodes/details/{nodeId}` now provides a node details view with packet stats, channel link, map embedding when coordinates exist, telemetry cards, and a direct back link to `/nodes`.
+- `/map` now provides a geospatial node view (Leaflet + OpenStreetMap tiles) that loads nodes with coordinates, supports live search filtering, and opens the node details modal when a marker is clicked.
 - `/channels/{region}/{channel}` now provides channel-level stats (traffic volume, sender counts, decoded ratio, top nodes, recent messages), subscribe/unsubscribe, and a direct back link to `/channels`.
 - The `/favorites` page is now actionable: favorite nodes can be removed directly from the table while preserving service-layer transaction and exception behavior.
 - Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
