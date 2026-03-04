@@ -109,6 +109,11 @@ public sealed class SendCapabilityServiceTests
         {
             return Task.CompletedTask;
         }
+
+        public Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 #pragma warning restore CS0067
 }

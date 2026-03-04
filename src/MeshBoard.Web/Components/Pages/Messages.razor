@@ -1,6 +1,9 @@
 @page "/messages"
 @implements IAsyncDisposable
+@inject IBrokerMonitorService BrokerMonitorService
 @inject IMessageService MessageService
+@inject ITopicExplorerService TopicExplorerService
+@inject ITopicPresetService TopicPresetService
 
 <PageTitle>Messages</PageTitle>
 
@@ -11,10 +14,34 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Message stream</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            This page refreshes every 3 seconds from persisted message history. The feed now stores packet types and
-            deduplicates repeated broker packets so decoded traffic is easier to inspect.
+            Filter persisted traffic and toggle live channel subscriptions directly from this dashboard.
         </p>
     </header>
+
+    <section class="rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Listening channels</span>
+            @if (ChannelEntries.Count == 0)
+            {
+                <span class="text-xs text-cinder-800/78">No channel candidates found yet. Open <a href="/topics" class="underline underline-offset-4">Topics</a> to browse recommendations.</span>
+            }
+            else
+            {
+                @foreach (var channelEntry in ChannelEntries)
+                {
+                    <button type="button"
+                            class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsActiveSubscription(channelEntry.TopicPattern) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200")"
+                            @onclick="() => ToggleSubscriptionAsync(channelEntry.TopicPattern)">
+                        @channelEntry.Label
+                    </button>
+                }
+            }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_subscriptionStatusMessage))
+        {
+            <p class="mt-3 text-sm text-cinder-800/80">@_subscriptionStatusMessage</p>
+        }
+    </section>
 
     <section class="grid gap-4 rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
         <label class="space-y-2">
@@ -91,9 +118,27 @@
 
 @code {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private BrokerStatus _brokerStatus = new();
+    private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
     private readonly MessageFilters _filters = new();
     private IReadOnlyCollection<MessageSummary> _messages = [];
+    private IReadOnlyCollection<TopicPreset> _topicPresets = [];
     private Task? _refreshTask;
+    private string? _subscriptionStatusMessage;
+    private IReadOnlyCollection<TopicCatalogEntry> ChannelEntries => _topicPresets
+        .Select(preset => TopicExplorerService.GetDiscoveredTopics([preset.TopicPattern]).FirstOrDefault())
+        .Where(entry => entry is not null)
+        .Select(entry => entry!)
+        .Concat(_discoveredTopics)
+        .Concat(_brokerStatus.TopicFilters
+            .Select(topicFilter => TopicExplorerService.GetDiscoveredTopics([topicFilter]).FirstOrDefault())
+            .Where(entry => entry is not null)
+            .Select(entry => entry!))
+        .GroupBy(entry => entry.TopicPattern, StringComparer.Ordinal)
+        .Select(group => group.First())
+        .OrderBy(entry => entry.Region, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(entry => entry.Channel, StringComparer.OrdinalIgnoreCase)
+        .ToList();
     private IReadOnlyCollection<MessageSummary> FilteredMessages => _messages
         .Where(ApplyVisibilityFilter)
         .Where(ApplyPacketTypeFilter)
@@ -130,9 +175,25 @@
         _cancellationTokenSource.Dispose();
     }
 
+    private bool IsActiveSubscription(string topicPattern)
+    {
+        return _brokerStatus.TopicFilters.Contains(topicPattern, StringComparer.Ordinal);
+    }
+
     private async Task LoadAsync()
     {
-        _messages = await MessageService.GetRecentMessages();
+        var messagesTask = MessageService.GetRecentMessages();
+        var topicPresetsTask = TopicPresetService.GetTopicPresets();
+
+        await Task.WhenAll(messagesTask, topicPresetsTask);
+
+        _messages = await messagesTask;
+        _topicPresets = await topicPresetsTask;
+        _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+        _discoveredTopics = TopicExplorerService.GetDiscoveredTopics(
+            _messages.Select(message => message.Topic)
+                .Concat(_brokerStatus.TopicFilters)
+                .Concat(_topicPresets.Select(preset => preset.TopicPattern)));
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -191,6 +252,29 @@
     private static bool IsDecodedMessage(MessageSummary message)
     {
         return message.PacketType is not ("Encrypted Packet" or "Unknown Packet" or "Legacy Packet");
+    }
+
+    private async Task ToggleSubscriptionAsync(string topicPattern)
+    {
+        try
+        {
+            if (IsActiveSubscription(topicPattern))
+            {
+                await BrokerMonitorService.UnsubscribeFromTopic(topicPattern);
+                _subscriptionStatusMessage = $"Unsubscribed from {topicPattern}.";
+            }
+            else
+            {
+                await BrokerMonitorService.SubscribeToTopic(topicPattern);
+                _subscriptionStatusMessage = $"Subscribed to {topicPattern}.";
+            }
+        }
+        catch (Exception exception)
+        {
+            _subscriptionStatusMessage = exception.Message;
+        }
+
+        await LoadAsync();
     }
 
     private sealed class MessageFilters

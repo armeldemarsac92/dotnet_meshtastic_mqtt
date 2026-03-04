@@ -14,6 +14,8 @@ public interface IBrokerMonitorService
     BrokerStatus GetBrokerStatus();
 
     Task SubscribeToTopic(string topicFilter, CancellationToken cancellationToken = default);
+
+    Task UnsubscribeFromTopic(string topicFilter, CancellationToken cancellationToken = default);
 }
 
 public sealed class BrokerMonitorService : IBrokerMonitorService
@@ -67,5 +69,17 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
 
         await EnsureConnected(cancellationToken);
         await _mqttSession.SubscribeAsync(topicFilter.Trim(), cancellationToken);
+    }
+
+    public async Task UnsubscribeFromTopic(string topicFilter, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(topicFilter))
+        {
+            throw new BadRequestException("A topic filter is required.");
+        }
+
+        _logger.LogInformation("Attempting to unsubscribe from topic filter: {TopicFilter}", topicFilter);
+
+        await _mqttSession.UnsubscribeAsync(topicFilter.Trim(), cancellationToken);
     }
 }

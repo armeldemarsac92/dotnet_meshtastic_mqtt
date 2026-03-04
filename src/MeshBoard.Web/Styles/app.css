@@ -1,19 +1,30 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap");
 @import "tailwindcss" source("../");
 
 @theme {
-    --font-sans: "Trebuchet MS", "Gill Sans", "Segoe UI Variable", sans-serif;
-    --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+    --font-sans: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+    --font-display: "Space Grotesk", "Manrope", "Avenir Next", sans-serif;
 
-    --color-sand-50: oklch(0.98 0.014 74.24);
-    --color-sand-100: oklch(0.95 0.018 74.11);
-    --color-sand-200: oklch(0.9 0.02 71.02);
-    --color-sand-300: oklch(0.84 0.03 68.67);
-    --color-cinder-800: oklch(0.32 0.025 52.57);
-    --color-cinder-900: oklch(0.23 0.023 49.62);
-    --color-cinder-950: oklch(0.18 0.018 46.64);
-    --color-signal-400: oklch(0.74 0.15 53.79);
-    --color-signal-500: oklch(0.67 0.17 50.61);
-    --color-signal-600: oklch(0.58 0.16 45.2);
+    --color-sand-50: oklch(0.985 0.01 246.72);
+    --color-sand-100: oklch(0.956 0.015 247.11);
+    --color-sand-200: oklch(0.906 0.021 247.44);
+    --color-sand-300: oklch(0.851 0.031 246.19);
+    --color-cinder-800: oklch(0.37 0.04 254.28);
+    --color-cinder-900: oklch(0.27 0.036 255.61);
+    --color-cinder-950: oklch(0.2 0.03 258.14);
+    --color-signal-400: oklch(0.78 0.126 214.97);
+    --color-signal-500: oklch(0.69 0.145 218.1);
+    --color-signal-600: oklch(0.58 0.133 221.73);
 
-    --shadow-panel: 0 24px 60px rgb(67 44 24 / 0.12);
+    --shadow-panel: 0 24px 60px rgb(15 36 72 / 0.14);
+}
+
+@layer base {
+    button:disabled {
+        cursor: not-allowed;
+    }
+
+    button:not(:disabled) {
+        cursor: pointer;
+    }
 }

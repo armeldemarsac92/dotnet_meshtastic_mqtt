@@ -127,7 +127,8 @@ internal sealed class MqttSession : IMqttSession
             throw new InvalidOperationException("A topic filter is required.");
         }
 
-        _topicFilters.TryAdd(topicFilter, 0);
+        var normalizedTopicFilter = topicFilter.Trim();
+        _topicFilters.TryAdd(normalizedTopicFilter, 0);
 
         if (!_mqttClient.IsConnected)
         {
@@ -139,7 +140,33 @@ internal sealed class MqttSession : IMqttSession
             throw new InvalidOperationException("The MQTT client is not connected.");
         }
 
-        await SubscribeCoreAsync(topicFilter, cancellationToken);
+        await SubscribeCoreAsync(normalizedTopicFilter, cancellationToken);
+    }
+
+    public async Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(topicFilter))
+        {
+            throw new InvalidOperationException("A topic filter is required.");
+        }
+
+        var normalizedTopicFilter = topicFilter.Trim();
+        _topicFilters.TryRemove(normalizedTopicFilter, out _);
+
+        if (!_mqttClient.IsConnected)
+        {
+            _lastStatusMessage = $"Removed topic filter {normalizedTopicFilter}.";
+            return;
+        }
+
+        _logger.LogInformation("Attempting to unsubscribe from MQTT topic filter: {TopicFilter}", normalizedTopicFilter);
+
+        var options = new MqttClientUnsubscribeOptionsBuilder()
+            .WithTopicFilter(normalizedTopicFilter)
+            .Build();
+
+        await _mqttClient.UnsubscribeAsync(options, cancellationToken);
+        _lastStatusMessage = $"Unsubscribed from {normalizedTopicFilter}.";
     }
 
     public async Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)

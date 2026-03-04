@@ -1,5 +1,7 @@
 @page "/topics"
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IMessageService MessageService
+@inject ITopicExplorerService TopicExplorerService
 @inject ITopicPresetService TopicPresetService
 
 <PageTitle>Topics</PageTitle>
@@ -8,50 +10,72 @@
     <header class="space-y-3">
         <div>
             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Subscriptions</p>
-            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Topic presets</h1>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Topic explorer</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            Saved topic presets are persisted in SQLite, while active topic filters come from the live MQTT session.
+            Browse recommended and discovered channels, save useful patterns as presets, and toggle subscriptions
+            without leaving the app.
         </p>
     </header>
 
-    <section class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+    <section class="grid gap-4 rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur lg:grid-cols-[1.4fr_1fr]">
+        <label class="space-y-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search topics</span>
+            <input @bind="_explorerSearchText"
+                   @bind:event="oninput"
+                   class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                   placeholder="Region, channel, or topic pattern" />
+        </label>
+        <p class="self-end text-xs leading-6 text-cinder-800/78">
+            Click <strong class="text-cinder-950">Save preset</strong> to persist a topic pattern, and
+            <strong class="text-cinder-950">Subscribe</strong> to start listening immediately.
+        </p>
+    </section>
+
+    <section class="grid gap-4 xl:grid-cols-2">
         <article class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
             <div class="border-b border-sand-100/80 px-5 py-4">
-                <h2 class="font-display text-3xl text-cinder-950">Saved presets</h2>
+                <h2 class="font-display text-3xl text-cinder-950">Explorer</h2>
             </div>
-            @if (_topicPresets.Count == 0)
+            @if (FilteredExplorerEntries.Count == 0)
             {
                 <div class="p-6 text-cinder-800/78">
-                    No topic presets have been saved yet.
+                    No topics match this search.
                 </div>
             }
             else
             {
-                <table class="min-w-full border-collapse">
-                    <thead class="bg-sand-50/80">
-                        <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
-                            <th class="px-5 py-4">Name</th>
-                            <th class="px-5 py-4">Topic pattern</th>
-                            <th class="px-5 py-4">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var topicPreset in _topicPresets)
-                        {
-                            <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
-                                <td class="px-5 py-4 font-medium">@topicPreset.Name</td>
-                                <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@topicPreset.TopicPattern</code></td>
-                                <td class="px-5 py-4">
-                                    <button class="rounded-full bg-cinder-950 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800"
-                                            @onclick="() => SubscribeAsync(topicPreset.TopicPattern)">
-                                        Subscribe
-                                    </button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <div class="grid gap-3 p-5">
+                    @foreach (var entry in FilteredExplorerEntries)
+                    {
+                        <article class="rounded-2xl border border-sand-200/80 bg-white/70 p-4">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <strong class="text-sm text-cinder-950">@entry.Label</strong>
+                                @if (entry.IsRecommended)
+                                {
+                                    <span class="rounded-full bg-signal-500/12 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-signal-600">Recommended</span>
+                                }
+                                else
+                                {
+                                    <span class="rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900">Discovered</span>
+                                }
+                            </div>
+                            <code class="mt-3 block rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@entry.TopicPattern</code>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <button type="button"
+                                        class="cursor-pointer rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-950 transition hover:bg-sand-100"
+                                        @onclick="() => SavePresetAsync(entry.TopicPattern, TopicExplorerService.CreatePresetName(entry))">
+                                    Save preset
+                                </button>
+                                <button type="button"
+                                        class="cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition @(IsActiveSubscription(entry.TopicPattern) ? "bg-cinder-900 hover:bg-cinder-800" : "bg-signal-500 hover:bg-signal-600")"
+                                        @onclick="() => ToggleSubscriptionAsync(entry.TopicPattern)">
+                                    @(IsActiveSubscription(entry.TopicPattern) ? "Unsubscribe" : "Subscribe")
+                                </button>
+                            </div>
+                        </article>
+                    }
+                </div>
             }
         </article>
 
@@ -69,16 +93,27 @@
                 }
             </dl>
 
-            <EditForm Model="_subscriptionRequest" OnValidSubmit="SubscribeAsync">
+            <EditForm Model="_topicRequest" OnValidSubmit="SubscribeAsync">
                 <div class="mt-6 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Custom topic filter</label>
-                    <InputText @bind-Value="_subscriptionRequest.TopicFilter"
+                    <InputText @bind-Value="_topicRequest.TopicFilter"
                                class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
-                               placeholder="msh/US/2/e/#" />
-                    <button type="submit"
-                            class="rounded-full bg-signal-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600">
-                        Subscribe
-                    </button>
+                               placeholder="msh/US/2/e/LongFast/#" />
+                    <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Preset name</label>
+                    <InputText @bind-Value="_topicRequest.Name"
+                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
+                               placeholder="US LongFast" />
+                    <div class="flex flex-wrap gap-2">
+                        <button type="submit"
+                                class="cursor-pointer rounded-full bg-signal-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600">
+                            Subscribe
+                        </button>
+                        <button type="button"
+                                class="cursor-pointer rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-950 transition hover:bg-sand-100"
+                                @onclick="SaveCustomPresetAsync">
+                            Save preset
+                        </button>
+                    </div>
                 </div>
             </EditForm>
 
@@ -98,8 +133,13 @@
                     <ul class="mt-3 space-y-3 text-cinder-800/85">
                         @foreach (var topicFilter in _brokerStatus.TopicFilters)
                         {
-                            <li>
+                            <li class="flex flex-wrap items-center gap-2">
                                 <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@topicFilter</code>
+                                <button type="button"
+                                        class="cursor-pointer rounded-full bg-cinder-900 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800"
+                                        @onclick="() => UnsubscribeAsync(topicFilter)">
+                                    Unsubscribe
+                                </button>
                             </li>
                         }
                     </ul>
@@ -107,37 +147,127 @@
             </div>
         </article>
     </section>
+
+    <section class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+        <div class="border-b border-sand-100/80 px-5 py-4">
+            <h2 class="font-display text-3xl text-cinder-950">Saved presets</h2>
+        </div>
+        @if (_topicPresets.Count == 0)
+        {
+            <div class="p-6 text-cinder-800/78">
+                No topic presets have been saved yet.
+            </div>
+        }
+        else
+        {
+            <table class="min-w-full border-collapse">
+                <thead class="bg-sand-50/80">
+                    <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                        <th class="px-5 py-4">Name</th>
+                        <th class="px-5 py-4">Topic pattern</th>
+                        <th class="px-5 py-4">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var topicPreset in _topicPresets)
+                    {
+                        <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                            <td class="px-5 py-4 font-medium">@topicPreset.Name</td>
+                            <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@topicPreset.TopicPattern</code></td>
+                            <td class="px-5 py-4">
+                                <button type="button"
+                                        class="cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition @(IsActiveSubscription(topicPreset.TopicPattern) ? "bg-cinder-900 hover:bg-cinder-800" : "bg-signal-500 hover:bg-signal-600")"
+                                        @onclick="() => ToggleSubscriptionAsync(topicPreset.TopicPattern)">
+                                    @(IsActiveSubscription(topicPreset.TopicPattern) ? "Unsubscribe" : "Subscribe")
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
 </div>
 
 @code {
     private BrokerStatus _brokerStatus = new();
+    private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
+    private string _explorerSearchText = string.Empty;
+    private IReadOnlyCollection<TopicCatalogEntry> _recommendedTopics = [];
     private string? _statusMessage;
-    private SubscribeTopicRequest _subscriptionRequest = new();
+    private TopicRequest _topicRequest = new();
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
+
+    private IReadOnlyCollection<TopicCatalogEntry> FilteredExplorerEntries => _recommendedTopics
+        .Concat(_discoveredTopics)
+        .GroupBy(entry => entry.TopicPattern, StringComparer.Ordinal)
+        .Select(group => group.OrderByDescending(entry => entry.IsRecommended).First())
+        .Where(MatchesExplorerSearch)
+        .OrderBy(entry => entry.Region, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(entry => entry.Channel, StringComparer.OrdinalIgnoreCase)
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
     }
 
+    private bool IsActiveSubscription(string topicFilter)
+    {
+        return _brokerStatus.TopicFilters.Contains(topicFilter, StringComparer.Ordinal);
+    }
+
     private async Task LoadAsync()
     {
         _topicPresets = await TopicPresetService.GetTopicPresets();
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+        _recommendedTopics = TopicExplorerService.GetRecommendedTopics();
+
+        var recentMessages = await MessageService.GetRecentMessages(500);
+        _discoveredTopics = TopicExplorerService.GetDiscoveredTopics(
+            recentMessages.Select(message => message.Topic)
+                .Concat(_brokerStatus.TopicFilters)
+                .Concat(_topicPresets.Select(preset => preset.TopicPattern)));
     }
 
-    private Task SubscribeAsync(string topicFilter)
+    private bool MatchesExplorerSearch(TopicCatalogEntry entry)
     {
-        _subscriptionRequest.TopicFilter = topicFilter;
-        return SubscribeAsync();
+        if (string.IsNullOrWhiteSpace(_explorerSearchText))
+        {
+            return true;
+        }
+
+        return entry.Label.Contains(_explorerSearchText, StringComparison.OrdinalIgnoreCase) ||
+            entry.TopicPattern.Contains(_explorerSearchText, StringComparison.OrdinalIgnoreCase) ||
+            entry.Region.Contains(_explorerSearchText, StringComparison.OrdinalIgnoreCase) ||
+            entry.Channel.Contains(_explorerSearchText, StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task SubscribeAsync()
+    private async Task SaveCustomPresetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_topicRequest.TopicFilter))
+        {
+            _statusMessage = "A topic filter is required.";
+            return;
+        }
+
+        var defaultName = _topicRequest.TopicFilter.Trim();
+        await SavePresetAsync(_topicRequest.TopicFilter.Trim(), string.IsNullOrWhiteSpace(_topicRequest.Name) ? defaultName : _topicRequest.Name.Trim());
+    }
+
+    private async Task SavePresetAsync(string topicPattern, string name)
     {
         try
         {
-            await BrokerMonitorService.SubscribeToTopic(_subscriptionRequest.TopicFilter);
-            _statusMessage = $"Subscribed to {_subscriptionRequest.TopicFilter}.";
+            var topicPreset = await TopicPresetService.SaveTopicPreset(
+                new SaveTopicPresetRequest
+                {
+                    Name = name,
+                    TopicPattern = topicPattern,
+                    IsDefault = false
+                });
+
+            _statusMessage = $"Saved preset '{topicPreset.Name}'.";
         }
         catch (Exception exception)
         {
@@ -147,8 +277,61 @@
         await LoadAsync();
     }
 
-    private sealed class SubscribeTopicRequest
+    private async Task SubscribeAsync()
     {
+        try
+        {
+            await BrokerMonitorService.SubscribeToTopic(_topicRequest.TopicFilter);
+            _statusMessage = $"Subscribed to {_topicRequest.TopicFilter}.";
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task ToggleSubscriptionAsync(string topicFilter)
+    {
+        if (IsActiveSubscription(topicFilter))
+        {
+            await UnsubscribeAsync(topicFilter);
+            return;
+        }
+
+        try
+        {
+            await BrokerMonitorService.SubscribeToTopic(topicFilter);
+            _statusMessage = $"Subscribed to {topicFilter}.";
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task UnsubscribeAsync(string topicFilter)
+    {
+        try
+        {
+            await BrokerMonitorService.UnsubscribeFromTopic(topicFilter);
+            _statusMessage = $"Unsubscribed from {topicFilter}.";
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class TopicRequest
+    {
+        public string Name { get; set; } = string.Empty;
+
         public string TopicFilter { get; set; } = string.Empty;
     }
 }

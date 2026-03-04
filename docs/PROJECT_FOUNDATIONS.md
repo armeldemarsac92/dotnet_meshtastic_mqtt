@@ -64,6 +64,7 @@ Rules:
 - Prefer utility classes directly in Razor markup over hand-written component CSS.
 - Keep custom CSS limited to Tailwind input, theme tokens, and rare framework-level exceptions.
 - Use Tailwind's CSS-first configuration style, not legacy heavy config-first setup.
+- The active theme now uses a cooler modern palette and external web fonts (`Manrope` + `Space Grotesk`) through the Tailwind input file.
 - The Tailwind input file lives at `src/MeshBoard.Web/Styles/app.css`.
 - The compiled stylesheet is written to `src/MeshBoard.Web/wwwroot/app.css`.
 - The root `package.json` owns the Tailwind scripts.
@@ -290,6 +291,7 @@ Current implementation status:
 - The Meshtastic MQTT hosted service now delays connect and subscribe until `ApplicationStarted`, which avoids racing persistence initialization during host startup.
 - Live verification against the public broker has already produced decoded node identities such as `Meshtastic Salz (Salz)` and `Russell WSGP797 (Ru97)` in SQLite.
 - The `/messages` page now supports practical client-side filtering by visibility, packet type, and free-text search over recent persisted traffic.
+- The `/messages` page now also exposes one-click channel subscription toggles so users can subscribe or unsubscribe to multiple channel patterns directly from the traffic dashboard.
 - Compose now uses a dedicated send-capability service instead of a static placeholder. It reports live blocker reasons from broker config and MQTT session state.
 - `Broker:DownlinkTopic` is now part of runtime configuration for future send workflows and is validated by the capability service.
 - A guarded compose publisher service is now implemented for Meshtastic `sendtext` JSON downlink messages (public and private).
@@ -304,6 +306,7 @@ Current implementation status:
 - Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
 - Integration tests now cover duplicate packet ingestion rollback semantics end-to-end against SQLite/Dapper to ensure duplicate packets do not mutate node state.
 - Message retention is now exposed through an application-level retention service and a manual prune action on `/settings`.
+- Topic management now includes unsubscribe support in the MQTT abstraction/service layer, an explorer view with recommended and discovered channels, and preset-save actions from both discovered channels and custom topic filters.
 
 ## Initial Functional Slices
 

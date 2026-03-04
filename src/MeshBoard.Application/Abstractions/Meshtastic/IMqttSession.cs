@@ -21,4 +21,6 @@ public interface IMqttSession
     Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default);
 
     Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default);
+
+    Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default);
 }
