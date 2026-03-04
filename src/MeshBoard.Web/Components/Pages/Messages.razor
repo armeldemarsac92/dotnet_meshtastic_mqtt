@@ -120,7 +120,7 @@
                             </td>
                             <td class="px-5 py-4 font-medium">
                                 <button type="button"
-                                        class="cursor-pointer underline-offset-4 hover:underline"
+                                        class="cursor-pointer text-cinder-950 underline-offset-4 hover:underline"
                                         @onclick="() => OpenNodeDetails(message.FromNodeId)">
                                     @GetSenderDisplayName(message)
                                 </button>
@@ -414,7 +414,17 @@
             return message.FromNodeLongName;
         }
 
-        return message.FromNodeId;
+        if (!string.IsNullOrWhiteSpace(message.FromNodeId))
+        {
+            return message.FromNodeId;
+        }
+
+        if (TryExtractTopicNodeId(message.Topic, out var topicNodeId))
+        {
+            return topicNodeId;
+        }
+
+        return "Unknown";
     }
 
     private static string GetTruncatedPreview(string payloadPreview)
@@ -507,6 +517,31 @@
         channel = segments[1];
 
         return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
+    private static bool TryExtractTopicNodeId(string topic, out string nodeId)
+    {
+        nodeId = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return false;
+        }
+
+        var segments = topic.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            return false;
+        }
+
+        var last = segments[^1];
+        if (!string.IsNullOrWhiteSpace(last) && last.StartsWith('!'))
+        {
+            nodeId = last;
+            return true;
+        }
+
+        return false;
     }
 
     private sealed class MessageFilters
