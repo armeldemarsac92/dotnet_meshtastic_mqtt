@@ -83,7 +83,15 @@
         }
         else
         {
-            <table class="min-w-full border-collapse">
+            <table class="min-w-full table-fixed border-collapse">
+                <colgroup>
+                    <col class="w-[16%]" />
+                    <col class="w-[14%]" />
+                    <col class="w-[14%]" />
+                    <col class="w-[14%]" />
+                    <col class="w-[10%]" />
+                    <col class="w-[32%]" />
+                </colgroup>
                 <thead class="bg-sand-50/80">
                     <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <th class="px-5 py-4">Received</th>
@@ -98,11 +106,11 @@
                     @foreach (var message in FilteredMessages)
                     {
                         <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
-                            <td class="px-5 py-4">@message.ReceivedAtUtc.ToString("u")</td>
-                            <td class="px-5 py-4">
+                            <td class="px-5 py-4 align-top whitespace-nowrap">@message.ReceivedAtUtc.ToString("u")</td>
+                            <td class="px-5 py-4 align-top">
                                 <span class="@GetPacketTypeBadgeClass(message.PacketType)">@message.PacketType</span>
                             </td>
-                            <td class="px-5 py-4">
+                            <td class="px-5 py-4 align-top">
                                 @if (TryGetChannelLabel(message.Topic, out var channelLabel, out var region, out var channel))
                                 {
                                     <button type="button"
@@ -118,17 +126,17 @@
                                     </span>
                                 }
                             </td>
-                            <td class="px-5 py-4 font-medium">
+                            <td class="px-5 py-4 align-top font-medium">
                                 <button type="button"
                                         class="cursor-pointer text-cinder-950 underline-offset-4 hover:underline"
                                         @onclick="() => OpenNodeDetails(message.FromNodeId)">
                                     @GetSenderDisplayName(message)
                                 </button>
                             </td>
-                            <td class="px-5 py-4 text-cinder-800/80">@(message.ToNodeId ?? "Broadcast")</td>
-                            <td class="px-5 py-4">
+                            <td class="px-5 py-4 align-top text-cinder-800/80">@(message.ToNodeId ?? "Broadcast")</td>
+                            <td class="px-5 py-4 align-top">
                                 <div class="space-y-2">
-                                    <p>@GetTruncatedPreview(message.PayloadPreview)</p>
+                                    <p class="break-words leading-6">@GetTruncatedPreview(message.PayloadPreview)</p>
                                     <button type="button"
                                             class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
                                             @onclick="() => OpenMessagePreview(message)">

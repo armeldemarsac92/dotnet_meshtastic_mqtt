@@ -15,7 +15,7 @@
                 <button type="button"
                         class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
                         @onclick="CloseAsync">
-                    Back to nodes
+                    Close
                 </button>
             </header>
 
@@ -112,13 +112,15 @@
                                 }
                             </article>
 
-                            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+                            <article class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
                                 <h3 class="font-display text-3xl text-cinder-950">Map</h3>
                                 @if (TryBuildMapEmbedUrl(_node, out var mapEmbedUrl))
                                 {
-                                    <iframe title="Node position map"
-                                            class="mt-4 h-72 w-full rounded-2xl border border-sand-200"
-                                            src="@mapEmbedUrl"></iframe>
+                                    <div class="mt-4 overflow-hidden rounded-2xl border border-sand-200">
+                                        <iframe title="Node position map"
+                                                class="block h-[26rem] w-full"
+                                                src="@mapEmbedUrl"></iframe>
+                                    </div>
                                 }
                                 else
                                 {
