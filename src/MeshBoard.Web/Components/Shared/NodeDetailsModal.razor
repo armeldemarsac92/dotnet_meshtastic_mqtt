@@ -60,7 +60,7 @@
                                 <strong class="mt-2 block text-3xl text-cinder-950">@_publishedMessageCount</strong>
                             </article>
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
-                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Participated messages</p>
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Displayed messages</p>
                                 <strong class="mt-2 block text-3xl text-cinder-950">@_relatedMessages.Count</strong>
                             </article>
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
@@ -87,11 +87,11 @@
                         <section class="grid min-h-[24rem] flex-1 gap-4 xl:grid-cols-2">
                             <article class="liquid-panel flex h-full flex-col overflow-hidden rounded-[1.6rem]">
                                 <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
-                                    <h3 class="font-display text-3xl text-cinder-950">Recent messages</h3>
+                                    <h3 class="font-display text-3xl text-cinder-950">Recent published messages</h3>
                                 </div>
                                 @if (_relatedMessages.Count == 0)
                                 {
-                                    <div class="flex flex-1 items-center p-6 text-cinder-800/78">No recent packets involve this node.</div>
+                                    <div class="flex flex-1 items-center p-6 text-cinder-800/78">No recent packets published by this node.</div>
                                 }
                                 else
                                 {
@@ -191,17 +191,12 @@
                 return;
             }
 
-            var messages = await MessageService.GetRecentMessages(5_000);
+            var messages = await MessageService.GetRecentMessagesBySender(_node.NodeId, 1_000);
             _relatedMessages = messages
-                .Where(
-                    message =>
-                        string.Equals(message.FromNodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(message.ToNodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(message => message.ReceivedAtUtc)
                 .ToList();
 
-            _publishedMessageCount = _relatedMessages.Count(
-                message => string.Equals(message.FromNodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase));
+            _publishedMessageCount = _relatedMessages.Count;
         }
         catch (Exception exception)
         {
