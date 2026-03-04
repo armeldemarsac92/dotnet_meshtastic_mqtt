@@ -83,7 +83,7 @@
                                     Save preset
                                 </button>
                                 <button type="button"
-                                        class="cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition @(IsActiveSubscription(entry.TopicPattern) ? "bg-cinder-900 hover:bg-cinder-800" : "bg-signal-500 hover:bg-signal-600")"
+                                        class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(IsActiveSubscription(entry.TopicPattern) ? "liquid-button-active" : "liquid-button-accent")"
                                         @onclick="() => ToggleSubscriptionAsync(entry.TopicPattern)">
                                     @(IsActiveSubscription(entry.TopicPattern) ? "Unsubscribe" : "Subscribe")
                                 </button>
@@ -124,7 +124,7 @@
                                placeholder="Base64 or hex key" />
                     <div class="flex flex-wrap gap-2">
                         <button type="submit"
-                                class="cursor-pointer rounded-full bg-signal-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600">
+                                class="liquid-button liquid-button-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]">
                             Subscribe
                         </button>
                         <button type="button"
@@ -203,7 +203,7 @@
                                     </button>
                                 }
                                 <button type="button"
-                                        class="cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition @(IsActiveSubscription(topicPreset.TopicPattern) ? "bg-cinder-900 hover:bg-cinder-800" : "bg-signal-500 hover:bg-signal-600")"
+                                        class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(IsActiveSubscription(topicPreset.TopicPattern) ? "liquid-button-active" : "liquid-button-accent")"
                                         @onclick="() => ToggleSubscriptionAsync(topicPreset.TopicPattern)">
                                     @(IsActiveSubscription(topicPreset.TopicPattern) ? "Unsubscribe" : "Subscribe")
                                 </button>
