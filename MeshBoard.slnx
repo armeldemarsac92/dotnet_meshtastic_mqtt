@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MeshBoard.Application/MeshBoard.Application.csproj" />
+    <Project Path="src/MeshBoard.Contracts/MeshBoard.Contracts.csproj" />
+    <Project Path="src/MeshBoard.Infrastructure.Meshtastic/MeshBoard.Infrastructure.Meshtastic.csproj" />
+    <Project Path="src/MeshBoard.Infrastructure.Persistence/MeshBoard.Infrastructure.Persistence.csproj" />
+    <Project Path="src/MeshBoard.Web/MeshBoard.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MeshBoard.IntegrationTests/MeshBoard.IntegrationTests.csproj" />
+    <Project Path="tests/MeshBoard.UnitTests/MeshBoard.UnitTests.csproj" />
+  </Folder>
+</Solution>

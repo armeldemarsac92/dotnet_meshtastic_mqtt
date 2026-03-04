@@ -1,0 +1,12 @@
+{
+  "name": "meshboard",
+  "private": true,
+  "scripts": {
+    "tailwind:build": "tailwindcss -i ./src/MeshBoard.Web/Styles/app.css -o ./src/MeshBoard.Web/wwwroot/app.css --minify",
+    "tailwind:watch": "tailwindcss -i ./src/MeshBoard.Web/Styles/app.css -o ./src/MeshBoard.Web/wwwroot/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.13",
+    "tailwindcss": "^4.1.13"
+  }
+}

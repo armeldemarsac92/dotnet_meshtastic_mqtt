@@ -1,0 +1,154 @@
+@page "/topics"
+@inject IBrokerMonitorService BrokerMonitorService
+@inject ITopicPresetService TopicPresetService
+
+<PageTitle>Topics</PageTitle>
+
+<div class="space-y-6">
+    <header class="space-y-3">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Subscriptions</p>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Topic presets</h1>
+        </div>
+        <p class="max-w-3xl text-base leading-8 text-cinder-800">
+            Saved topic presets are persisted in SQLite, while active topic filters come from the live MQTT session.
+        </p>
+    </header>
+
+    <section class="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <article class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+            <div class="border-b border-sand-100/80 px-5 py-4">
+                <h2 class="font-display text-3xl text-cinder-950">Saved presets</h2>
+            </div>
+            @if (_topicPresets.Count == 0)
+            {
+                <div class="p-6 text-cinder-800/78">
+                    No topic presets have been saved yet.
+                </div>
+            }
+            else
+            {
+                <table class="min-w-full border-collapse">
+                    <thead class="bg-sand-50/80">
+                        <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                            <th class="px-5 py-4">Name</th>
+                            <th class="px-5 py-4">Topic pattern</th>
+                            <th class="px-5 py-4">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var topicPreset in _topicPresets)
+                        {
+                            <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                                <td class="px-5 py-4 font-medium">@topicPreset.Name</td>
+                                <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@topicPreset.TopicPattern</code></td>
+                                <td class="px-5 py-4">
+                                    <button class="rounded-full bg-cinder-950 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800"
+                                            @onclick="() => SubscribeAsync(topicPreset.TopicPattern)">
+                                        Subscribe
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </article>
+
+        <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+            <h2 class="font-display text-3xl text-cinder-950">Live broker status</h2>
+            <dl class="mt-5 grid gap-3 sm:grid-cols-[9rem_1fr]">
+                <dt class="text-cinder-800/70">Connection</dt>
+                <dd class="font-medium text-cinder-950">@(_brokerStatus.IsConnected ? "Connected" : "Disconnected")</dd>
+                <dt class="text-cinder-800/70">Endpoint</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.Host:@_brokerStatus.Port</dd>
+                @if (!string.IsNullOrWhiteSpace(_brokerStatus.LastStatusMessage))
+                {
+                    <dt class="text-cinder-800/70">Status</dt>
+                    <dd class="text-sm text-cinder-900">@_brokerStatus.LastStatusMessage</dd>
+                }
+            </dl>
+
+            <EditForm Model="_subscriptionRequest" OnValidSubmit="SubscribeAsync">
+                <div class="mt-6 space-y-3">
+                    <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Custom topic filter</label>
+                    <InputText @bind-Value="_subscriptionRequest.TopicFilter"
+                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
+                               placeholder="msh/US/2/e/#" />
+                    <button type="submit"
+                            class="rounded-full bg-signal-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600">
+                        Subscribe
+                    </button>
+                </div>
+            </EditForm>
+
+            @if (!string.IsNullOrWhiteSpace(_statusMessage))
+            {
+                <p class="mt-4 text-sm text-cinder-800/80">@_statusMessage</p>
+            }
+
+            <div class="mt-6">
+                <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Active filters</h3>
+                @if (_brokerStatus.TopicFilters.Count == 0)
+                {
+                    <p class="mt-3 text-cinder-800/78">No active subscriptions yet.</p>
+                }
+                else
+                {
+                    <ul class="mt-3 space-y-3 text-cinder-800/85">
+                        @foreach (var topicFilter in _brokerStatus.TopicFilters)
+                        {
+                            <li>
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@topicFilter</code>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </article>
+    </section>
+</div>
+
+@code {
+    private BrokerStatus _brokerStatus = new();
+    private string? _statusMessage;
+    private SubscribeTopicRequest _subscriptionRequest = new();
+    private IReadOnlyCollection<TopicPreset> _topicPresets = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _topicPresets = await TopicPresetService.GetTopicPresets();
+        _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+    }
+
+    private Task SubscribeAsync(string topicFilter)
+    {
+        _subscriptionRequest.TopicFilter = topicFilter;
+        return SubscribeAsync();
+    }
+
+    private async Task SubscribeAsync()
+    {
+        try
+        {
+            await BrokerMonitorService.SubscribeToTopic(_subscriptionRequest.TopicFilter);
+            _statusMessage = $"Subscribed to {_subscriptionRequest.TopicFilter}.";
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private sealed class SubscribeTopicRequest
+    {
+        public string TopicFilter { get; set; } = string.Empty;
+    }
+}

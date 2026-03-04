@@ -1,0 +1,95 @@
+@page "/nodes"
+@implements IAsyncDisposable
+@inject INodeService NodeService
+
+<PageTitle>Nodes</PageTitle>
+
+<div class="space-y-6">
+    <header class="space-y-3">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Discovery</p>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Observed nodes</h1>
+        </div>
+        <p class="max-w-3xl text-base leading-8 text-cinder-800">
+            This page refreshes every 3 seconds from the latest observed node state. At the moment, nodes are created
+            from packet origin metadata until full Meshtastic node decoding is implemented.
+        </p>
+    </header>
+
+    <section class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+        @if (_nodes.Count == 0)
+        {
+            <div class="p-6 text-cinder-800/78">
+                No nodes have been observed yet.
+            </div>
+        }
+        else
+        {
+            <table class="min-w-full border-collapse">
+                <thead class="bg-sand-50/80">
+                    <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                        <th class="px-5 py-4">Node ID</th>
+                        <th class="px-5 py-4">Name</th>
+                        <th class="px-5 py-4">Last heard</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var node in _nodes)
+                    {
+                        <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                            <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@node.NodeId</code></td>
+                            <td class="px-5 py-4 font-medium">@(node.LongName ?? node.ShortName ?? "Unnamed node")</td>
+                            <td class="px-5 py-4">@(node.LastHeardAtUtc?.ToString("u") ?? "Unknown")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </section>
+</div>
+
+@code {
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private IReadOnlyCollection<NodeSummary> _nodes = [];
+    private Task? _refreshTask;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cancellationTokenSource.Cancel();
+
+        if (_refreshTask is not null)
+        {
+            try
+            {
+                await _refreshTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        _cancellationTokenSource.Dispose();
+    }
+
+    private async Task LoadAsync()
+    {
+        _nodes = await NodeService.GetNodes();
+    }
+
+    private async Task RefreshAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            await LoadAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

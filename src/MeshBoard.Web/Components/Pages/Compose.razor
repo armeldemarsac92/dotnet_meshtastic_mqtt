@@ -1,0 +1,23 @@
+@page "/compose"
+
+<PageTitle>Compose</PageTitle>
+
+<div class="space-y-6">
+    <header class="space-y-3">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Downlink</p>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Message composition</h1>
+        </div>
+        <p class="max-w-3xl text-base leading-8 text-cinder-800">
+            Send flows are intentionally deferred. They should only be enabled once the app can verify that the user is
+            operating through a Meshtastic gateway node with supported downlink configuration.
+        </p>
+    </header>
+
+    <section class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+        <div class="rounded-[1.25rem] border border-dashed border-signal-500/30 bg-signal-500/6 p-5 text-cinder-800/85">
+            The UI route exists, but no compose workflow is enabled yet. The next implementation step is to codify send
+            preconditions in an application service before any form is exposed.
+        </div>
+    </section>
+</div>
