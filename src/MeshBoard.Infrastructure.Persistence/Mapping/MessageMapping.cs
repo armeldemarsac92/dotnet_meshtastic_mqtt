@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 
@@ -15,14 +17,36 @@ internal static class MessageMapping
     {
         return new MessageSummary
         {
-            Id = Guid.Parse(response.Id),
+            Id = ParseOrDeriveGuid(response.Id),
             Topic = response.Topic,
             PacketType = response.PacketType,
             FromNodeId = response.FromNodeId,
             ToNodeId = response.ToNodeId,
             PayloadPreview = response.PayloadPreview,
             IsPrivate = response.IsPrivate == 1,
-            ReceivedAtUtc = DateTimeOffset.Parse(response.ReceivedAtUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
+            ReceivedAtUtc = ParseOrDefault(response.ReceivedAtUtc)
         };
+    }
+
+    private static Guid ParseOrDeriveGuid(string? value)
+    {
+        if (Guid.TryParse(value, out var parsedGuid))
+        {
+            return parsedGuid;
+        }
+
+        var hash = MD5.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty));
+        return new Guid(hash);
+    }
+
+    private static DateTimeOffset ParseOrDefault(string value)
+    {
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out var parsedValue)
+            ? parsedValue
+            : DateTimeOffset.UnixEpoch;
     }
 }

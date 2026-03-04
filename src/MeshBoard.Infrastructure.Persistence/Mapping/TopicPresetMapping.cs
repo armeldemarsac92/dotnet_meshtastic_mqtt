@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Persistence.SQL.Requests;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
@@ -23,11 +25,33 @@ internal static class TopicPresetMapping
     {
         return new TopicPreset
         {
-            Id = Guid.Parse(response.Id),
+            Id = ParseOrDeriveGuid(response.Id),
             Name = response.Name,
             TopicPattern = response.TopicPattern,
             IsDefault = response.IsDefault == 1,
-            CreatedAtUtc = DateTimeOffset.Parse(response.CreatedAtUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
+            CreatedAtUtc = ParseOrDefault(response.CreatedAtUtc)
         };
+    }
+
+    private static Guid ParseOrDeriveGuid(string? value)
+    {
+        if (Guid.TryParse(value, out var parsedGuid))
+        {
+            return parsedGuid;
+        }
+
+        var hash = MD5.HashData(Encoding.UTF8.GetBytes(value ?? string.Empty));
+        return new Guid(hash);
+    }
+
+    private static DateTimeOffset ParseOrDefault(string value)
+    {
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out var parsedValue)
+            ? parsedValue
+            : DateTimeOffset.UnixEpoch;
     }
 }

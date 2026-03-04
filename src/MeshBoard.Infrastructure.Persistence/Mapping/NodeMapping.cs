@@ -40,6 +40,12 @@ internal static class NodeMapping
             return null;
         }
 
-        return DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out var parsedValue)
+            ? parsedValue
+            : null;
     }
 }

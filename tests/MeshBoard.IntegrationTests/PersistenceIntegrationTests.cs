@@ -45,7 +45,7 @@ public sealed class PersistenceIntegrationTests
                     {
                         Topic = "msh/US/2/e/legacy",
                         PacketType = "Telemetry",
-                        MessageKey = "00000000-0000-0000-0000-000000000001",
+                        MessageKey = "legacy-msg-1",
                         FromNodeId = "!legacy01",
                         PayloadPreview = "should be ignored",
                         IsPrivate = false,
@@ -264,7 +264,7 @@ public sealed class PersistenceIntegrationTests
                 is_private,
                 received_at_utc)
             VALUES (
-                '00000000-0000-0000-0000-000000000001',
+                'legacy-msg-1',
                 'msh/US/2/e/legacy',
                 '!legacy01',
                 NULL,

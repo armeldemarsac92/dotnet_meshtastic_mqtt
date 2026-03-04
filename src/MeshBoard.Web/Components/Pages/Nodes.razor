@@ -87,7 +87,7 @@
                             <td class="px-5 py-4">
                                 <button @onclick="() => ToggleFavoriteAsync(node)"
                                         disabled="@(_favoriteActionNodeId == node.NodeId)"
-                                        class="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsFavorite(node.NodeId) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200") disabled:cursor-not-allowed disabled:opacity-60">
+                                        class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsFavorite(node.NodeId) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200") disabled:cursor-not-allowed disabled:opacity-60">
                                     @(IsFavorite(node.NodeId) ? "Saved" : "Save")
                                 </button>
                             </td>
@@ -113,6 +113,7 @@
 
 @code {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private readonly SemaphoreSlim _loadSemaphore = new(1, 1);
     private string? _favoriteActionNodeId;
     private readonly HashSet<string> _favoriteNodeIds = new(StringComparer.OrdinalIgnoreCase);
     private string? _favoriteStatusMessage;
@@ -123,7 +124,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadAsync();
+        await LoadAndRefreshAsync();
         _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
     }
 
@@ -143,28 +144,33 @@
         }
 
         _cancellationTokenSource.Dispose();
+        _loadSemaphore.Dispose();
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        var nodesTask = NodeService.GetNodes(_query);
-        var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes();
+        await _loadSemaphore.WaitAsync(cancellationToken);
 
-        await Task.WhenAll(nodesTask, favoriteNodesTask);
-
-        var nodes = await nodesTask;
-        var favoriteNodes = await favoriteNodesTask;
-
-        _favoriteNodeIds.Clear();
-
-        foreach (var favoriteNode in favoriteNodes)
+        try
         {
-            _favoriteNodeIds.Add(favoriteNode.NodeId);
-        }
+            var nodes = await NodeService.GetNodes(_query, cancellationToken);
+            var favoriteNodes = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
 
-        _nodes = _onlyFavorites
-            ? nodes.Where(node => _favoriteNodeIds.Contains(node.NodeId)).ToList()
-            : nodes;
+            _favoriteNodeIds.Clear();
+
+            foreach (var favoriteNode in favoriteNodes)
+            {
+                _favoriteNodeIds.Add(favoriteNode.NodeId);
+            }
+
+            _nodes = _onlyFavorites
+                ? nodes.Where(node => _favoriteNodeIds.Contains(node.NodeId)).ToList()
+                : nodes;
+        }
+        finally
+        {
+            _loadSemaphore.Release();
+        }
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -173,15 +179,42 @@
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
-            await LoadAsync();
-            await InvokeAsync(StateHasChanged);
+            try
+            {
+                await InvokeAsync(
+                    async () =>
+                    {
+                        await LoadAsync(cancellationToken);
+                        StateHasChanged();
+                    });
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _favoriteStatusMessage = $"Refresh failed: {exception.Message}";
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
     private async Task LoadAndRefreshAsync()
     {
-        await LoadAsync();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await LoadAsync(_cancellationTokenSource.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            _favoriteStatusMessage = $"Load failed: {exception.Message}";
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private bool IsFavorite(string nodeId)
