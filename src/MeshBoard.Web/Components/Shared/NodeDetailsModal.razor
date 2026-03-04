@@ -18,7 +18,7 @@
                 </button>
             </header>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4 overscroll-contain xl:overflow-hidden">
+            <div class="min-h-0 flex-1 overflow-hidden px-5 py-4 overscroll-contain">
                 @if (_isLoading)
                 {
                     <p class="text-sm text-cinder-800/78">Loading node details...</p>
@@ -36,7 +36,7 @@
                 }
                 else
                 {
-                    <div class="flex min-h-full flex-col gap-6 xl:h-full xl:min-h-0">
+                    <div class="flex h-full min-h-0 flex-col gap-6">
                         <header class="space-y-3">
                             <div>
                                 <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@(_node.LongName ?? _node.ShortName ?? _node.NodeId)</h2>
@@ -84,8 +84,8 @@
                             </article>
                         </section>
 
-                        <section class="grid min-h-[24rem] gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-2">
-                            <article class="liquid-panel flex h-full flex-col overflow-hidden rounded-[1.6rem]">
+                        <section class="grid min-h-0 flex-1 gap-4 xl:grid-cols-2">
+                            <article class="liquid-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.6rem]">
                                 <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
                                     <h3 class="font-display text-3xl text-cinder-950">Recent published messages</h3>
                                 </div>
@@ -113,13 +113,13 @@
                                 }
                             </article>
 
-                            <article class="liquid-panel flex h-full flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
+                            <article class="liquid-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
                                 <h3 class="font-display text-3xl text-cinder-950">Map</h3>
                                 @if (TryBuildMapEmbedUrl(_node, out var mapEmbedUrl))
                                 {
                                     <div class="mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-sand-200">
                                         <iframe title="Node position map"
-                                                class="block h-full min-h-[16rem] w-full xl:min-h-0"
+                                                class="block h-full min-h-[14rem] w-full lg:min-h-0"
                                                 src="@mapEmbedUrl"></iframe>
                                     </div>
                                 }
