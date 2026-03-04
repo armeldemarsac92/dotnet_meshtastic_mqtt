@@ -293,6 +293,7 @@ Current implementation status:
 - `/nodes` now renders position plus the currently persisted device and environment telemetry fields.
 - Node querying now supports application-layer filtering and sorting by search text, location presence, telemetry presence, and sort mode.
 - The `/nodes` page exposes those filters directly in the UI and uses the application service query path instead of embedding filter rules only in Razor.
+- The `/nodes` page now also supports in-place favorite toggle actions and a favorites-only view backed by the existing favorite-node service and repository flow.
 - Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
 
 ## Initial Functional Slices
