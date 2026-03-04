@@ -11,16 +11,19 @@ internal static class MessageQueries
     public static string GetRecentMessages =>
         """
         SELECT
-            id AS Id,
-            topic AS Topic,
-            packet_type AS PacketType,
-            from_node_id AS FromNodeId,
-            to_node_id AS ToNodeId,
-            payload_preview AS PayloadPreview,
-            is_private AS IsPrivate,
-            received_at_utc AS ReceivedAtUtc
-        FROM message_history
-        ORDER BY received_at_utc DESC
+            mh.id AS Id,
+            mh.topic AS Topic,
+            mh.packet_type AS PacketType,
+            mh.from_node_id AS FromNodeId,
+            n.short_name AS FromNodeShortName,
+            n.long_name AS FromNodeLongName,
+            mh.to_node_id AS ToNodeId,
+            mh.payload_preview AS PayloadPreview,
+            mh.is_private AS IsPrivate,
+            mh.received_at_utc AS ReceivedAtUtc
+        FROM message_history mh
+        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
+        ORDER BY mh.received_at_utc DESC
         LIMIT @Take;
         """;
 

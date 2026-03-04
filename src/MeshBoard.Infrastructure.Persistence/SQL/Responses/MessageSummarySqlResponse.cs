@@ -10,6 +10,10 @@ internal sealed class MessageSummarySqlResponse
 
     public required string FromNodeId { get; set; }
 
+    public string? FromNodeShortName { get; set; }
+
+    public string? FromNodeLongName { get; set; }
+
     public string? ToNodeId { get; set; }
 
     public required string PayloadPreview { get; set; }

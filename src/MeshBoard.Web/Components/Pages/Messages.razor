@@ -119,7 +119,12 @@
                                     </span>
                                 }
                             </td>
-                            <td class="px-5 py-4 font-medium">@message.FromNodeId</td>
+                            <td class="px-5 py-4 font-medium">
+                                <a href="@GetNodeDetailsHref(message.FromNodeId)"
+                                   class="underline-offset-4 hover:underline">
+                                    @GetSenderDisplayName(message)
+                                </a>
+                            </td>
                             <td class="px-5 py-4 text-cinder-800/80">@(message.ToNodeId ?? "Broadcast")</td>
                             <td class="px-5 py-4">@message.PayloadPreview</td>
                         </tr>
@@ -235,6 +240,8 @@
         }
 
         return message.FromNodeId.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ||
+            (message.FromNodeShortName?.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (message.FromNodeLongName?.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
             (message.ToNodeId?.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
             message.PacketType.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ||
             message.PayloadPreview.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase);
@@ -321,6 +328,26 @@
         href = $"/channels/{Uri.EscapeDataString(region)}/{Uri.EscapeDataString(channel)}";
         label = $"{region}/{channel}";
         return true;
+    }
+
+    private static string GetNodeDetailsHref(string nodeId)
+    {
+        return $"/nodes/details/{Uri.EscapeDataString(nodeId)}";
+    }
+
+    private static string GetSenderDisplayName(MessageSummary message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.FromNodeShortName))
+        {
+            return message.FromNodeShortName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.FromNodeLongName))
+        {
+            return message.FromNodeLongName;
+        }
+
+        return message.FromNodeId;
     }
 
     private sealed class MessageFilters

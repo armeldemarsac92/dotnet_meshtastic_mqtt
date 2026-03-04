@@ -21,6 +21,8 @@ internal static class MessageMapping
             Topic = response.Topic,
             PacketType = response.PacketType,
             FromNodeId = response.FromNodeId,
+            FromNodeShortName = response.FromNodeShortName,
+            FromNodeLongName = response.FromNodeLongName,
             ToNodeId = response.ToNodeId,
             PayloadPreview = response.PayloadPreview,
             IsPrivate = response.IsPrivate == 1,

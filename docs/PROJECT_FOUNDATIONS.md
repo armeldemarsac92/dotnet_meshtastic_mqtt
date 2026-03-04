@@ -314,6 +314,7 @@ Current implementation status:
 - Topic discovery now includes active probing from the Topics search context (temporary wildcard subscriptions over recommended channels, then automatic unsubscribe).
 - Recommended channel catalog now explicitly includes `MediumFast` variants so EU MediumFast can be discovered/saved/subscribed directly.
 - The `/messages` stream table now renders only the normalized `<region>/<channel>` badge in the channel column instead of raw full MQTT topic strings.
+- The `/messages` stream now renders sender display names with short-name priority when available, and each sender links directly to `/nodes/details/{nodeId}`.
 
 ## Initial Functional Slices
 

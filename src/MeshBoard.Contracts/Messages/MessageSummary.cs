@@ -10,6 +10,10 @@ public sealed class MessageSummary
 
     public string FromNodeId { get; set; } = string.Empty;
 
+    public string? FromNodeShortName { get; set; }
+
+    public string? FromNodeLongName { get; set; }
+
     public string? ToNodeId { get; set; }
 
     public string PayloadPreview { get; set; } = string.Empty;
