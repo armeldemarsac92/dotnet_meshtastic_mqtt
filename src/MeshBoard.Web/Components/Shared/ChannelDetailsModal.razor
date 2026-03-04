@@ -10,9 +10,8 @@
         <article class="liquid-panel flex h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-[1.8rem] overscroll-contain"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between border-b border-sand-100/80 px-5 py-4">
-                <div class="space-y-1">
+                <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Channel details</p>
-                    <p class="text-sm text-cinder-900">@Region / @Channel</p>
                 </div>
                 <button type="button"
                         class="liquid-button cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]"
@@ -29,9 +28,18 @@
                 else
                 {
                     <div class="flex h-full min-h-0 flex-col gap-6">
+                        <header class="space-y-3">
+                            <div>
+                                <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@Channel</h2>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
+                                <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@Region</span>
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@TopicFilter</code>
+                            </div>
+                        </header>
+
                         <section class="liquid-panel rounded-[1.6rem] p-5">
                             <div class="flex flex-wrap items-center gap-2">
-                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@TopicFilter</code>
                                 <button type="button"
                                         class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(IsSubscribed ? "liquid-button-active" : "liquid-button-accent")"
                                         @onclick="ToggleSubscriptionAsync">
