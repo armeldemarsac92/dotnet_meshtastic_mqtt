@@ -6,7 +6,7 @@ namespace MeshBoard.Application.Services;
 
 public interface IMessageService
 {
-    Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(int take = 50, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(int take = 250, CancellationToken cancellationToken = default);
 }
 
 public sealed class MessageService : IMessageService
@@ -21,7 +21,7 @@ public sealed class MessageService : IMessageService
     }
 
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(
-        int take = 50,
+        int take = 250,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Attempting to get recent messages with take: {Take}", take);

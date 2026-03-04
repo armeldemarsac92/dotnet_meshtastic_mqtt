@@ -1,6 +1,7 @@
 using Dapper;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Persistence.SQL;
+using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -35,6 +36,7 @@ internal sealed class SqliteDatabaseInitializer
             cancellationToken: cancellationToken);
 
         await connection.ExecuteAsync(createSchemaCommand);
+        await MigrateMessageHistoryAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
             SchemaQueries.DeleteExpiredMessages,
@@ -52,6 +54,50 @@ internal sealed class SqliteDatabaseInitializer
         await SeedTopicPresetAsync(connection, "EU Public Feed", "msh/EU_433/2/e/#", false, cancellationToken);
 
         _logger.LogInformation("Initialized the SQLite database successfully");
+    }
+
+    private static async Task MigrateMessageHistoryAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var columnCommand = new CommandDefinition(
+            SchemaQueries.GetMessageHistoryColumns,
+            cancellationToken: cancellationToken);
+
+        var columns = (await connection.QueryAsync<MessageHistoryColumnSqlResponse>(columnCommand))
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!columns.Contains("packet_type"))
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.AddMessageHistoryPacketTypeColumn,
+                    cancellationToken: cancellationToken));
+        }
+
+        if (!columns.Contains("message_key"))
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.AddMessageHistoryMessageKeyColumn,
+                    cancellationToken: cancellationToken));
+        }
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.BackfillMessageHistoryPacketType,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.BackfillMessageHistoryMessageKey,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateMessageHistoryMessageKeyIndex,
+                cancellationToken: cancellationToken));
     }
 
     private SqliteConnection CreateConnection()

@@ -6,6 +6,8 @@ public sealed class MessageSummary
 
     public string Topic { get; set; } = string.Empty;
 
+    public string PacketType { get; set; } = string.Empty;
+
     public string FromNodeId { get; set; } = string.Empty;
 
     public string? ToNodeId { get; set; }

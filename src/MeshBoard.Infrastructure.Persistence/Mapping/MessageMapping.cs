@@ -17,6 +17,7 @@ internal static class MessageMapping
         {
             Id = Guid.Parse(response.Id),
             Topic = response.Topic,
+            PacketType = response.PacketType,
             FromNodeId = response.FromNodeId,
             ToNodeId = response.ToNodeId,
             PayloadPreview = response.PayloadPreview,

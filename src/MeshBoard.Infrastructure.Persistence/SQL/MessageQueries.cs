@@ -7,6 +7,7 @@ internal static class MessageQueries
         SELECT
             id AS Id,
             topic AS Topic,
+            packet_type AS PacketType,
             from_node_id AS FromNodeId,
             to_node_id AS ToNodeId,
             payload_preview AS PayloadPreview,
@@ -19,9 +20,11 @@ internal static class MessageQueries
 
     public static string InsertMessage =>
         """
-        INSERT INTO message_history (
+        INSERT OR IGNORE INTO message_history (
             id,
             topic,
+            packet_type,
+            message_key,
             from_node_id,
             to_node_id,
             payload_preview,
@@ -30,6 +33,8 @@ internal static class MessageQueries
         VALUES (
             @Id,
             @Topic,
+            @PacketType,
+            @MessageKey,
             @FromNodeId,
             @ToNodeId,
             @PayloadPreview,

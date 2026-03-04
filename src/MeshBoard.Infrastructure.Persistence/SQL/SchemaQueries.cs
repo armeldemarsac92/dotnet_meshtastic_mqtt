@@ -39,6 +39,8 @@ internal static class SchemaQueries
         CREATE TABLE IF NOT EXISTS message_history (
             id TEXT NOT NULL PRIMARY KEY,
             topic TEXT NOT NULL,
+            packet_type TEXT NOT NULL,
+            message_key TEXT NOT NULL,
             from_node_id TEXT NOT NULL,
             to_node_id TEXT NULL,
             payload_preview TEXT NOT NULL,
@@ -54,5 +56,50 @@ internal static class SchemaQueries
         """
         DELETE FROM message_history
         WHERE received_at_utc < @CutoffUtc;
+        """;
+
+    public static string GetMessageHistoryColumns =>
+        """
+        PRAGMA table_info(message_history);
+        """;
+
+    public static string AddMessageHistoryPacketTypeColumn =>
+        """
+        ALTER TABLE message_history
+        ADD COLUMN packet_type TEXT NULL;
+        """;
+
+    public static string AddMessageHistoryMessageKeyColumn =>
+        """
+        ALTER TABLE message_history
+        ADD COLUMN message_key TEXT NULL;
+        """;
+
+    public static string BackfillMessageHistoryPacketType =>
+        """
+        UPDATE message_history
+        SET packet_type = CASE
+            WHEN packet_type IS NOT NULL AND packet_type <> '' THEN packet_type
+            WHEN payload_preview LIKE 'Node info:%' THEN 'Node Info'
+            WHEN payload_preview LIKE 'Position:%' THEN 'Position Update'
+            WHEN payload_preview LIKE 'Telemetry payload%' THEN 'Telemetry'
+            WHEN payload_preview LIKE 'Compressed text payload%' THEN 'Compressed Text Message'
+            WHEN payload_preview LIKE 'Non-decoded Meshtastic payload%' THEN 'Encrypted Packet'
+            ELSE 'Legacy Packet'
+        END
+        WHERE packet_type IS NULL OR packet_type = '';
+        """;
+
+    public static string BackfillMessageHistoryMessageKey =>
+        """
+        UPDATE message_history
+        SET message_key = id
+        WHERE message_key IS NULL OR message_key = '';
+        """;
+
+    public static string CreateMessageHistoryMessageKeyIndex =>
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_message_history_message_key
+            ON message_history(message_key);
         """;
 }

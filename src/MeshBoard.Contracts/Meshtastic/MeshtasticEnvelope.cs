@@ -6,6 +6,8 @@ public sealed class MeshtasticEnvelope
 
     public string PacketType { get; set; } = string.Empty;
 
+    public uint? PacketId { get; set; }
+
     public string PayloadPreview { get; set; } = string.Empty;
 
     public string? FromNodeId { get; set; }

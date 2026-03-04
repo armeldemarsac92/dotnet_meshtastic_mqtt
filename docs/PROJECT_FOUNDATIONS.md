@@ -262,8 +262,10 @@ Current implementation status:
 - Schema initialization runs through a hosted service at app startup.
 - Repository implementations for favorites, topic presets, nodes, and message history are now database-backed.
 - The current schema creates `favorite_nodes`, `topic_presets`, `nodes`, and `message_history`.
+- `message_history` now stores `packet_type` and `message_key` in addition to the original message fields.
 - Topic preset seeding currently inserts `US Public Feed` and `EU Public Feed` if they do not already exist.
 - With the current `Data Source=meshboard.db` connection string, the database file is created relative to the web app working directory. When launched with `dotnet run --project src/MeshBoard.Web/MeshBoard.Web.csproj`, that currently resolves to `src/MeshBoard.Web/meshboard.db`.
+- SQLite startup now includes an additive migration path for `message_history`, so existing local databases upgrade in place instead of requiring deletion.
 
 ### MQTT Runtime Status
 
@@ -282,8 +284,10 @@ Current implementation status:
   - node-info payload decoding into short name and long name
   - position payload decoding into latitude and longitude
 - Encrypted or otherwise non-decoded packets are still persisted as opaque payload previews so the message stream remains complete.
+- Message ingestion now computes a stable message key and uses it for repository-level deduplication, which prevents repeated broker packets from flooding local history.
 - The Meshtastic MQTT hosted service now delays connect and subscribe until `ApplicationStarted`, which avoids racing persistence initialization during host startup.
 - Live verification against the public broker has already produced decoded node identities such as `Meshtastic Salz (Salz)` and `Russell WSGP797 (Ru97)` in SQLite.
+- The `/messages` page now supports practical client-side filtering by visibility, packet type, and free-text search over recent persisted traffic.
 
 ## Initial Functional Slices
 

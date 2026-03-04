@@ -4,6 +4,10 @@ public sealed class SaveObservedMessageRequest
 {
     public required string Topic { get; set; }
 
+    public required string PacketType { get; set; }
+
+    public required string MessageKey { get; set; }
+
     public required string FromNodeId { get; set; }
 
     public string? ToNodeId { get; set; }

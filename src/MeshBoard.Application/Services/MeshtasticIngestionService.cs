@@ -3,6 +3,8 @@ using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace MeshBoard.Application.Services;
 
@@ -38,10 +40,12 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
 
         try
         {
-            await _messageRepository.AddAsync(
+            var messageInserted = await _messageRepository.AddAsync(
                 new SaveObservedMessageRequest
                 {
                     Topic = envelope.Topic,
+                    PacketType = envelope.PacketType,
+                    MessageKey = BuildMessageKey(envelope),
                     FromNodeId = envelope.FromNodeId ?? "unknown",
                     ToNodeId = envelope.ToNodeId,
                     PayloadPreview = envelope.PayloadPreview,
@@ -49,6 +53,12 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                     ReceivedAtUtc = envelope.ReceivedAtUtc
                 },
                 cancellationToken);
+
+            if (!messageInserted)
+            {
+                await _unitOfWork.RollbackAsync(cancellationToken);
+                return;
+            }
 
             if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
             {
@@ -75,5 +85,19 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private static string BuildMessageKey(MeshtasticEnvelope envelope)
+    {
+        if (envelope.PacketId.HasValue && !string.IsNullOrWhiteSpace(envelope.FromNodeId))
+        {
+            return $"{envelope.FromNodeId}:{envelope.PacketId.Value:x8}";
+        }
+
+        var rawKey =
+            $"{envelope.PacketType}|{envelope.FromNodeId}|{envelope.ToNodeId}|{envelope.PayloadPreview}|{envelope.ReceivedAtUtc:O}";
+
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
+        return Convert.ToHexStringLower(hashBytes);
     }
 }

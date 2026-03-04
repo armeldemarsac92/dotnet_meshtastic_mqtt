@@ -62,6 +62,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         var envelope = new MeshtasticEnvelope
         {
             Topic = topic,
+            PacketId = packet.Id == 0 ? null : packet.Id,
             FromNodeId = FormatNodeId(packet.From) ?? TryExtractNodeIdFromTopic(topic),
             ToNodeId = ResolveTargetNodeId(packet.To),
             IsPrivate = IsPrivate(packet.To),

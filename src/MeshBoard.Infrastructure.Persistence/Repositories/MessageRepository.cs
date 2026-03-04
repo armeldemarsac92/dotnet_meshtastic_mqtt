@@ -19,14 +19,16 @@ internal sealed class MessageRepository : IMessageRepository
         _logger = logger;
     }
 
-    public async Task AddAsync(SaveObservedMessageRequest request, CancellationToken cancellationToken = default)
+    public async Task<bool> AddAsync(SaveObservedMessageRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Attempting to add observed message from node: {NodeId}", request.FromNodeId);
 
-        await _dbContext.ExecuteAsync(
+        var rowsAffected = await _dbContext.ExecuteAsync(
             MessageQueries.InsertMessage,
             request.ToSqlRequest(),
             cancellationToken);
+
+        return rowsAffected > 0;
     }
 
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(

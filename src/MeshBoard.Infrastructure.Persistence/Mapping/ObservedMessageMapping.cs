@@ -11,6 +11,8 @@ internal static class ObservedMessageMapping
         {
             Id = Guid.NewGuid().ToString(),
             Topic = request.Topic,
+            PacketType = request.PacketType,
+            MessageKey = request.MessageKey,
             FromNodeId = request.FromNodeId,
             ToNodeId = request.ToNodeId,
             PayloadPreview = request.PayloadPreview,
