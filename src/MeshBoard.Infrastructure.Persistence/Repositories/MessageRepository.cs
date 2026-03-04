@@ -45,7 +45,7 @@ internal sealed class MessageRepository : IMessageRepository
         int take,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to fetch recent messages with take: {Take}", take);
+        _logger.LogDebug("Attempting to fetch recent messages with take: {Take}", take);
 
         var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             MessageQueries.GetRecentMessages,

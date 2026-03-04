@@ -92,17 +92,17 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
 
     private static List<string> ExpandWithCompanionFilter(string topicFilter)
     {
-        var expanded = new HashSet<string>(StringComparer.Ordinal)
-        {
-            topicFilter
-        };
+        var expanded = new List<string> { topicFilter };
 
         if (TryMapCompanionFilter(topicFilter, out var companionFilter))
         {
-            expanded.Add(companionFilter);
+            if (!string.Equals(companionFilter, topicFilter, StringComparison.Ordinal))
+            {
+                expanded.Add(companionFilter);
+            }
         }
 
-        return expanded.ToList();
+        return expanded;
     }
 
     private static List<string> NormalizeTopicFiltersForDisplay(IEnumerable<string> topicFilters)

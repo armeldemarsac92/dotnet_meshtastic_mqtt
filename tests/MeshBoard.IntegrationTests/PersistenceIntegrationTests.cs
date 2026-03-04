@@ -229,6 +229,67 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task MessageRepository_ShouldPromoteDecodedPacket_WhenEncryptedDuplicateExists()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var messageRepository = scope.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
+
+                var encryptedInserted = await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/EU_868/2/e/MediumFast/!abcdef12",
+                        PacketType = "Encrypted Packet",
+                        MessageKey = "!abcdef12:00112233",
+                        FromNodeId = "!abcdef12",
+                        PayloadPreview = "Non-decoded Meshtastic payload (112 bytes)",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 4, 20, 0, 0, TimeSpan.Zero)
+                    });
+
+                var decodedInserted = await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/EU_868/2/json/MediumFast/!abcdef12",
+                        PacketType = "Text Message",
+                        MessageKey = "!abcdef12:00112233",
+                        FromNodeId = "!abcdef12",
+                        PayloadPreview = "Hello from MediumFast",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 4, 20, 0, 0, TimeSpan.Zero)
+                    });
+
+                Assert.True(encryptedInserted);
+                Assert.True(decodedInserted);
+
+                var messages = await messageService.GetRecentMessages(10);
+                var promoted = Assert.Single(messages);
+                Assert.Equal("Text Message", promoted.PacketType);
+                Assert.Equal("Hello from MediumFast", promoted.PayloadPreview);
+                Assert.Equal("msh/EU_868/2/json/MediumFast/!abcdef12", promoted.Topic);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task NodePaging_ShouldSupportFavoritesAndChannelField()
     {
         var databasePath = CreateTemporaryDatabasePath();

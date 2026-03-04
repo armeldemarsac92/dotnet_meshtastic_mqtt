@@ -289,6 +289,7 @@ Current implementation status:
   - telemetry payload decoding for device metrics and environment metrics
 - Encrypted or otherwise non-decoded packets are still persisted as opaque payload previews so the message stream remains complete.
 - Message ingestion now computes a stable message key and uses it for repository-level deduplication, which prevents repeated broker packets from flooding local history.
+- Deduplication now promotes decoded packets over previously stored opaque duplicates (`Encrypted/Unknown/Legacy`) when they share the same message key, so late-arriving JSON-decoded copies replace encrypted placeholders.
 - The Meshtastic MQTT hosted service now delays connect and subscribe until `ApplicationStarted`, which avoids racing persistence initialization during host startup.
 - Live verification against the public broker has already produced decoded node identities such as `Meshtastic Salz (Salz)` and `Russell WSGP797 (Ru97)` in SQLite.
 - The `/messages` page now supports practical client-side filtering by visibility, packet type, and free-text search over recent persisted traffic.

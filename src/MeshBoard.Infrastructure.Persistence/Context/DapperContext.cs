@@ -55,7 +55,7 @@ internal sealed class DapperContext : IDbContext, IUnitOfWork, IAsyncDisposable
             return;
         }
 
-        _logger.LogWarning("Attempting to rollback the active database transaction");
+        _logger.LogDebug("Attempting to rollback the active database transaction");
 
         await _transaction.RollbackAsync(cancellationToken);
         await DisposeTransactionAsync();

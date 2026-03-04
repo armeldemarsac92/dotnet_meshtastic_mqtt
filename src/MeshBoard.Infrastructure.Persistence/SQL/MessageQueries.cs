@@ -29,7 +29,7 @@ internal static class MessageQueries
 
     public static string InsertMessage =>
         """
-        INSERT OR IGNORE INTO message_history (
+        INSERT INTO message_history (
             id,
             topic,
             packet_type,
@@ -48,6 +48,16 @@ internal static class MessageQueries
             @ToNodeId,
             @PayloadPreview,
             @IsPrivate,
-            @ReceivedAtUtc);
+            @ReceivedAtUtc)
+        ON CONFLICT(message_key) DO UPDATE SET
+            topic = excluded.topic,
+            packet_type = excluded.packet_type,
+            from_node_id = excluded.from_node_id,
+            to_node_id = excluded.to_node_id,
+            payload_preview = excluded.payload_preview,
+            is_private = excluded.is_private,
+            received_at_utc = excluded.received_at_utc
+        WHERE message_history.packet_type IN ('Encrypted Packet', 'Unknown Packet', 'Legacy Packet')
+          AND excluded.packet_type NOT IN ('Encrypted Packet', 'Unknown Packet', 'Legacy Packet');
         """;
 }

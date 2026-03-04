@@ -29,11 +29,11 @@ public sealed class TopicPresetService : ITopicPresetService
 
     public async Task<IReadOnlyCollection<TopicPreset>> GetTopicPresets(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to get topic presets");
+        _logger.LogDebug("Attempting to get topic presets");
 
         var topicPresets = await _topicPresetRepository.GetAllAsync(cancellationToken);
 
-        _logger.LogInformation("Retrieved {TopicPresetCount} topic presets", topicPresets.Count);
+        _logger.LogDebug("Retrieved {TopicPresetCount} topic presets", topicPresets.Count);
 
         return topicPresets;
     }

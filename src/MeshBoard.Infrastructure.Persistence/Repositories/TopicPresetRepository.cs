@@ -21,7 +21,7 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
 
     public async Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to fetch topic presets");
+        _logger.LogDebug("Attempting to fetch topic presets");
 
         var topicPresets = await _dbContext.QueryAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresets,

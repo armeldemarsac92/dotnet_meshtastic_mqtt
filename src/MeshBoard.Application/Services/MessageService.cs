@@ -24,11 +24,11 @@ public sealed class MessageService : IMessageService
         int take = 250,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to get recent messages with take: {Take}", take);
+        _logger.LogDebug("Attempting to get recent messages with take: {Take}", take);
 
         var messages = await _messageRepository.GetRecentAsync(take, cancellationToken);
 
-        _logger.LogInformation("Retrieved {MessageCount} recent messages", messages.Count);
+        _logger.LogDebug("Retrieved {MessageCount} recent messages", messages.Count);
 
         return messages;
     }

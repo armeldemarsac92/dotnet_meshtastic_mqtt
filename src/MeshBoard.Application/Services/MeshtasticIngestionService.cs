@@ -35,6 +35,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     public async Task IngestEnvelope(MeshtasticEnvelope envelope, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Attempting to ingest Meshtastic envelope from topic: {Topic}", envelope.Topic);
+        var messageKey = BuildMessageKey(envelope);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
@@ -45,7 +46,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 {
                     Topic = envelope.Topic,
                     PacketType = envelope.PacketType,
-                    MessageKey = BuildMessageKey(envelope),
+                    MessageKey = messageKey,
                     FromNodeId = envelope.FromNodeId ?? "unknown",
                     ToNodeId = envelope.ToNodeId,
                     PayloadPreview = envelope.PayloadPreview,
@@ -56,7 +57,12 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
 
             if (!messageInserted)
             {
-                await _unitOfWork.RollbackAsync(cancellationToken);
+                _logger.LogDebug(
+                    "Skipping duplicate Meshtastic packet for message key {MessageKey} from node {FromNodeId}",
+                    messageKey,
+                    envelope.FromNodeId);
+
+                await _unitOfWork.CommitAsync(cancellationToken);
                 return;
             }
 
