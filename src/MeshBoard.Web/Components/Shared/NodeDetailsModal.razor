@@ -96,19 +96,21 @@
                                 else
                                 {
                                     <div class="fade-scroll-frame min-h-0 flex-1">
-                                        <ul class="fade-scroll-content fade-scroll-content-fill space-y-3 p-5 text-sm text-cinder-900">
-                                            @foreach (var message in _relatedMessages.Take(40))
-                                            {
-                                                <li class="liquid-subpanel rounded-2xl p-3">
-                                                    <div class="flex flex-wrap items-center gap-2">
-                                                        <span class="rounded-full bg-sand-100 px-3 py-1 text-xs">@message.PacketType</span>
-                                                        <span class="text-xs text-cinder-800/70">@message.ReceivedAtUtc.ToString("u")</span>
-                                                    </div>
-                                                    <p class="mt-2">@message.PayloadPreview</p>
-                                                    <p class="mt-1 text-xs text-cinder-800/70">From @message.FromNodeId to @(message.ToNodeId ?? "Broadcast")</p>
-                                                </li>
-                                            }
-                                        </ul>
+                                        <div class="fade-scroll-content fade-scroll-content-fill">
+                                            <ul class="space-y-3 p-5 text-sm text-cinder-900">
+                                                @foreach (var message in _relatedMessages.Take(40))
+                                                {
+                                                    <li class="liquid-subpanel rounded-2xl p-3">
+                                                        <div class="flex flex-wrap items-center gap-2">
+                                                            <span class="rounded-full bg-sand-100 px-3 py-1 text-xs">@message.PacketType</span>
+                                                            <span class="text-xs text-cinder-800/70">@message.ReceivedAtUtc.ToString("u")</span>
+                                                        </div>
+                                                        <p class="mt-2">@message.PayloadPreview</p>
+                                                        <p class="mt-1 text-xs text-cinder-800/70">From @message.FromNodeId to @(message.ToNodeId ?? "Broadcast")</p>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        </div>
                                     </div>
                                 }
                             </article>
