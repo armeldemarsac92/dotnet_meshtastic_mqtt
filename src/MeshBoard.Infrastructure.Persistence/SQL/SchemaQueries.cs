@@ -2,6 +2,21 @@ namespace MeshBoard.Infrastructure.Persistence.SQL;
 
 internal static class SchemaQueries
 {
+    public static string EnableWriteAheadLogging =>
+        """
+        PRAGMA journal_mode = WAL;
+        """;
+
+    public static string SetSynchronousNormal =>
+        """
+        PRAGMA synchronous = NORMAL;
+        """;
+
+    public static string SetTempStoreMemory =>
+        """
+        PRAGMA temp_store = MEMORY;
+        """;
+
     public static string CreateSchema =>
         """
         CREATE TABLE IF NOT EXISTS favorite_nodes (
@@ -57,6 +72,9 @@ internal static class SchemaQueries
             barometric_pressure REAL NULL
         );
 
+        CREATE INDEX IF NOT EXISTS ix_nodes_last_heard_at_utc
+            ON nodes(last_heard_at_utc DESC);
+
         CREATE TABLE IF NOT EXISTS message_history (
             id TEXT NOT NULL PRIMARY KEY,
             topic TEXT NOT NULL,
@@ -74,6 +92,9 @@ internal static class SchemaQueries
 
         CREATE INDEX IF NOT EXISTS ix_message_history_from_node_id_received_at_utc
             ON message_history(from_node_id, received_at_utc DESC);
+
+        CREATE INDEX IF NOT EXISTS ix_message_history_topic_received_at_utc
+            ON message_history(topic, received_at_utc DESC);
         """;
 
     public static string DeleteExpiredMessages =>
@@ -195,5 +216,11 @@ internal static class SchemaQueries
         """
         ALTER TABLE nodes
         ADD COLUMN last_heard_channel TEXT NULL;
+        """;
+
+    public static string CreateNodesLastHeardChannelIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_nodes_last_heard_channel
+            ON nodes(last_heard_channel);
         """;
 }

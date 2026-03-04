@@ -102,47 +102,50 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await BrokerMonitorService.EnsureConnected();
-        await LoadAsync();
+        await BrokerMonitorService.EnsureConnected(_cancellationTokenSource.Token);
+        await LoadAsync(_cancellationTokenSource.Token);
         _isLoading = false;
         _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _cancellationTokenSource.Cancel();
-
-        if (_refreshTask is not null)
-        {
-            try
-            {
-                await _refreshTask;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
         _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(CancellationToken cancellationToken)
     {
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
-        _topicPresets = await TopicPresetService.GetTopicPresets();
-        _favoriteNodes = await FavoriteNodeService.GetFavoriteNodes();
-        _observedNodeCount = (await NodeService.GetNodesPage(offset: 0, take: 1)).TotalCount;
-        _messages = await MessageService.GetRecentMessages();
+
+        var topicPresetsTask = TopicPresetService.GetTopicPresets(cancellationToken);
+        var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes(cancellationToken);
+        var observedNodeCountTask = NodeService.GetNodesPage(offset: 0, take: 1, cancellationToken: cancellationToken);
+        var messagesTask = MessageService.GetRecentMessages(120, cancellationToken);
+
+        await Task.WhenAll(topicPresetsTask, favoriteNodesTask, observedNodeCountTask, messagesTask);
+
+        _topicPresets = await topicPresetsTask;
+        _favoriteNodes = await favoriteNodesTask;
+        _observedNodeCount = (await observedNodeCountTask).TotalCount;
+        _messages = await messagesTask;
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
-
-        while (await timer.WaitForNextTickAsync(cancellationToken))
+        try
         {
-            await LoadAsync();
-            await InvokeAsync(StateHasChanged);
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await LoadAsync(cancellationToken);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
     }
 }

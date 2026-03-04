@@ -31,6 +31,21 @@ internal sealed class SqliteDatabaseInitializer
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.EnableWriteAheadLogging,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.SetSynchronousNormal,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.SetTempStoreMemory,
+                cancellationToken: cancellationToken));
+
         var createSchemaCommand = new CommandDefinition(
             SchemaQueries.CreateSchema,
             cancellationToken: cancellationToken);
@@ -123,6 +138,11 @@ internal sealed class SqliteDatabaseInitializer
         await EnsureColumnAsync(connection, columns, "relative_humidity", SchemaQueries.AddNodesRelativeHumidityColumn, cancellationToken);
         await EnsureColumnAsync(connection, columns, "barometric_pressure", SchemaQueries.AddNodesBarometricPressureColumn, cancellationToken);
         await EnsureColumnAsync(connection, columns, "last_heard_channel", SchemaQueries.AddNodesLastHeardChannelColumn, cancellationToken);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateNodesLastHeardChannelIndex,
+                cancellationToken: cancellationToken));
     }
 
     private static async Task MigrateTopicPresetsAsync(
