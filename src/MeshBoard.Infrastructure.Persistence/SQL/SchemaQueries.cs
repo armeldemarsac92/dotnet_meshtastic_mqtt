@@ -71,6 +71,9 @@ internal static class SchemaQueries
 
         CREATE INDEX IF NOT EXISTS ix_message_history_received_at_utc
             ON message_history(received_at_utc DESC);
+
+        CREATE INDEX IF NOT EXISTS ix_message_history_from_node_id_received_at_utc
+            ON message_history(from_node_id, received_at_utc DESC);
         """;
 
     public static string DeleteExpiredMessages =>

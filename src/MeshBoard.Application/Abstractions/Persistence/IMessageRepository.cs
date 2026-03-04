@@ -9,4 +9,9 @@ public interface IMessageRepository
     Task<int> DeleteOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(int take, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<MessageSummary>> GetRecentBySenderAsync(
+        string senderNodeId,
+        int take,
+        CancellationToken cancellationToken = default);
 }

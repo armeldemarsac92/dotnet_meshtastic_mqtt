@@ -7,6 +7,11 @@ namespace MeshBoard.Application.Services;
 public interface IMessageService
 {
     Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(int take = 250, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<MessageSummary>> GetRecentMessagesBySender(
+        string senderNodeId,
+        int take = 250,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class MessageService : IMessageService
@@ -29,6 +34,34 @@ public sealed class MessageService : IMessageService
         var messages = await _messageRepository.GetRecentAsync(take, cancellationToken);
 
         _logger.LogDebug("Retrieved {MessageCount} recent messages", messages.Count);
+
+        return messages;
+    }
+
+    public async Task<IReadOnlyCollection<MessageSummary>> GetRecentMessagesBySender(
+        string senderNodeId,
+        int take = 250,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(senderNodeId))
+        {
+            return [];
+        }
+
+        _logger.LogDebug(
+            "Attempting to get recent messages by sender {SenderNodeId} with take: {Take}",
+            senderNodeId,
+            take);
+
+        var messages = await _messageRepository.GetRecentBySenderAsync(
+            senderNodeId.Trim(),
+            take,
+            cancellationToken);
+
+        _logger.LogDebug(
+            "Retrieved {MessageCount} recent messages by sender {SenderNodeId}",
+            messages.Count,
+            senderNodeId);
 
         return messages;
     }

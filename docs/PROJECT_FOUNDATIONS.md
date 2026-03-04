@@ -339,6 +339,7 @@ Current implementation status:
 - `/topics` explorer cards and saved-preset rows now expose direct channel `Details` actions.
 - `/messages` now shows `Listening channels` from active broker subscriptions only (stable list based on subscribed topic filters), rather than combining discovered/recent channel candidates.
 - `/messages` now exposes a configurable auto-refresh delay (including paused mode) so operators can reduce UI update frequency during high traffic.
+- Node detail views now use a sender-filtered message query (`GetRecentMessagesBySender`) so "recent published messages" are fetched directly by node id at the SQL layer instead of filtering a large generic recent-message window in memory.
 
 ## Initial Functional Slices
 

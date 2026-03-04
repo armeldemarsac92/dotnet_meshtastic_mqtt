@@ -54,4 +54,26 @@ internal sealed class MessageRepository : IMessageRepository
 
         return sqlResponses.MapToMessages();
     }
+
+    public async Task<IReadOnlyCollection<MessageSummary>> GetRecentBySenderAsync(
+        string senderNodeId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch recent messages by sender {SenderNodeId} with take: {Take}",
+            senderNodeId,
+            take);
+
+        var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
+            MessageQueries.GetRecentMessagesBySender,
+            new
+            {
+                SenderNodeId = senderNodeId,
+                Take = take
+            },
+            cancellationToken);
+
+        return sqlResponses.MapToMessages();
+    }
 }
