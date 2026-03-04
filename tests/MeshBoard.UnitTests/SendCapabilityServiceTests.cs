@@ -100,6 +100,11 @@ public sealed class SendCapabilityServiceTests
             return Task.CompletedTask;
         }
 
+        public Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;

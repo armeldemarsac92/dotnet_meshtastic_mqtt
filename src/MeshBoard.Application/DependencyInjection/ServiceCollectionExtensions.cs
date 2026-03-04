@@ -9,6 +9,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
+        services.AddScoped<IMessageComposerService, MessageComposerService>();
         services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<INodeService, NodeService>();

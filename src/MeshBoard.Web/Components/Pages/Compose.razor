@@ -1,5 +1,6 @@
 @page "/compose"
 @implements IAsyncDisposable
+@inject IMessageComposerService MessageComposerService
 @inject ISendCapabilityService SendCapabilityService
 
 <PageTitle>Compose</PageTitle>
@@ -38,6 +39,36 @@
                     }
                 </ul>
             }
+
+            <div class="mt-6 space-y-4 rounded-[1.25rem] border border-sand-200/80 bg-white/70 p-5">
+                <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Compose text message</h3>
+
+                <label class="block space-y-2">
+                    <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Private destination (optional)</span>
+                    <InputText @bind-Value="_composeRequest.ToNodeId"
+                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                               placeholder="!a1b2c3d4" />
+                </label>
+
+                <label class="block space-y-2">
+                    <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Message</span>
+                    <InputTextArea @bind-Value="_composeRequest.Text"
+                                   rows="4"
+                                   class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                                   placeholder="Type a message to publish to Meshtastic downlink..." />
+                </label>
+
+                <button @onclick="SendAsync"
+                        disabled="@(!_capabilityStatus.IsEnabled || _isSending)"
+                        class="rounded-full bg-signal-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600 disabled:cursor-not-allowed disabled:bg-sand-200 disabled:text-cinder-700">
+                    @(_isSending ? "Sending..." : "Send")
+                </button>
+
+                @if (!string.IsNullOrWhiteSpace(_composeStatusMessage))
+                {
+                    <p class="text-sm text-cinder-800/82">@_composeStatusMessage</p>
+                }
+            </div>
         </article>
 
         <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
@@ -65,6 +96,9 @@
 @code {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private SendCapabilityStatus _capabilityStatus = new();
+    private readonly ComposeTextMessageRequest _composeRequest = new();
+    private bool _isSending;
+    private string? _composeStatusMessage;
     private Task? _refreshTask;
 
     protected override Task OnInitializedAsync()
@@ -113,5 +147,27 @@
         return _capabilityStatus.IsEnabled
             ? "bg-signal-500/12 text-signal-600"
             : "bg-cinder-900 text-white";
+    }
+
+    private async Task SendAsync()
+    {
+        _isSending = true;
+        _composeStatusMessage = null;
+
+        try
+        {
+            var result = await MessageComposerService.SendTextMessage(_composeRequest, _cancellationTokenSource.Token);
+            _composeStatusMessage = $"{result.StatusMessage} Topic: {result.Topic}";
+            _composeRequest.Text = string.Empty;
+        }
+        catch (Exception exception)
+        {
+            _composeStatusMessage = exception.Message;
+        }
+        finally
+        {
+            _isSending = false;
+            RefreshStatus();
+        }
     }
 }

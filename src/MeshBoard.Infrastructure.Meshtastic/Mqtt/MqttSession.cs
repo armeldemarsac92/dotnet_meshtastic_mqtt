@@ -142,6 +142,47 @@ internal sealed class MqttSession : IMqttSession
         await SubscribeCoreAsync(topicFilter, cancellationToken);
     }
 
+    public async Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            throw new InvalidOperationException("A publish topic is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            throw new InvalidOperationException("A publish payload is required.");
+        }
+
+        if (!_mqttClient.IsConnected)
+        {
+            await ConnectAsync(cancellationToken);
+        }
+
+        if (!_mqttClient.IsConnected)
+        {
+            throw new InvalidOperationException("The MQTT client is not connected.");
+        }
+
+        _logger.LogInformation("Attempting to publish MQTT message to topic: {Topic}", topic);
+
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(payload)
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce)
+            .Build();
+
+        var result = await _mqttClient.PublishAsync(message, cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            _lastStatusMessage = CreatePublishFailureMessage(result.ReasonCode.ToString(), result.ReasonString);
+            throw new InvalidOperationException(_lastStatusMessage);
+        }
+
+        _lastStatusMessage = $"Published message to {topic}.";
+    }
+
     private Task OnApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs eventArgs)
     {
         var handler = MessageReceived;
@@ -236,5 +277,12 @@ internal sealed class MqttSession : IMqttSession
         return CreateConnectFailureMessage(
             eventArgs.ConnectResult.ResultCode.ToString(),
             eventArgs.ConnectResult.ReasonString);
+    }
+
+    private static string CreatePublishFailureMessage(string reasonCode, string? reasonString)
+    {
+        return string.IsNullOrWhiteSpace(reasonString)
+            ? $"Publish failed: {reasonCode}."
+            : $"Publish failed: {reasonCode} ({reasonString}).";
     }
 }

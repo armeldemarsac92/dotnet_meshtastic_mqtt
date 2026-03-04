@@ -291,6 +291,9 @@ Current implementation status:
 - The `/messages` page now supports practical client-side filtering by visibility, packet type, and free-text search over recent persisted traffic.
 - Compose now uses a dedicated send-capability service instead of a static placeholder. It reports live blocker reasons from broker config and MQTT session state.
 - `Broker:DownlinkTopic` is now part of runtime configuration for future send workflows and is validated by the capability service.
+- A guarded compose publisher service is now implemented for Meshtastic `sendtext` JSON downlink messages (public and private).
+- Actual send attempts remain effectively off by default because `Broker:EnableSend` is still `false` in configuration.
+- Compose send behavior and validation are covered by unit tests for capability gating, node-id format checks, and serialized MQTT payload output.
 - The `nodes` table now stores a small telemetry set: battery level, voltage, channel utilization, air util TX, uptime, temperature, humidity, and barometric pressure.
 - `/nodes` now renders position plus the currently persisted device and environment telemetry fields.
 - Node querying now supports application-layer filtering and sorting by search text, location presence, telemetry presence, and sort mode.
