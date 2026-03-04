@@ -318,6 +318,7 @@ Current implementation status:
 - The `/messages` stream table now renders only the normalized `<region>/<channel>` badge in the channel column instead of raw full MQTT topic strings.
 - The `/messages` stream now renders sender display names with short-name priority when available, and each sender links directly to `/nodes/details/{nodeId}`.
 - Topic subscriptions now auto-expand `e <-> json` companions for Meshtastic channel filters so users can keep encrypted packet visibility while also ingesting decoded JSON traffic when available.
+- The `/messages` stream now keeps previews truncated in-table with a `See message` modal for full payload text, and refreshes every second so decoded replacements appear faster.
 
 ## Initial Functional Slices
 

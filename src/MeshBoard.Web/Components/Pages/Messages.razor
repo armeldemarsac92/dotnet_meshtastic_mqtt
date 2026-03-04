@@ -126,7 +126,16 @@
                                 </a>
                             </td>
                             <td class="px-5 py-4 text-cinder-800/80">@(message.ToNodeId ?? "Broadcast")</td>
-                            <td class="px-5 py-4">@message.PayloadPreview</td>
+                            <td class="px-5 py-4">
+                                <div class="space-y-2">
+                                    <p>@GetTruncatedPreview(message.PayloadPreview)</p>
+                                    <button type="button"
+                                            class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                            @onclick="() => OpenMessagePreview(message)">
+                                        See message
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -135,12 +144,56 @@
     </section>
 </div>
 
+@if (_previewMessage is not null)
+{
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/35 p-4"
+         @onclick="CloseMessagePreview">
+        <article class="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[1.6rem] border border-white/60 bg-white shadow-panel"
+                 @onclick:stopPropagation="true">
+            <header class="flex items-center justify-between border-b border-sand-100/80 px-5 py-4">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Message details</p>
+                    <p class="text-sm text-cinder-900">@_previewMessage.ReceivedAtUtc.ToString("u")</p>
+                </div>
+                <button type="button"
+                        class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                        @onclick="CloseMessagePreview">
+                    Close
+                </button>
+            </header>
+            <div class="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4 text-sm text-cinder-900">
+                <div class="flex flex-wrap gap-2">
+                    <span class="@GetPacketTypeBadgeClass(_previewMessage.PacketType)">@_previewMessage.PacketType</span>
+                    @if (TryGetChannelDetailsHref(_previewMessage.Topic, out var channelHref, out var channelLabel))
+                    {
+                        <a href="@channelHref"
+                           class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-cinder-900/15">
+                            @channelLabel
+                        </a>
+                    }
+                    <a href="@GetNodeDetailsHref(_previewMessage.FromNodeId)"
+                       class="inline-flex rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-sand-200">
+                        @GetSenderDisplayName(_previewMessage)
+                    </a>
+                </div>
+                <p class="text-cinder-800/82">To: @(_previewMessage.ToNodeId ?? "Broadcast")</p>
+                <section class="rounded-2xl border border-sand-200 bg-sand-50/70 p-4">
+                    <h2 class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Full preview</h2>
+                    <p class="mt-2 whitespace-pre-wrap break-words text-sm text-cinder-950">@_previewMessage.PayloadPreview</p>
+                </section>
+            </div>
+        </article>
+    </div>
+}
+
 @code {
+    private const int PreviewLength = 140;
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private BrokerStatus _brokerStatus = new();
     private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
     private readonly MessageFilters _filters = new();
     private IReadOnlyCollection<MessageSummary> _messages = [];
+    private MessageSummary? _previewMessage;
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
     private Task? _refreshTask;
     private string? _subscriptionStatusMessage;
@@ -217,7 +270,7 @@
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
@@ -349,6 +402,33 @@
         }
 
         return message.FromNodeId;
+    }
+
+    private static string GetTruncatedPreview(string payloadPreview)
+    {
+        if (string.IsNullOrWhiteSpace(payloadPreview))
+        {
+            return "(empty message)";
+        }
+
+        var normalized = payloadPreview.ReplaceLineEndings(" ").Trim();
+
+        if (normalized.Length <= PreviewLength)
+        {
+            return normalized;
+        }
+
+        return $"{normalized[..PreviewLength]}...";
+    }
+
+    private void OpenMessagePreview(MessageSummary message)
+    {
+        _previewMessage = message;
+    }
+
+    private void CloseMessagePreview()
+    {
+        _previewMessage = null;
     }
 
     private sealed class MessageFilters
