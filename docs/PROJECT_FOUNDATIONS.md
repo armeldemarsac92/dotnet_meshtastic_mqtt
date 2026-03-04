@@ -320,7 +320,7 @@ Current implementation status:
 - Topic subscriptions now auto-expand `e <-> json` companions for Meshtastic channel filters so users can keep encrypted packet visibility while also ingesting decoded JSON traffic when available.
 - The `/messages` stream now keeps previews truncated in-table with a `See message` modal for full payload text, and refreshes every second so decoded replacements appear faster.
 - Encrypted Meshtastic packets are now decrypted locally before classification using the Meshtastic AES-CTR scheme (nonce = packet id + sender node id), then parsed as protobuf `Data` when successful.
-- The default decryption key is now configurable as `Broker:DefaultEncryptionKeyBase64` and defaults to the Meshtastic public key (`1PG7OiApB1nwvP+rz05pAQ==`).
+- The default decryption key is now configurable as `Broker:DefaultEncryptionKeyBase64` and defaults to Meshtastic short-PSK `AQ==` (which expands to the public key bytes).
 - Topic presets now support optional `encryption_key_base64` overrides in SQLite (`topic_presets.encryption_key_base64`) with additive migration support for existing databases.
 - Channel-level key overrides can now be saved from channel details (base64 or hex input), and topic-preset save paths now validate and normalize keys to canonical base64.
 - Node details and channel details are now available as large in-page modal popups from `/messages`, `/nodes`, and `/topics` (instead of forcing route navigation).

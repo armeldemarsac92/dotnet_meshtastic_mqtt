@@ -4,7 +4,7 @@ namespace MeshBoard.Contracts.Topics;
 
 public static class TopicEncryptionKey
 {
-    public const string DefaultKeyBase64 = "1PG7OiApB1nwvP+rz05pAQ==";
+    public const string DefaultKeyBase64 = "AQ==";
 
     public static readonly byte[] DefaultKeyBytes =
     [
@@ -52,8 +52,30 @@ public static class TopicEncryptionKey
     {
         try
         {
-            keyBytes = Convert.FromBase64String(value);
-            return IsValidLength(keyBytes.Length);
+            var decodedBytes = Convert.FromBase64String(value);
+
+            if (decodedBytes.Length == 1)
+            {
+                var pskIndex = decodedBytes[0];
+
+                if (pskIndex == 0)
+                {
+                    keyBytes = [];
+                    return false;
+                }
+
+                keyBytes = ExpandShortPsk(pskIndex);
+                return true;
+            }
+
+            if (!IsValidLength(decodedBytes.Length))
+            {
+                keyBytes = [];
+                return false;
+            }
+
+            keyBytes = decodedBytes;
+            return true;
         }
         catch (FormatException)
         {
@@ -117,5 +139,18 @@ public static class TopicEncryptionKey
     private static bool IsValidLength(int byteLength)
     {
         return byteLength is 16 or 24 or 32;
+    }
+
+    private static byte[] ExpandShortPsk(byte pskIndex)
+    {
+        var expanded = new byte[DefaultKeyBytes.Length];
+        Buffer.BlockCopy(DefaultKeyBytes, 0, expanded, 0, DefaultKeyBytes.Length);
+
+        unchecked
+        {
+            expanded[^1] = (byte)(expanded[^1] + pskIndex - 1);
+        }
+
+        return expanded;
     }
 }

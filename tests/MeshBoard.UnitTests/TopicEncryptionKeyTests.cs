@@ -27,9 +27,28 @@ public sealed class TopicEncryptionKeyTests
     }
 
     [Fact]
-    public void TryParse_ShouldRejectInvalidKeyLength()
+    public void TryParse_ShouldAcceptShortDefaultPskIndex()
     {
         var parsed = TopicEncryptionKey.TryParse("AQ==", out var keyBytes);
+
+        Assert.True(parsed);
+        Assert.Equal(TopicEncryptionKey.DefaultKeyBytes, keyBytes);
+    }
+
+    [Fact]
+    public void TryParse_ShouldExpandShortPskIndex()
+    {
+        var parsed = TopicEncryptionKey.TryParse("Ag==", out var keyBytes);
+
+        Assert.True(parsed);
+        Assert.Equal(TopicEncryptionKey.DefaultKeyBytes.Length, keyBytes.Length);
+        Assert.Equal((byte)(TopicEncryptionKey.DefaultKeyBytes[^1] + 1), keyBytes[^1]);
+    }
+
+    [Fact]
+    public void TryParse_ShouldRejectUnsupportedByteLength()
+    {
+        var parsed = TopicEncryptionKey.TryParse("AQI=", out var keyBytes);
 
         Assert.False(parsed);
         Assert.Empty(keyBytes);
