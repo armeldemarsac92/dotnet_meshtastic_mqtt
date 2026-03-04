@@ -3,9 +3,9 @@
 
 @if (IsOpen)
 {
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
+    <div class="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
          @onclick="CloseAsync">
-        <article class="liquid-panel max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[1.8rem]"
+        <article class="liquid-panel max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[1.8rem] overscroll-contain"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between border-b border-sand-100/80 px-5 py-4">
                 <div class="space-y-1">
@@ -13,13 +13,13 @@
                     <p class="text-sm text-cinder-900">@NodeId</p>
                 </div>
                 <button type="button"
-                        class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                        class="liquid-button cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]"
                         @onclick="CloseAsync">
                     Close
                 </button>
             </header>
 
-            <div class="max-h-[84vh] overflow-y-auto px-5 py-4">
+            <div class="max-h-[84vh] overflow-y-auto px-5 py-4 overscroll-contain">
                 @if (_isLoading)
                 {
                     <p class="text-sm text-cinder-800/78">Loading node details...</p>
@@ -47,7 +47,7 @@
                                 @if (!string.IsNullOrWhiteSpace(_node.LastHeardChannel))
                                 {
                                     <button type="button"
-                                            class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 transition hover:bg-cinder-900/15"
+                                            class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-xs font-semibold"
                                             @onclick="() => OpenChannelDetailsAsync(_node.LastHeardChannel!)">
                                         @_node.LastHeardChannel
                                     </button>

@@ -44,7 +44,7 @@
             </dl>
             <div class="mt-6 border-t border-sand-200/80 pt-4">
                 <button type="button"
-                        class="inline-flex items-center rounded-full bg-cinder-900 px-4 py-2 text-sm font-medium text-sand-50 shadow-lg shadow-cinder-950/30 transition hover:bg-cinder-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        class="liquid-button liquid-button-accent inline-flex items-center rounded-full px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
                         @onclick="PruneMessageHistory"
                         disabled="@_isPruningMessages">
                     @(_isPruningMessages ? "Pruning..." : "Prune expired messages")

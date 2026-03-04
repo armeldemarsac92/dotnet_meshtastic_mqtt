@@ -72,7 +72,7 @@ Rules:
 Liquid glass conventions (2026-03-04 refresh):
 
 - The app now uses a shared glass utility layer in `src/MeshBoard.Web/Styles/app.css` with reusable classes: `liquid-stage`, `liquid-sidebar`, `liquid-nav-link`, `liquid-panel`, `liquid-subpanel`, `liquid-input`, and `liquid-table-head`.
-- Additional shared UI helpers now include `liquid-button`, `liquid-button-accent`, `liquid-button-active`, `fade-scroll-frame`, and `fade-scroll-content` for modern button styling and scroll-fade behavior inside constrained modal panels.
+- Additional shared UI helpers now include `liquid-button`, `liquid-button-accent`, `liquid-button-active`, `liquid-button-danger`, `liquid-inline-action`, `modal-overlay`, `fade-scroll-frame`, and `fade-scroll-content` for consistent action styling, modal scroll lock, and scroll-fade behavior inside constrained modal panels.
 - Glass surfaces should use the shared classes instead of repeating long utility sequences (`border + bg + shadow + blur`) in each Razor component.
 - Keep legibility first: primary content text should remain `text-cinder-950` or equivalent high-contrast values, and translucent surfaces must not reduce contrast below WCAG AA-level expectations.
 - Inputs/selects/textarea should use `liquid-input` so focus rings and contrast remain consistent across pages.

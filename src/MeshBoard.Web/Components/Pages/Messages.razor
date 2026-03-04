@@ -28,7 +28,7 @@
                 @foreach (var channelEntry in ChannelEntries)
                 {
                     <button type="button"
-                            class="cursor-pointer rounded-full bg-signal-500 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600"
+                            class="liquid-button liquid-button-accent cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]"
                             @onclick="() => ToggleSubscriptionAsync(channelEntry.TopicPattern)">
                         @channelEntry.Label
                     </button>
@@ -114,7 +114,7 @@
                                 @if (TryGetChannelLabel(message.Topic, out var channelLabel, out var region, out var channel))
                                 {
                                     <button type="button"
-                                            class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                            class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
                                             @onclick="() => OpenChannelDetails(region, channel)">
                                         @channelLabel
                                     </button>
@@ -128,7 +128,7 @@
                             </td>
                             <td class="px-5 py-4 align-top font-medium">
                                 <button type="button"
-                                        class="cursor-pointer text-cinder-950 underline-offset-4 hover:underline"
+                                        class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-xs font-semibold"
                                         @onclick="() => OpenNodeDetails(message.FromNodeId)">
                                     @GetSenderDisplayName(message)
                                 </button>
@@ -138,7 +138,7 @@
                                 <div class="space-y-2">
                                     <p class="break-words leading-6">@GetTruncatedPreview(message.PayloadPreview)</p>
                                     <button type="button"
-                                            class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                            class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
                                             @onclick="() => OpenMessagePreview(message)">
                                         See message
                                     </button>
@@ -154,9 +154,9 @@
 
 @if (_previewMessage is not null)
 {
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/40 p-4 backdrop-blur-sm"
+    <div class="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/40 p-4 backdrop-blur-sm"
          @onclick="CloseMessagePreview">
-        <article class="liquid-panel max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[1.6rem]"
+        <article class="liquid-panel max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[1.6rem] overscroll-contain"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between border-b border-sand-100/80 px-5 py-4">
                 <div class="space-y-1">
@@ -164,24 +164,24 @@
                     <p class="text-sm text-cinder-900">@_previewMessage.ReceivedAtUtc.ToString("u")</p>
                 </div>
                 <button type="button"
-                        class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                        class="liquid-button cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]"
                         @onclick="CloseMessagePreview">
                     Close
                 </button>
             </header>
-            <div class="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4 text-sm text-cinder-900">
+            <div class="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4 text-sm text-cinder-900 overscroll-contain">
                 <div class="flex flex-wrap gap-2">
                     <span class="@GetPacketTypeBadgeClass(_previewMessage.PacketType)">@_previewMessage.PacketType</span>
                     @if (TryGetChannelLabel(_previewMessage.Topic, out var channelLabel, out var region, out var channel))
                     {
                         <button type="button"
-                                class="cursor-pointer rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15"
+                                class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
                                 @onclick="() => OpenChannelDetails(region, channel)">
                             @channelLabel
                         </button>
                     }
                     <button type="button"
-                            class="cursor-pointer rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-sand-200"
+                            class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
                             @onclick="() => OpenNodeDetails(_previewMessage.FromNodeId)">
                         @GetSenderDisplayName(_previewMessage)
                     </button>

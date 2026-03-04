@@ -60,7 +60,7 @@
 
                 <button @onclick="SendAsync"
                         disabled="@(!_capabilityStatus.IsEnabled || _isSending)"
-                        class="rounded-full bg-signal-500 px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-signal-600 disabled:cursor-not-allowed disabled:bg-sand-200 disabled:text-cinder-700">
+                        class="liquid-button liquid-button-accent rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60">
                     @(_isSending ? "Sending..." : "Send")
                 </button>
 

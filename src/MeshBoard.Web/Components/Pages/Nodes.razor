@@ -102,13 +102,13 @@
                             <td class="px-5 py-4">
                                 <button @onclick="() => ToggleFavoriteAsync(node)"
                                         disabled="@(_favoriteActionNodeId == node.NodeId)"
-                                        class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsFavorite(node.NodeId) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200") disabled:cursor-not-allowed disabled:opacity-60">
+                                        class="liquid-button cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] @(IsFavorite(node.NodeId) ? "liquid-button-active" : "liquid-button-accent") disabled:cursor-not-allowed disabled:opacity-60">
                                     @(IsFavorite(node.NodeId) ? "Saved" : "Save")
                                 </button>
                             </td>
                             <td class="px-5 py-4">
                                 <button type="button"
-                                        class="cursor-pointer font-medium text-cinder-950 underline-offset-4 hover:underline"
+                                        class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-xs font-semibold"
                                         @onclick="() => OpenNodeDetails(node.NodeId)">
                                     @(node.LongName ?? node.ShortName ?? node.NodeId)
                                 </button>
@@ -124,7 +124,7 @@
                                 else
                                 {
                                     <button type="button"
-                                            class="cursor-pointer inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 transition hover:bg-cinder-900/15"
+                                            class="liquid-inline-action cursor-pointer inline-flex rounded-full px-3 py-1 text-xs font-semibold"
                                             @onclick="() => OpenChannelDetailsFromKey(node.LastHeardChannel!)">
                                         @node.LastHeardChannel
                                     </button>
@@ -145,7 +145,7 @@
     {
         <section class="flex justify-center">
             <button type="button"
-                    class="cursor-pointer rounded-full bg-cinder-950 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    class="liquid-button liquid-button-accent cursor-pointer rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
                     disabled="@_isLoadingNodes"
                     @onclick="LoadMoreNodesAsync">
                 @(_isLoadingNodes ? "Loading..." : $"Load more ({Math.Min(_maxDisplayed, _totalMatchedNodeCount - DisplayedNodeCount)} next)")
