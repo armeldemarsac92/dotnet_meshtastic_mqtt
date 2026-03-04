@@ -341,4 +341,9 @@
         overscroll-behavior: contain;
         scrollbar-gutter: stable;
     }
+
+    .fade-scroll-content-fill {
+        height: 100%;
+        max-height: none;
+    }
 }
