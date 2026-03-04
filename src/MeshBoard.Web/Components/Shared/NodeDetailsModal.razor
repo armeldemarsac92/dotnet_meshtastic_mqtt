@@ -5,12 +5,11 @@
 {
     <div class="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
          @onclick="CloseAsync">
-        <article class="liquid-panel max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-[1.8rem] overscroll-contain"
+        <article class="liquid-panel max-h-[95vh] w-full max-w-7xl overflow-hidden rounded-[1.8rem] overscroll-contain"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between border-b border-sand-100/80 px-5 py-4">
-                <div class="space-y-1">
+                <div>
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Node details</p>
-                    <p class="text-sm text-cinder-900">@NodeId</p>
                 </div>
                 <button type="button"
                         class="liquid-button cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em]"
@@ -19,7 +18,7 @@
                 </button>
             </header>
 
-            <div class="max-h-[84vh] overflow-y-auto px-5 py-4 overscroll-contain">
+            <div class="max-h-[88vh] overflow-y-auto px-5 py-4 overscroll-contain">
                 @if (_isLoading)
                 {
                     <p class="text-sm text-cinder-800/78">Loading node details...</p>
@@ -86,7 +85,7 @@
                         </section>
 
                         <section class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                            <article class="liquid-panel flex max-h-[30rem] min-h-[23rem] flex-col overflow-hidden rounded-[1.6rem]">
+                            <article class="liquid-panel flex max-h-[36rem] min-h-[26rem] flex-col overflow-hidden rounded-[1.6rem]">
                                 <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
                                     <h3 class="font-display text-3xl text-cinder-950">Recent messages</h3>
                                 </div>
@@ -114,7 +113,7 @@
                                 }
                             </article>
 
-                            <article class="liquid-panel flex max-h-[30rem] min-h-[23rem] flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
+                            <article class="liquid-panel flex max-h-[36rem] min-h-[26rem] flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
                                 <h3 class="font-display text-3xl text-cinder-950">Map</h3>
                                 @if (TryBuildMapEmbedUrl(_node, out var mapEmbedUrl))
                                 {
