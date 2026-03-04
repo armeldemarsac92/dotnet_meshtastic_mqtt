@@ -266,6 +266,7 @@ Current implementation status:
 - Topic preset seeding currently inserts `US Public Feed` and `EU Public Feed` if they do not already exist.
 - With the current `Data Source=meshboard.db` connection string, the database file is created relative to the web app working directory. When launched with `dotnet run --project src/MeshBoard.Web/MeshBoard.Web.csproj`, that currently resolves to `src/MeshBoard.Web/meshboard.db`.
 - SQLite startup now includes an additive migration path for `message_history`, so existing local databases upgrade in place instead of requiring deletion.
+- Integration tests now verify legacy SQLite migration behavior for `message_history` and `nodes`, including message-key backfill dedup behavior and telemetry column upgrades.
 
 ### MQTT Runtime Status
 
@@ -301,6 +302,7 @@ Current implementation status:
 - The `/nodes` page now also supports in-place favorite toggle actions and a favorites-only view backed by the existing favorite-node service and repository flow.
 - The `/favorites` page is now actionable: favorite nodes can be removed directly from the table while preserving service-layer transaction and exception behavior.
 - Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
+- Integration tests now cover duplicate packet ingestion rollback semantics end-to-end against SQLite/Dapper to ensure duplicate packets do not mutate node state.
 
 ## Initial Functional Slices
 
@@ -455,6 +457,12 @@ Add tests for:
 - SQL mappings
 - transaction handling
 - app service flows against the persistence implementation
+
+Current coverage includes:
+
+- legacy-schema startup migration/backfill for `message_history` and `nodes`
+- dedup conflict behavior through backfilled `message_key`
+- duplicate ingestion rollback behavior through `MeshtasticIngestionService` with real persistence infrastructure
 
 ## Delivery Order
 
