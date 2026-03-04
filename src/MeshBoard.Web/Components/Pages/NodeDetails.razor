@@ -1,0 +1,307 @@
+@page "/nodes/details/{NodeId}"
+@inject IMessageService MessageService
+@inject INodeService NodeService
+
+<PageTitle>Node Details</PageTitle>
+
+@if (_node is null)
+{
+    <div class="space-y-3">
+        <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node not found</h1>
+        <p class="text-cinder-800">No observed node matched <code class="rounded-full bg-sand-100 px-3 py-1 text-xs">@NodeId</code>.</p>
+    </div>
+}
+else
+{
+    <div class="space-y-6">
+        <header class="space-y-3">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Node details</p>
+                <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">@(_node.LongName ?? _node.ShortName ?? _node.NodeId)</h1>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
+                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_node.NodeId</code>
+                @if (!string.IsNullOrWhiteSpace(_node.LastHeardChannel))
+                {
+                    <a href="@GetChannelDetailsHref(_node.LastHeardChannel)"
+                       class="rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 hover:bg-cinder-900/15">
+                        @_node.LastHeardChannel
+                    </a>
+                }
+            </div>
+        </header>
+
+        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Published messages</p>
+                <strong class="mt-2 block text-3xl text-cinder-950">@_publishedMessageCount</strong>
+            </article>
+            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Participated messages</p>
+                <strong class="mt-2 block text-3xl text-cinder-950">@_relatedMessages.Count</strong>
+            </article>
+            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last heard</p>
+                <strong class="mt-2 block text-sm text-cinder-950">@(_node.LastHeardAtUtc?.ToString("u") ?? "Unknown")</strong>
+            </article>
+            <article class="rounded-[1.4rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Position</p>
+                <strong class="mt-2 block text-sm text-cinder-950">@FormatPosition(_node)</strong>
+            </article>
+        </section>
+
+        <section class="grid gap-4 xl:grid-cols-2">
+            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+                <h2 class="font-display text-3xl text-cinder-950">Device telemetry</h2>
+                @RenderDeviceTelemetry(_node)
+            </article>
+            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+                <h2 class="font-display text-3xl text-cinder-950">Environment telemetry</h2>
+                @RenderEnvironmentTelemetry(_node)
+            </article>
+        </section>
+
+        <section class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <article class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+                <div class="border-b border-sand-100/80 px-5 py-4">
+                    <h2 class="font-display text-3xl text-cinder-950">Recent messages</h2>
+                </div>
+                @if (_relatedMessages.Count == 0)
+                {
+                    <div class="p-6 text-cinder-800/78">No recent packets involve this node.</div>
+                }
+                else
+                {
+                    <ul class="space-y-3 p-5 text-sm text-cinder-900">
+                        @foreach (var message in _relatedMessages.Take(25))
+                        {
+                            <li class="rounded-2xl border border-sand-200/80 bg-white/70 p-3">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="rounded-full bg-sand-100 px-3 py-1 text-xs">@message.PacketType</span>
+                                    <span class="text-xs text-cinder-800/70">@message.ReceivedAtUtc.ToString("u")</span>
+                                </div>
+                                <p class="mt-2">@message.PayloadPreview</p>
+                                <p class="mt-1 text-xs text-cinder-800/70">From @message.FromNodeId to @(message.ToNodeId ?? "Broadcast")</p>
+                            </li>
+                        }
+                    </ul>
+                }
+            </article>
+
+            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+                <h2 class="font-display text-3xl text-cinder-950">Map</h2>
+                @if (TryBuildMapEmbedUrl(_node, out var mapEmbedUrl))
+                {
+                    <iframe title="Node position map"
+                            class="mt-4 h-72 w-full rounded-2xl border border-sand-200"
+                            src="@mapEmbedUrl"></iframe>
+                }
+                else
+                {
+                    <p class="mt-4 text-cinder-800/78">No coordinates available for this node yet.</p>
+                }
+            </article>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string NodeId { get; set; } = string.Empty;
+
+    private NodeSummary? _node;
+    private int _publishedMessageCount;
+    private IReadOnlyCollection<MessageSummary> _relatedMessages = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var nodes = await NodeService.GetNodes(
+            new NodeQuery { SearchText = NodeId },
+            take: 500);
+
+        _node = nodes.FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
+
+        if (_node is null)
+        {
+            _relatedMessages = [];
+            _publishedMessageCount = 0;
+            return;
+        }
+
+        var messages = await MessageService.GetRecentMessages(5_000);
+        _relatedMessages = messages
+            .Where(
+                message =>
+                    string.Equals(message.FromNodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(message.ToNodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(message => message.ReceivedAtUtc)
+            .ToList();
+
+        _publishedMessageCount = _relatedMessages.Count(
+            message => string.Equals(message.FromNodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string FormatPosition(NodeSummary node)
+    {
+        return node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue
+            ? $"{node.LastKnownLatitude.Value:F5}, {node.LastKnownLongitude.Value:F5}"
+            : "Unknown";
+    }
+
+    private static string GetChannelDetailsHref(string channelKey)
+    {
+        if (string.IsNullOrWhiteSpace(channelKey))
+        {
+            return "/channels";
+        }
+
+        var segments = channelKey.Split('/', 2, StringSplitOptions.TrimEntries);
+
+        if (segments.Length != 2)
+        {
+            return "/channels";
+        }
+
+        return $"/channels/{Uri.EscapeDataString(segments[0])}/{Uri.EscapeDataString(segments[1])}";
+    }
+
+    private static bool TryBuildMapEmbedUrl(NodeSummary node, out string mapEmbedUrl)
+    {
+        if (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue)
+        {
+            mapEmbedUrl = string.Empty;
+            return false;
+        }
+
+        var latitude = node.LastKnownLatitude.Value;
+        var longitude = node.LastKnownLongitude.Value;
+        const double delta = 0.02;
+
+        var left = longitude - delta;
+        var right = longitude + delta;
+        var top = latitude + delta;
+        var bottom = latitude - delta;
+
+        mapEmbedUrl =
+            $"https://www.openstreetmap.org/export/embed.html?bbox={left.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{bottom.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{right.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{top.ToString(System.Globalization.CultureInfo.InvariantCulture)}&layer=mapnik&marker={latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        return true;
+    }
+
+    private static string GetBatteryClass(int batteryLevel)
+    {
+        return batteryLevel switch
+        {
+            <= 15 => "bg-red-100 text-red-700",
+            <= 35 => "bg-orange-100 text-orange-700",
+            <= 60 => "bg-amber-100 text-amber-700",
+            _ => "bg-emerald-100 text-emerald-700"
+        };
+    }
+
+    private static RenderFragment RenderDeviceTelemetry(NodeSummary node) => builder =>
+    {
+        var bubbles = new List<(string Text, string ClassName)>();
+
+        if (node.BatteryLevelPercent.HasValue)
+        {
+            bubbles.Add(($"{node.BatteryLevelPercent.Value}% battery", GetBatteryClass(node.BatteryLevelPercent.Value)));
+        }
+
+        if (node.Voltage.HasValue)
+        {
+            bubbles.Add(($"{node.Voltage.Value:F2}V", "bg-cinder-900/8 text-cinder-900"));
+        }
+
+        if (node.ChannelUtilization.HasValue)
+        {
+            bubbles.Add(($"{node.ChannelUtilization.Value:F1}% ch", "bg-signal-500/12 text-signal-600"));
+        }
+
+        if (node.AirUtilTx.HasValue)
+        {
+            bubbles.Add(($"{node.AirUtilTx.Value:F1}% tx", "bg-sand-200 text-cinder-900"));
+        }
+
+        if (node.UptimeSeconds.HasValue)
+        {
+            bubbles.Add((FormatUptime(node.UptimeSeconds.Value), "bg-cinder-900/8 text-cinder-900"));
+        }
+
+        if (bubbles.Count == 0)
+        {
+            builder.AddContent(0, "No telemetry");
+            return;
+        }
+
+        builder.OpenElement(1, "div");
+        builder.AddAttribute(2, "class", "mt-4 flex flex-wrap gap-2");
+
+        var sequence = 3;
+        foreach (var bubble in bubbles)
+        {
+            builder.OpenElement(sequence++, "span");
+            builder.AddAttribute(sequence++, "class", $"rounded-full px-3 py-1 text-xs font-semibold {bubble.ClassName}");
+            builder.AddContent(sequence++, bubble.Text);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private static RenderFragment RenderEnvironmentTelemetry(NodeSummary node) => builder =>
+    {
+        var bubbles = new List<(string Text, string ClassName)>();
+
+        if (node.TemperatureCelsius.HasValue)
+        {
+            bubbles.Add(($"{node.TemperatureCelsius.Value:F1}C", "bg-signal-500/12 text-signal-600"));
+        }
+
+        if (node.RelativeHumidity.HasValue)
+        {
+            bubbles.Add(($"{node.RelativeHumidity.Value:F1}% RH", "bg-cinder-900/8 text-cinder-900"));
+        }
+
+        if (node.BarometricPressure.HasValue)
+        {
+            bubbles.Add(($"{node.BarometricPressure.Value:F1} hPa", "bg-sand-200 text-cinder-900"));
+        }
+
+        if (bubbles.Count == 0)
+        {
+            builder.AddContent(0, "No telemetry");
+            return;
+        }
+
+        builder.OpenElement(1, "div");
+        builder.AddAttribute(2, "class", "mt-4 flex flex-wrap gap-2");
+
+        var sequence = 3;
+        foreach (var bubble in bubbles)
+        {
+            builder.OpenElement(sequence++, "span");
+            builder.AddAttribute(sequence++, "class", $"rounded-full px-3 py-1 text-xs font-semibold {bubble.ClassName}");
+            builder.AddContent(sequence++, bubble.Text);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private static string FormatUptime(long uptimeSeconds)
+    {
+        var uptime = TimeSpan.FromSeconds(uptimeSeconds);
+
+        if (uptime.TotalDays >= 1)
+        {
+            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        }
+
+        if (uptime.TotalHours >= 1)
+        {
+            return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+        }
+
+        return $"{uptime.Minutes}m";
+    }
+}

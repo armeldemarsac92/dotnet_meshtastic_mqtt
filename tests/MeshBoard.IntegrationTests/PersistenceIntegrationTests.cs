@@ -2,6 +2,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.DependencyInjection;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
+using MeshBoard.Contracts.Favorites;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
@@ -215,6 +216,92 @@ public sealed class PersistenceIntegrationTests
                 var messages = await messageService.GetRecentMessages(10);
                 var remainingMessage = Assert.Single(messages);
                 Assert.Equal("fresh packet", remainingMessage.PayloadPreview);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task NodePaging_ShouldSupportFavoritesAndChannelField()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var favoriteService = scope.ServiceProvider.GetRequiredService<IFavoriteNodeService>();
+                var nodeRepository = scope.ServiceProvider.GetRequiredService<INodeRepository>();
+                var nodeService = scope.ServiceProvider.GetRequiredService<INodeService>();
+
+                await nodeRepository.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!node0001",
+                        LongName = "Alpha",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 5, 12, 0, 0, TimeSpan.Zero),
+                        LastHeardChannel = "US/LongFast"
+                    });
+                await nodeRepository.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!node0002",
+                        LongName = "Bravo",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 5, 12, 1, 0, TimeSpan.Zero),
+                        LastHeardChannel = "EU_868/MediumFast"
+                    });
+                await nodeRepository.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!node0003",
+                        LongName = "Charlie",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 5, 12, 2, 0, TimeSpan.Zero),
+                        LastHeardChannel = "US/LongFast"
+                    });
+
+                await favoriteService.SaveFavoriteNode(
+                    new SaveFavoriteNodeRequest
+                    {
+                        NodeId = "!node0002",
+                        LongName = "Bravo"
+                    });
+
+                var pagedResult = await nodeService.GetNodesPage(
+                    new NodeQuery
+                    {
+                        SortBy = NodeSortOption.NameAsc
+                    },
+                    offset: 1,
+                    take: 1);
+
+                Assert.Equal(3, pagedResult.TotalCount);
+                var pagedNode = Assert.Single(pagedResult.Items);
+                Assert.Equal("Bravo", pagedNode.LongName);
+                Assert.Equal("EU_868/MediumFast", pagedNode.LastHeardChannel);
+
+                var favoritesOnly = await nodeService.GetNodesPage(
+                    new NodeQuery
+                    {
+                        OnlyFavorites = true
+                    },
+                    offset: 0,
+                    take: 10);
+
+                Assert.Equal(1, favoritesOnly.TotalCount);
+                var favoriteNode = Assert.Single(favoritesOnly.Items);
+                Assert.Equal("!node0002", favoriteNode.NodeId);
             }
             finally
             {

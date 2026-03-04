@@ -12,25 +12,24 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Observed nodes</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            This page refreshes every 3 seconds from the latest observed node state, including node identity,
-            position, and the telemetry metrics currently decoded from Meshtastic traffic.
+            Infinite scrolling keeps node browsing responsive while still supporting rich filters and telemetry views.
         </p>
     </header>
 
-    <section class="grid gap-4 rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur lg:grid-cols-[1.3fr_0.9fr_0.9fr_0.9fr_0.9fr]">
+    <section class="grid gap-4 rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur lg:grid-cols-[1.2fr_0.9fr_0.9fr_0.9fr_0.9fr_0.8fr]">
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search</span>
             <input @bind="_query.SearchText"
                    @bind:event="oninput"
-                   @bind:after="LoadAndRefreshAsync"
+                   @bind:after="RefreshNodesAsync"
                    class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
-                   placeholder="Node id or name" />
+                   placeholder="Node id, name, or channel" />
         </label>
 
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Sort</span>
             <select @bind="_query.SortBy"
-                    @bind:after="LoadAndRefreshAsync"
+                    @bind:after="RefreshNodesAsync"
                     class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none">
                 <option value="@NodeSortOption.LastHeardDesc">Last heard</option>
                 <option value="@NodeSortOption.NameAsc">Name</option>
@@ -39,92 +38,115 @@
         </label>
 
         <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900">
-            <input type="checkbox" @bind="_query.OnlyWithLocation" @bind:after="LoadAndRefreshAsync" />
+            <input type="checkbox" @bind="_query.OnlyWithLocation" @bind:after="RefreshNodesAsync" />
             <span>Only with location</span>
         </label>
 
         <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900">
-            <input type="checkbox" @bind="_query.OnlyWithTelemetry" @bind:after="LoadAndRefreshAsync" />
+            <input type="checkbox" @bind="_query.OnlyWithTelemetry" @bind:after="RefreshNodesAsync" />
             <span>Only with telemetry</span>
         </label>
 
         <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900">
-            <input type="checkbox" @bind="_onlyFavorites" @bind:after="LoadAndRefreshAsync" />
+            <input type="checkbox" @bind="_query.OnlyFavorites" @bind:after="RefreshNodesAsync" />
             <span>Only favorites</span>
+        </label>
+
+        <label class="space-y-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Nodes displayed</span>
+            <select @bind="_maxDisplayed"
+                    @bind:after="RefreshNodesAsync"
+                    class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
+            </select>
         </label>
     </section>
 
-    @if (!string.IsNullOrWhiteSpace(_favoriteStatusMessage))
-    {
-        <p class="text-sm text-cinder-800/82">@_favoriteStatusMessage</p>
-    }
+    <section class="flex flex-wrap items-center justify-between gap-2 text-sm text-cinder-800/82">
+        <p>Showing @_displayedNodeCount of @_totalMatchedNodeCount matching nodes (cap: @_maxDisplayed).</p>
+        @if (!string.IsNullOrWhiteSpace(_favoriteStatusMessage))
+        {
+            <p>@_favoriteStatusMessage</p>
+        }
+    </section>
 
     <section class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
-        @if (_nodes.Count == 0)
-        {
-            <div class="p-6 text-cinder-800/78">
-                No nodes have been observed yet.
-            </div>
-        }
-        else
-        {
-            <table class="min-w-full border-collapse">
-                <thead class="bg-sand-50/80">
-                    <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
-                        <th class="px-5 py-4">Favorite</th>
-                        <th class="px-5 py-4">Node ID</th>
-                        <th class="px-5 py-4">Name</th>
-                        <th class="px-5 py-4">Position</th>
-                        <th class="px-5 py-4">Device</th>
-                        <th class="px-5 py-4">Environment</th>
-                        <th class="px-5 py-4">Last heard</th>
+        <table class="min-w-full border-collapse">
+            <thead class="bg-sand-50/80">
+                <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                    <th class="px-5 py-4">Favorite</th>
+                    <th class="px-5 py-4">Node</th>
+                    <th class="px-5 py-4">Channel</th>
+                    <th class="px-5 py-4">Position</th>
+                    <th class="px-5 py-4">Device</th>
+                    <th class="px-5 py-4">Environment</th>
+                    <th class="px-5 py-4">Last heard</th>
+                </tr>
+            </thead>
+            <tbody>
+                <Virtualize Context="node"
+                            @ref="_virtualizeNodes"
+                            ItemSize="88"
+                            SpacerElement="tr"
+                            ItemsProvider="ProvideNodesAsync">
+                    <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                        <td class="px-5 py-4">
+                            <button @onclick="() => ToggleFavoriteAsync(node)"
+                                    disabled="@(_favoriteActionNodeId == node.NodeId)"
+                                    class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsFavorite(node.NodeId) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200") disabled:cursor-not-allowed disabled:opacity-60">
+                                @(IsFavorite(node.NodeId) ? "Saved" : "Save")
+                            </button>
+                        </td>
+                        <td class="px-5 py-4">
+                            <a href="@GetNodeDetailsHref(node.NodeId)" class="font-medium text-cinder-950 underline-offset-4 hover:underline">
+                                @(node.LongName ?? node.ShortName ?? node.NodeId)
+                            </a>
+                            <span class="mt-1 block text-xs text-cinder-800/70">
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@node.NodeId</code>
+                            </span>
+                        </td>
+                        <td class="px-5 py-4">
+                            @if (string.IsNullOrWhiteSpace(node.LastHeardChannel))
+                            {
+                                <span class="text-cinder-800/70">Unknown</span>
+                            }
+                            else
+                            {
+                                <a href="@GetChannelDetailsHref(node.LastHeardChannel)"
+                                   class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 hover:bg-cinder-900/15">
+                                    @node.LastHeardChannel
+                                </a>
+                            }
+                        </td>
+                        <td class="px-5 py-4 text-cinder-800/82">@FormatPosition(node)</td>
+                        <td class="px-5 py-4">@RenderDeviceTelemetry(node)</td>
+                        <td class="px-5 py-4">@RenderEnvironmentTelemetry(node)</td>
+                        <td class="px-5 py-4">@(node.LastHeardAtUtc?.ToString("u") ?? "Unknown")</td>
                     </tr>
-                </thead>
-                <tbody>
-                    @foreach (var node in _nodes)
-                    {
-                        <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
-                            <td class="px-5 py-4">
-                                <button @onclick="() => ToggleFavoriteAsync(node)"
-                                        disabled="@(_favoriteActionNodeId == node.NodeId)"
-                                        class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsFavorite(node.NodeId) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200") disabled:cursor-not-allowed disabled:opacity-60">
-                                    @(IsFavorite(node.NodeId) ? "Saved" : "Save")
-                                </button>
-                            </td>
-                            <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@node.NodeId</code></td>
-                            <td class="px-5 py-4 font-medium">
-                                @(node.LongName ?? node.ShortName ?? "Unnamed node")
-                                @if (!string.IsNullOrWhiteSpace(node.ShortName) && node.LongName is not null)
-                                {
-                                    <span class="block text-xs text-cinder-800/68">@node.ShortName</span>
-                                }
-                            </td>
-                            <td class="px-5 py-4 text-cinder-800/82">@FormatPosition(node)</td>
-                            <td class="px-5 py-4 text-cinder-800/82">@FormatDeviceMetrics(node)</td>
-                            <td class="px-5 py-4 text-cinder-800/82">@FormatEnvironmentMetrics(node)</td>
-                            <td class="px-5 py-4">@(node.LastHeardAtUtc?.ToString("u") ?? "Unknown")</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
+                </Virtualize>
+            </tbody>
+        </table>
     </section>
 </div>
 
 @code {
     private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly SemaphoreSlim _loadSemaphore = new(1, 1);
     private string? _favoriteActionNodeId;
     private readonly HashSet<string> _favoriteNodeIds = new(StringComparer.OrdinalIgnoreCase);
     private string? _favoriteStatusMessage;
-    private IReadOnlyCollection<NodeSummary> _nodes = [];
-    private bool _onlyFavorites;
+    private int _maxDisplayed = 100;
     private readonly NodeQuery _query = new();
     private Task? _refreshTask;
+    private int _displayedNodeCount;
+    private int _totalMatchedNodeCount;
+    private Virtualize<NodeSummary>? _virtualizeNodes;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadAndRefreshAsync();
+        await RefreshFavoritesAsync(_cancellationTokenSource.Token);
         _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
     }
 
@@ -144,33 +166,33 @@
         }
 
         _cancellationTokenSource.Dispose();
-        _loadSemaphore.Dispose();
     }
 
-    private async Task LoadAsync(CancellationToken cancellationToken = default)
+    private bool IsFavorite(string nodeId)
     {
-        await _loadSemaphore.WaitAsync(cancellationToken);
+        return _favoriteNodeIds.Contains(nodeId);
+    }
 
-        try
+    private async ValueTask<ItemsProviderResult<NodeSummary>> ProvideNodesAsync(ItemsProviderRequest request)
+    {
+        var remaining = _maxDisplayed - request.StartIndex;
+
+        if (remaining <= 0)
         {
-            var nodes = await NodeService.GetNodes(_query, cancellationToken);
-            var favoriteNodes = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
-
-            _favoriteNodeIds.Clear();
-
-            foreach (var favoriteNode in favoriteNodes)
-            {
-                _favoriteNodeIds.Add(favoriteNode.NodeId);
-            }
-
-            _nodes = _onlyFavorites
-                ? nodes.Where(node => _favoriteNodeIds.Contains(node.NodeId)).ToList()
-                : nodes;
+            return new ItemsProviderResult<NodeSummary>([], _displayedNodeCount);
         }
-        finally
-        {
-            _loadSemaphore.Release();
-        }
+
+        var take = Math.Min(request.Count, remaining);
+        var page = await NodeService.GetNodesPage(
+            _query,
+            request.StartIndex,
+            take,
+            _cancellationTokenSource.Token);
+
+        _totalMatchedNodeCount = page.TotalCount;
+        _displayedNodeCount = Math.Min(_maxDisplayed, page.TotalCount);
+
+        return new ItemsProviderResult<NodeSummary>(page.Items, _displayedNodeCount);
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -179,32 +201,33 @@
 
         while (await timer.WaitForNextTickAsync(cancellationToken))
         {
-            try
-            {
-                await InvokeAsync(
-                    async () =>
-                    {
-                        await LoadAsync(cancellationToken);
-                        StateHasChanged();
-                    });
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception exception)
-            {
-                _favoriteStatusMessage = $"Refresh failed: {exception.Message}";
-                await InvokeAsync(StateHasChanged);
-            }
+            await RefreshNodesAsync();
         }
     }
 
-    private async Task LoadAndRefreshAsync()
+    private async Task RefreshFavoritesAsync(CancellationToken cancellationToken = default)
+    {
+        var favorites = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
+
+        _favoriteNodeIds.Clear();
+
+        foreach (var favorite in favorites)
+        {
+            _favoriteNodeIds.Add(favorite.NodeId);
+        }
+    }
+
+    private async Task RefreshNodesAsync()
     {
         try
         {
-            await LoadAsync(_cancellationTokenSource.Token);
+            await RefreshFavoritesAsync(_cancellationTokenSource.Token);
+
+            if (_virtualizeNodes is not null)
+            {
+                await _virtualizeNodes.RefreshDataAsync();
+            }
+
             await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException)
@@ -215,11 +238,6 @@
             _favoriteStatusMessage = $"Load failed: {exception.Message}";
             await InvokeAsync(StateHasChanged);
         }
-    }
-
-    private bool IsFavorite(string nodeId)
-    {
-        return _favoriteNodeIds.Contains(nodeId);
     }
 
     private async Task ToggleFavoriteAsync(NodeSummary node)
@@ -243,74 +261,20 @@
                         ShortName = node.ShortName,
                         LongName = node.LongName
                     });
-
                 _favoriteStatusMessage = $"Saved {node.NodeId} as favorite.";
             }
 
-            await LoadAndRefreshAsync();
+            await RefreshNodesAsync();
         }
         catch (Exception exception)
         {
             _favoriteStatusMessage = exception.Message;
+            await InvokeAsync(StateHasChanged);
         }
         finally
         {
             _favoriteActionNodeId = null;
         }
-    }
-
-    private static string FormatDeviceMetrics(NodeSummary node)
-    {
-        var parts = new List<string>();
-
-        if (node.BatteryLevelPercent.HasValue)
-        {
-            parts.Add($"{node.BatteryLevelPercent.Value}%");
-        }
-
-        if (node.Voltage.HasValue)
-        {
-            parts.Add($"{node.Voltage.Value:F2}V");
-        }
-
-        if (node.ChannelUtilization.HasValue)
-        {
-            parts.Add($"{node.ChannelUtilization.Value:F1}% ch");
-        }
-
-        if (node.AirUtilTx.HasValue)
-        {
-            parts.Add($"{node.AirUtilTx.Value:F1}% tx");
-        }
-
-        if (node.UptimeSeconds.HasValue)
-        {
-            parts.Add(FormatUptime(node.UptimeSeconds.Value));
-        }
-
-        return parts.Count == 0 ? "No telemetry" : string.Join(" | ", parts);
-    }
-
-    private static string FormatEnvironmentMetrics(NodeSummary node)
-    {
-        var parts = new List<string>();
-
-        if (node.TemperatureCelsius.HasValue)
-        {
-            parts.Add($"{node.TemperatureCelsius.Value:F1}C");
-        }
-
-        if (node.RelativeHumidity.HasValue)
-        {
-            parts.Add($"{node.RelativeHumidity.Value:F1}% RH");
-        }
-
-        if (node.BarometricPressure.HasValue)
-        {
-            parts.Add($"{node.BarometricPressure.Value:F1} hPa");
-        }
-
-        return parts.Count == 0 ? "No telemetry" : string.Join(" | ", parts);
     }
 
     private static string FormatPosition(NodeSummary node)
@@ -319,6 +283,107 @@
             ? $"{node.LastKnownLatitude.Value:F5}, {node.LastKnownLongitude.Value:F5}"
             : "Unknown";
     }
+
+    private static string GetBatteryClass(int batteryLevel)
+    {
+        return batteryLevel switch
+        {
+            <= 15 => "bg-red-100 text-red-700",
+            <= 35 => "bg-orange-100 text-orange-700",
+            <= 60 => "bg-amber-100 text-amber-700",
+            _ => "bg-emerald-100 text-emerald-700"
+        };
+    }
+
+    private static RenderFragment RenderDeviceTelemetry(NodeSummary node) => builder =>
+    {
+        var bubbles = new List<(string Text, string ClassName)>();
+
+        if (node.BatteryLevelPercent.HasValue)
+        {
+            bubbles.Add(($"{node.BatteryLevelPercent.Value}% battery", GetBatteryClass(node.BatteryLevelPercent.Value)));
+        }
+
+        if (node.Voltage.HasValue)
+        {
+            bubbles.Add(($"{node.Voltage.Value:F2}V", "bg-cinder-900/8 text-cinder-900"));
+        }
+
+        if (node.ChannelUtilization.HasValue)
+        {
+            bubbles.Add(($"{node.ChannelUtilization.Value:F1}% ch", "bg-signal-500/12 text-signal-600"));
+        }
+
+        if (node.AirUtilTx.HasValue)
+        {
+            bubbles.Add(($"{node.AirUtilTx.Value:F1}% tx", "bg-sand-200 text-cinder-900"));
+        }
+
+        if (node.UptimeSeconds.HasValue)
+        {
+            bubbles.Add((FormatUptime(node.UptimeSeconds.Value), "bg-cinder-900/8 text-cinder-900"));
+        }
+
+        if (bubbles.Count == 0)
+        {
+            builder.AddContent(0, "No telemetry");
+            return;
+        }
+
+        builder.OpenElement(1, "div");
+        builder.AddAttribute(2, "class", "flex flex-wrap gap-2");
+
+        var sequence = 3;
+        foreach (var bubble in bubbles)
+        {
+            builder.OpenElement(sequence++, "span");
+            builder.AddAttribute(sequence++, "class", $"rounded-full px-3 py-1 text-xs font-semibold {bubble.ClassName}");
+            builder.AddContent(sequence++, bubble.Text);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private static RenderFragment RenderEnvironmentTelemetry(NodeSummary node) => builder =>
+    {
+        var bubbles = new List<(string Text, string ClassName)>();
+
+        if (node.TemperatureCelsius.HasValue)
+        {
+            bubbles.Add(($"{node.TemperatureCelsius.Value:F1}C", "bg-signal-500/12 text-signal-600"));
+        }
+
+        if (node.RelativeHumidity.HasValue)
+        {
+            bubbles.Add(($"{node.RelativeHumidity.Value:F1}% RH", "bg-cinder-900/8 text-cinder-900"));
+        }
+
+        if (node.BarometricPressure.HasValue)
+        {
+            bubbles.Add(($"{node.BarometricPressure.Value:F1} hPa", "bg-sand-200 text-cinder-900"));
+        }
+
+        if (bubbles.Count == 0)
+        {
+            builder.AddContent(0, "No telemetry");
+            return;
+        }
+
+        builder.OpenElement(1, "div");
+        builder.AddAttribute(2, "class", "flex flex-wrap gap-2");
+
+        var sequence = 3;
+        foreach (var bubble in bubbles)
+        {
+            builder.OpenElement(sequence++, "span");
+            builder.AddAttribute(sequence++, "class", $"rounded-full px-3 py-1 text-xs font-semibold {bubble.ClassName}");
+            builder.AddContent(sequence++, bubble.Text);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
 
     private static string FormatUptime(long uptimeSeconds)
     {
@@ -335,5 +400,27 @@
         }
 
         return $"{uptime.Minutes}m";
+    }
+
+    private static string GetChannelDetailsHref(string channelKey)
+    {
+        if (string.IsNullOrWhiteSpace(channelKey))
+        {
+            return "/channels";
+        }
+
+        var segments = channelKey.Split('/', 2, StringSplitOptions.TrimEntries);
+
+        if (segments.Length != 2)
+        {
+            return "/channels";
+        }
+
+        return $"/channels/{Uri.EscapeDataString(segments[0])}/{Uri.EscapeDataString(segments[1])}";
+    }
+
+    private static string GetNodeDetailsHref(string nodeId)
+    {
+        return $"/nodes/details/{Uri.EscapeDataString(nodeId)}";
     }
 }

@@ -64,6 +64,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             Topic = topic,
             PacketId = packet.Id == 0 ? null : packet.Id,
             FromNodeId = FormatNodeId(packet.From) ?? TryExtractNodeIdFromTopic(topic),
+            LastHeardChannel = TryExtractChannelFromTopic(topic),
             ToNodeId = ResolveTargetNodeId(packet.To),
             IsPrivate = IsPrivate(packet.To),
             ReceivedAtUtc = ResolveReceivedAtUtc(packet.RxTime)
@@ -347,6 +348,37 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
 
         var lastSegment = segments[^1];
         return lastSegment.StartsWith('!') ? lastSegment : null;
+    }
+
+    private static string? TryExtractChannelFromTopic(string topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return null;
+        }
+
+        var segments = topic.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length < 5)
+        {
+            return null;
+        }
+
+        if (!string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var region = segments[1];
+        var channel = segments[4];
+
+        if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(channel))
+        {
+            return null;
+        }
+
+        return $"{region}/{channel}";
     }
 
     private static bool TryParseMeshPacket(byte[] payload, out MeshPacket? meshPacket)

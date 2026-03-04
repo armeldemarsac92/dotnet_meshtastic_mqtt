@@ -69,6 +69,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                         ShortName = envelope.ShortName,
                         LongName = envelope.LongName,
                         LastHeardAtUtc = envelope.ReceivedAtUtc,
+                        LastHeardChannel = envelope.LastHeardChannel,
                         LastTextMessageAtUtc = envelope.PacketType == "Text Message"
                             ? envelope.ReceivedAtUtc
                             : null,

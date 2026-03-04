@@ -31,6 +31,7 @@ internal static class SchemaQueries
             short_name TEXT NULL,
             long_name TEXT NULL,
             last_heard_at_utc TEXT NULL,
+            last_heard_channel TEXT NULL,
             last_text_message_at_utc TEXT NULL,
             last_known_latitude REAL NULL,
             last_known_longitude REAL NULL,
@@ -162,5 +163,11 @@ internal static class SchemaQueries
         """
         ALTER TABLE nodes
         ADD COLUMN barometric_pressure REAL NULL;
+        """;
+
+    public static string AddNodesLastHeardChannelColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN last_heard_channel TEXT NULL;
         """;
 }

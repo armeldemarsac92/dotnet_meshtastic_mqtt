@@ -39,6 +39,7 @@ public sealed class MeshtasticEnvelopeReaderTests
         Assert.NotNull(envelope);
         Assert.Equal("Telemetry", envelope.PacketType);
         Assert.Equal("!12345678", envelope.FromNodeId);
+        Assert.Equal("US/Test", envelope.LastHeardChannel);
         Assert.Equal(87, envelope.BatteryLevelPercent);
         Assert.NotNull(envelope.Voltage);
         Assert.NotNull(envelope.ChannelUtilization);

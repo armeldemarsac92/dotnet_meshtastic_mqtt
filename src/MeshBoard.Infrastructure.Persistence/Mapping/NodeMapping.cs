@@ -19,6 +19,7 @@ internal static class NodeMapping
             ShortName = response.ShortName,
             LongName = response.LongName,
             LastHeardAtUtc = ParseNullableDateTimeOffset(response.LastHeardAtUtc),
+            LastHeardChannel = response.LastHeardChannel,
             LastTextMessageAtUtc = ParseNullableDateTimeOffset(response.LastTextMessageAtUtc),
             LastKnownLatitude = response.LastKnownLatitude,
             LastKnownLongitude = response.LastKnownLongitude,

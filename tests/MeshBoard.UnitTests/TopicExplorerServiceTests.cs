@@ -13,6 +13,7 @@ public sealed class TopicExplorerServiceTests
 
         Assert.Contains(topics, entry => entry.TopicPattern == "msh/US/2/e/LongFast/#");
         Assert.Contains(topics, entry => entry.TopicPattern == "msh/EU_868/2/e/MediumSlow/#");
+        Assert.Contains(topics, entry => entry.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
     }
 
     [Fact]

@@ -2,6 +2,7 @@
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IMessageService MessageService
 @inject ITopicExplorerService TopicExplorerService
+@inject ITopicProbeService TopicProbeService
 @inject ITopicPresetService TopicPresetService
 
 <PageTitle>Topics</PageTitle>
@@ -26,10 +27,19 @@
                    class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
                    placeholder="Region, channel, or topic pattern" />
         </label>
-        <p class="self-end text-xs leading-6 text-cinder-800/78">
-            Click <strong class="text-cinder-950">Save preset</strong> to persist a topic pattern, and
-            <strong class="text-cinder-950">Subscribe</strong> to start listening immediately.
-        </p>
+        <div class="self-end space-y-3">
+            <p class="text-xs leading-6 text-cinder-800/78">
+                Click <strong class="text-cinder-950">Save preset</strong> to persist a topic pattern, and
+                <strong class="text-cinder-950">Subscribe</strong> to start listening immediately.
+                Use <strong class="text-cinder-950">Probe MQTT</strong> to actively discover channels from broker traffic.
+            </p>
+            <button type="button"
+                    class="cursor-pointer rounded-full bg-cinder-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    @onclick="ProbeTopicsAsync"
+                    disabled="@_isProbingTopics">
+                @(_isProbingTopics ? "Probing..." : "Probe MQTT (20s)")
+            </button>
+        </div>
     </section>
 
     <section class="grid gap-4 xl:grid-cols-2">
@@ -194,6 +204,7 @@
     private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
     private string _explorerSearchText = string.Empty;
     private IReadOnlyCollection<TopicCatalogEntry> _recommendedTopics = [];
+    private bool _isProbingTopics;
     private string? _statusMessage;
     private TopicRequest _topicRequest = new();
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
@@ -287,6 +298,41 @@
         catch (Exception exception)
         {
             _statusMessage = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task ProbeTopicsAsync()
+    {
+        if (_isProbingTopics)
+        {
+            return;
+        }
+
+        _isProbingTopics = true;
+
+        try
+        {
+            var probeResult = await TopicProbeService.ProbeTopics(_explorerSearchText, 20);
+
+            if (probeResult.ProbedTopicFilters.Count == 0)
+            {
+                _statusMessage = "No recommended channel matched this search for active probing.";
+            }
+            else
+            {
+                _statusMessage =
+                    $"Probe completed: {probeResult.ProbedTopicFilters.Count} channels checked for {probeResult.DurationSeconds}s.";
+            }
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+        finally
+        {
+            _isProbingTopics = false;
         }
 
         await LoadAsync();

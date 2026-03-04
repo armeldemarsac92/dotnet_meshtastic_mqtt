@@ -121,6 +121,7 @@ internal sealed class SqliteDatabaseInitializer
         await EnsureColumnAsync(connection, columns, "temperature_celsius", SchemaQueries.AddNodesTemperatureCelsiusColumn, cancellationToken);
         await EnsureColumnAsync(connection, columns, "relative_humidity", SchemaQueries.AddNodesRelativeHumidityColumn, cancellationToken);
         await EnsureColumnAsync(connection, columns, "barometric_pressure", SchemaQueries.AddNodesBarometricPressureColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "last_heard_channel", SchemaQueries.AddNodesLastHeardChannelColumn, cancellationToken);
     }
 
     private static Task EnsureColumnAsync(

@@ -104,7 +104,16 @@
                             <td class="px-5 py-4">
                                 <span class="@GetPacketTypeBadgeClass(message.PacketType)">@message.PacketType</span>
                             </td>
-                            <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@message.Topic</code></td>
+                            <td class="px-5 py-4">
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@message.Topic</code>
+                                @if (TryGetChannelDetailsHref(message.Topic, out var channelHref, out var channelLabel))
+                                {
+                                    <a href="@channelHref"
+                                       class="mt-2 inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-cinder-900/15">
+                                        @channelLabel
+                                    </a>
+                                }
+                            </td>
                             <td class="px-5 py-4 font-medium">@message.FromNodeId</td>
                             <td class="px-5 py-4 text-cinder-800/80">@(message.ToNodeId ?? "Broadcast")</td>
                             <td class="px-5 py-4">@message.PayloadPreview</td>
@@ -275,6 +284,38 @@
         }
 
         await LoadAsync();
+    }
+
+    private static bool TryGetChannelDetailsHref(string topic, out string href, out string label)
+    {
+        href = string.Empty;
+        label = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return false;
+        }
+
+        var segments = topic.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length < 5 ||
+            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var region = segments[1];
+        var channel = segments[4];
+
+        if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(channel))
+        {
+            return false;
+        }
+
+        href = $"/channels/{Uri.EscapeDataString(region)}/{Uri.EscapeDataString(channel)}";
+        label = $"{region}/{channel}";
+        return true;
     }
 
     private sealed class MessageFilters

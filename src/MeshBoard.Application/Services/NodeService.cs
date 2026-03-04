@@ -6,11 +6,22 @@ namespace MeshBoard.Application.Services;
 
 public interface INodeService
 {
-    Task<IReadOnlyCollection<NodeSummary>> GetNodes(NodeQuery? query = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<NodeSummary>> GetNodes(
+        NodeQuery? query = null,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
+    Task<NodePageResult> GetNodesPage(
+        NodeQuery? query = null,
+        int offset = 0,
+        int take = 100,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class NodeService : INodeService
 {
+    private const int MaxTake = 1_000;
+
     private readonly ILogger<NodeService> _logger;
     private readonly INodeRepository _nodeRepository;
 
@@ -22,78 +33,54 @@ public sealed class NodeService : INodeService
 
     public async Task<IReadOnlyCollection<NodeSummary>> GetNodes(
         NodeQuery? query = null,
+        int take = 100,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to get nodes");
+        _logger.LogInformation("Attempting to get nodes with take: {Take}", take);
 
-        var nodes = await _nodeRepository.GetAllAsync(cancellationToken);
-        var filteredNodes = ApplyQuery(nodes, query);
+        var sanitizedTake = SanitizeTake(take);
+        var sanitizedQuery = query ?? new NodeQuery();
+        var nodes = await _nodeRepository.GetPageAsync(sanitizedQuery, 0, sanitizedTake, cancellationToken);
 
-        _logger.LogInformation("Retrieved {NodeCount} nodes", filteredNodes.Count);
+        _logger.LogInformation("Retrieved {NodeCount} nodes", nodes.Count);
 
-        return filteredNodes;
+        return nodes;
     }
 
-    private static IReadOnlyCollection<NodeSummary> ApplyQuery(
-        IReadOnlyCollection<NodeSummary> nodes,
-        NodeQuery? query)
+    public async Task<NodePageResult> GetNodesPage(
+        NodeQuery? query = null,
+        int offset = 0,
+        int take = 100,
+        CancellationToken cancellationToken = default)
     {
-        if (query is null)
+        var sanitizedQuery = query ?? new NodeQuery();
+        var sanitizedOffset = Math.Max(0, offset);
+        var sanitizedTake = SanitizeTake(take);
+
+        _logger.LogInformation(
+            "Attempting to get node page with offset: {Offset}, take: {Take}",
+            sanitizedOffset,
+            sanitizedTake);
+
+        var totalCountTask = _nodeRepository.CountAsync(sanitizedQuery, cancellationToken);
+        var itemsTask = _nodeRepository.GetPageAsync(sanitizedQuery, sanitizedOffset, sanitizedTake, cancellationToken);
+
+        await Task.WhenAll(totalCountTask, itemsTask);
+
+        return new NodePageResult
         {
-            return Sort(nodes, NodeSortOption.LastHeardDesc).ToList();
-        }
-
-        IEnumerable<NodeSummary> filteredNodes = nodes;
-
-        if (!string.IsNullOrWhiteSpace(query.SearchText))
-        {
-            filteredNodes = filteredNodes.Where(
-                node =>
-                    node.NodeId.Contains(query.SearchText, StringComparison.OrdinalIgnoreCase) ||
-                    (node.ShortName?.Contains(query.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    (node.LongName?.Contains(query.SearchText, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-
-        if (query.OnlyWithLocation)
-        {
-            filteredNodes = filteredNodes.Where(node => node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue);
-        }
-
-        if (query.OnlyWithTelemetry)
-        {
-            filteredNodes = filteredNodes.Where(HasTelemetry);
-        }
-
-        return Sort(filteredNodes, query.SortBy).ToList();
-    }
-
-    private static bool HasTelemetry(NodeSummary node)
-    {
-        return node.BatteryLevelPercent.HasValue ||
-            node.Voltage.HasValue ||
-            node.ChannelUtilization.HasValue ||
-            node.AirUtilTx.HasValue ||
-            node.UptimeSeconds.HasValue ||
-            node.TemperatureCelsius.HasValue ||
-            node.RelativeHumidity.HasValue ||
-            node.BarometricPressure.HasValue;
-    }
-
-    private static IOrderedEnumerable<NodeSummary> Sort(
-        IEnumerable<NodeSummary> nodes,
-        NodeSortOption sortBy)
-    {
-        return sortBy switch
-        {
-            NodeSortOption.NameAsc => nodes
-                .OrderBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(node => node.NodeId, StringComparer.OrdinalIgnoreCase),
-            NodeSortOption.BatteryDesc => nodes
-                .OrderByDescending(node => node.BatteryLevelPercent ?? int.MinValue)
-                .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase),
-            _ => nodes
-                .OrderByDescending(node => node.LastHeardAtUtc ?? DateTimeOffset.MinValue)
-                .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
+            TotalCount = await totalCountTask,
+            Items = await itemsTask
         };
+    }
+
+    private static int SanitizeTake(int take)
+    {
+        if (take <= 0)
+        {
+            return 1;
+        }
+
+        return Math.Min(take, MaxTake);
     }
 }

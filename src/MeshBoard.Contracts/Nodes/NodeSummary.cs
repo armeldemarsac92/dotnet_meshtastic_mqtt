@@ -10,6 +10,8 @@ public sealed class NodeSummary
 
     public DateTimeOffset? LastHeardAtUtc { get; set; }
 
+    public string? LastHeardChannel { get; set; }
+
     public DateTimeOffset? LastTextMessageAtUtc { get; set; }
 
     public double? LastKnownLatitude { get; set; }

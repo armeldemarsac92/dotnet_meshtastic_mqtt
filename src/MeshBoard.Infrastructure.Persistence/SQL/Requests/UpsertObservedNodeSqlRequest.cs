@@ -10,6 +10,8 @@ internal sealed class UpsertObservedNodeSqlRequest
 
     public string? LastHeardAtUtc { get; set; }
 
+    public string? LastHeardChannel { get; set; }
+
     public string? LastTextMessageAtUtc { get; set; }
 
     public double? LastKnownLatitude { get; set; }

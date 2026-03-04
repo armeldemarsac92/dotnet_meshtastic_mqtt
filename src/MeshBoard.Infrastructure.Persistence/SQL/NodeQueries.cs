@@ -2,26 +2,32 @@ namespace MeshBoard.Infrastructure.Persistence.SQL;
 
 internal static class NodeQueries
 {
-    public static string GetNodes =>
-        """
+    public static string CountNodes =>
+        $"""
+        SELECT COUNT(1)
+        {FromAndWhereClause}
+        """;
+
+    public static string SelectNodes =>
+        $"""
         SELECT
-            node_id AS NodeId,
-            short_name AS ShortName,
-            long_name AS LongName,
-            last_heard_at_utc AS LastHeardAtUtc,
-            last_text_message_at_utc AS LastTextMessageAtUtc,
-            last_known_latitude AS LastKnownLatitude,
-            last_known_longitude AS LastKnownLongitude,
-            battery_level_percent AS BatteryLevelPercent,
-            voltage AS Voltage,
-            channel_utilization AS ChannelUtilization,
-            air_util_tx AS AirUtilTx,
-            uptime_seconds AS UptimeSeconds,
-            temperature_celsius AS TemperatureCelsius,
-            relative_humidity AS RelativeHumidity,
-            barometric_pressure AS BarometricPressure
-        FROM nodes
-        ORDER BY COALESCE(long_name, short_name, node_id);
+            n.node_id AS NodeId,
+            n.short_name AS ShortName,
+            n.long_name AS LongName,
+            n.last_heard_at_utc AS LastHeardAtUtc,
+            n.last_heard_channel AS LastHeardChannel,
+            n.last_text_message_at_utc AS LastTextMessageAtUtc,
+            n.last_known_latitude AS LastKnownLatitude,
+            n.last_known_longitude AS LastKnownLongitude,
+            n.battery_level_percent AS BatteryLevelPercent,
+            n.voltage AS Voltage,
+            n.channel_utilization AS ChannelUtilization,
+            n.air_util_tx AS AirUtilTx,
+            n.uptime_seconds AS UptimeSeconds,
+            n.temperature_celsius AS TemperatureCelsius,
+            n.relative_humidity AS RelativeHumidity,
+            n.barometric_pressure AS BarometricPressure
+        {FromAndWhereClause}
         """;
 
     public static string UpsertNode =>
@@ -31,6 +37,7 @@ internal static class NodeQueries
             short_name,
             long_name,
             last_heard_at_utc,
+            last_heard_channel,
             last_text_message_at_utc,
             last_known_latitude,
             last_known_longitude,
@@ -47,6 +54,7 @@ internal static class NodeQueries
             @ShortName,
             @LongName,
             @LastHeardAtUtc,
+            @LastHeardChannel,
             @LastTextMessageAtUtc,
             @LastKnownLatitude,
             @LastKnownLongitude,
@@ -62,6 +70,7 @@ internal static class NodeQueries
             short_name = COALESCE(excluded.short_name, nodes.short_name),
             long_name = COALESCE(excluded.long_name, nodes.long_name),
             last_heard_at_utc = COALESCE(excluded.last_heard_at_utc, nodes.last_heard_at_utc),
+            last_heard_channel = COALESCE(excluded.last_heard_channel, nodes.last_heard_channel),
             last_text_message_at_utc = COALESCE(excluded.last_text_message_at_utc, nodes.last_text_message_at_utc),
             last_known_latitude = COALESCE(excluded.last_known_latitude, nodes.last_known_latitude),
             last_known_longitude = COALESCE(excluded.last_known_longitude, nodes.last_known_longitude),
@@ -73,5 +82,38 @@ internal static class NodeQueries
             temperature_celsius = COALESCE(excluded.temperature_celsius, nodes.temperature_celsius),
             relative_humidity = COALESCE(excluded.relative_humidity, nodes.relative_humidity),
             barometric_pressure = COALESCE(excluded.barometric_pressure, nodes.barometric_pressure);
+        """;
+
+    private static string FromAndWhereClause =>
+        """
+        FROM nodes n
+        LEFT JOIN favorite_nodes f
+            ON f.node_id = n.node_id
+        WHERE (
+            @SearchText = '' OR
+            n.node_id LIKE @SearchPattern OR
+            COALESCE(n.short_name, '') LIKE @SearchPattern OR
+            COALESCE(n.long_name, '') LIKE @SearchPattern OR
+            COALESCE(n.last_heard_channel, '') LIKE @SearchPattern
+        )
+        AND (
+            @OnlyWithLocation = 0 OR
+            (n.last_known_latitude IS NOT NULL AND n.last_known_longitude IS NOT NULL)
+        )
+        AND (
+            @OnlyWithTelemetry = 0 OR
+            n.battery_level_percent IS NOT NULL OR
+            n.voltage IS NOT NULL OR
+            n.channel_utilization IS NOT NULL OR
+            n.air_util_tx IS NOT NULL OR
+            n.uptime_seconds IS NOT NULL OR
+            n.temperature_celsius IS NOT NULL OR
+            n.relative_humidity IS NOT NULL OR
+            n.barometric_pressure IS NOT NULL
+        )
+        AND (
+            @OnlyFavorites = 0 OR
+            f.node_id IS NOT NULL
+        )
         """;
 }

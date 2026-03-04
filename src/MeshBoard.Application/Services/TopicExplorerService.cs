@@ -24,6 +24,7 @@ public sealed class TopicExplorerService : ITopicExplorerService
     private static readonly string[] RecommendedChannels =
     [
         "LongFast",
+        "MediumFast",
         "LongSlow",
         "MediumSlow",
         "ShortFast"

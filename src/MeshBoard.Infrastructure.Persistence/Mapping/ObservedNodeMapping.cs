@@ -13,6 +13,7 @@ internal static class ObservedNodeMapping
             ShortName = request.ShortName,
             LongName = request.LongName,
             LastHeardAtUtc = request.LastHeardAtUtc?.ToString("O"),
+            LastHeardChannel = request.LastHeardChannel,
             LastTextMessageAtUtc = request.LastTextMessageAtUtc?.ToString("O"),
             LastKnownLatitude = request.LastKnownLatitude,
             LastKnownLongitude = request.LastKnownLongitude,
