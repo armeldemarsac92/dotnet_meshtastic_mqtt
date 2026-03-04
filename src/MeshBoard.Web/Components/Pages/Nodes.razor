@@ -110,11 +110,14 @@
                                 <button type="button"
                                         class="liquid-inline-action cursor-pointer rounded-full px-3 py-1 text-xs font-semibold"
                                         @onclick="() => OpenNodeDetails(node.NodeId)">
-                                    @(node.LongName ?? node.ShortName ?? node.NodeId)
+                                    @GetNodeDisplayName(node)
                                 </button>
-                                <span class="mt-1 block text-xs text-cinder-800/70">
-                                    <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@node.NodeId</code>
-                                </span>
+                                @if (ShouldShowNodeIdTag(node))
+                                {
+                                    <span class="mt-1 block text-xs text-cinder-800/70">
+                                        <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@node.NodeId</code>
+                                    </span>
+                                }
                             </td>
                             <td class="px-5 py-4">
                                 @if (string.IsNullOrWhiteSpace(node.LastHeardChannel))
@@ -188,6 +191,16 @@
     private bool IsFavorite(string nodeId)
     {
         return _favoriteNodeIds.Contains(nodeId);
+    }
+
+    private static string GetNodeDisplayName(NodeSummary node)
+    {
+        return node.LongName ?? node.ShortName ?? node.NodeId;
+    }
+
+    private static bool ShouldShowNodeIdTag(NodeSummary node)
+    {
+        return !string.Equals(GetNodeDisplayName(node), node.NodeId, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task RefreshFavoritesAsync()
