@@ -90,7 +90,7 @@
                     <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <th class="px-5 py-4">Received</th>
                         <th class="px-5 py-4">Type</th>
-                        <th class="px-5 py-4">Topic</th>
+                        <th class="px-5 py-4">Channel</th>
                         <th class="px-5 py-4">From</th>
                         <th class="px-5 py-4">To</th>
                         <th class="px-5 py-4">Preview</th>
@@ -105,13 +105,18 @@
                                 <span class="@GetPacketTypeBadgeClass(message.PacketType)">@message.PacketType</span>
                             </td>
                             <td class="px-5 py-4">
-                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@message.Topic</code>
                                 @if (TryGetChannelDetailsHref(message.Topic, out var channelHref, out var channelLabel))
                                 {
                                     <a href="@channelHref"
-                                       class="mt-2 inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-cinder-900/15">
+                                       class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900 hover:bg-cinder-900/15">
                                         @channelLabel
                                     </a>
+                                }
+                                else
+                                {
+                                    <span class="inline-flex rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900">
+                                        Unknown
+                                    </span>
                                 }
                             </td>
                             <td class="px-5 py-4 font-medium">@message.FromNodeId</td>

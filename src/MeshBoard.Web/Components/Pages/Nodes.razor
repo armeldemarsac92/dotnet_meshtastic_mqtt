@@ -1,5 +1,4 @@
 @page "/nodes"
-@implements IAsyncDisposable
 @inject IFavoriteNodeService FavoriteNodeService
 @inject INodeService NodeService
 
@@ -12,7 +11,7 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Observed nodes</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            Infinite scrolling keeps node browsing responsive while still supporting rich filters and telemetry views.
+            Browse nodes in controlled batches to keep query cost predictable while still supporting rich filters and telemetry views.
         </p>
     </header>
 
@@ -66,7 +65,7 @@
     </section>
 
     <section class="flex flex-wrap items-center justify-between gap-2 text-sm text-cinder-800/82">
-        <p>Showing @_displayedNodeCount of @_totalMatchedNodeCount matching nodes (cap: @_maxDisplayed).</p>
+        <p>Showing @DisplayedNodeCount of @_totalMatchedNodeCount matching nodes. Each load adds @_maxDisplayed rows.</p>
         @if (!string.IsNullOrWhiteSpace(_favoriteStatusMessage))
         {
             <p>@_favoriteStatusMessage</p>
@@ -87,85 +86,86 @@
                 </tr>
             </thead>
             <tbody>
-                <Virtualize Context="node"
-                            @ref="_virtualizeNodes"
-                            ItemSize="88"
-                            SpacerElement="tr"
-                            ItemsProvider="ProvideNodesAsync">
+                @if (_nodes.Count == 0)
+                {
                     <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
-                        <td class="px-5 py-4">
-                            <button @onclick="() => ToggleFavoriteAsync(node)"
-                                    disabled="@(_favoriteActionNodeId == node.NodeId)"
-                                    class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsFavorite(node.NodeId) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200") disabled:cursor-not-allowed disabled:opacity-60">
-                                @(IsFavorite(node.NodeId) ? "Saved" : "Save")
-                            </button>
+                        <td colspan="7" class="px-5 py-8 text-center text-cinder-800/78">
+                            @(_isLoadingNodes ? "Loading nodes..." : "No nodes match the current filters.")
                         </td>
-                        <td class="px-5 py-4">
-                            <a href="@GetNodeDetailsHref(node.NodeId)" class="font-medium text-cinder-950 underline-offset-4 hover:underline">
-                                @(node.LongName ?? node.ShortName ?? node.NodeId)
-                            </a>
-                            <span class="mt-1 block text-xs text-cinder-800/70">
-                                <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@node.NodeId</code>
-                            </span>
-                        </td>
-                        <td class="px-5 py-4">
-                            @if (string.IsNullOrWhiteSpace(node.LastHeardChannel))
-                            {
-                                <span class="text-cinder-800/70">Unknown</span>
-                            }
-                            else
-                            {
-                                <a href="@GetChannelDetailsHref(node.LastHeardChannel)"
-                                   class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 hover:bg-cinder-900/15">
-                                    @node.LastHeardChannel
-                                </a>
-                            }
-                        </td>
-                        <td class="px-5 py-4 text-cinder-800/82">@FormatPosition(node)</td>
-                        <td class="px-5 py-4">@RenderDeviceTelemetry(node)</td>
-                        <td class="px-5 py-4">@RenderEnvironmentTelemetry(node)</td>
-                        <td class="px-5 py-4">@(node.LastHeardAtUtc?.ToString("u") ?? "Unknown")</td>
                     </tr>
-                </Virtualize>
+                }
+                else
+                {
+                    @foreach (var node in _nodes)
+                    {
+                        <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                            <td class="px-5 py-4">
+                                <button @onclick="() => ToggleFavoriteAsync(node)"
+                                        disabled="@(_favoriteActionNodeId == node.NodeId)"
+                                        class="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] transition @(IsFavorite(node.NodeId) ? "bg-signal-500 text-white hover:bg-signal-600" : "bg-sand-100 text-cinder-900 hover:bg-sand-200") disabled:cursor-not-allowed disabled:opacity-60">
+                                    @(IsFavorite(node.NodeId) ? "Saved" : "Save")
+                                </button>
+                            </td>
+                            <td class="px-5 py-4">
+                                <a href="@GetNodeDetailsHref(node.NodeId)" class="font-medium text-cinder-950 underline-offset-4 hover:underline">
+                                    @(node.LongName ?? node.ShortName ?? node.NodeId)
+                                </a>
+                                <span class="mt-1 block text-xs text-cinder-800/70">
+                                    <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@node.NodeId</code>
+                                </span>
+                            </td>
+                            <td class="px-5 py-4">
+                                @if (string.IsNullOrWhiteSpace(node.LastHeardChannel))
+                                {
+                                    <span class="text-cinder-800/70">Unknown</span>
+                                }
+                                else
+                                {
+                                    <a href="@GetChannelDetailsHref(node.LastHeardChannel)"
+                                       class="inline-flex rounded-full bg-cinder-900/8 px-3 py-1 text-xs font-semibold text-cinder-900 hover:bg-cinder-900/15">
+                                        @node.LastHeardChannel
+                                    </a>
+                                }
+                            </td>
+                            <td class="px-5 py-4 text-cinder-800/82">@FormatPosition(node)</td>
+                            <td class="px-5 py-4">@RenderDeviceTelemetry(node)</td>
+                            <td class="px-5 py-4">@RenderEnvironmentTelemetry(node)</td>
+                            <td class="px-5 py-4">@(node.LastHeardAtUtc?.ToString("u") ?? "Unknown")</td>
+                        </tr>
+                    }
+                }
             </tbody>
         </table>
     </section>
+
+    @if (DisplayedNodeCount < _totalMatchedNodeCount)
+    {
+        <section class="flex justify-center">
+            <button type="button"
+                    class="cursor-pointer rounded-full bg-cinder-950 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled="@_isLoadingNodes"
+                    @onclick="LoadMoreNodesAsync">
+                @(_isLoadingNodes ? "Loading..." : $"Load more ({Math.Min(_maxDisplayed, _totalMatchedNodeCount - DisplayedNodeCount)} next)")
+            </button>
+        </section>
+    }
 </div>
 
 @code {
-    private readonly CancellationTokenSource _cancellationTokenSource = new();
     private string? _favoriteActionNodeId;
     private readonly HashSet<string> _favoriteNodeIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<NodeSummary> _nodes = [];
     private string? _favoriteStatusMessage;
+    private bool _isLoadingNodes;
     private int _maxDisplayed = 100;
     private readonly NodeQuery _query = new();
-    private Task? _refreshTask;
-    private int _displayedNodeCount;
+    private int _requestVersion;
     private int _totalMatchedNodeCount;
-    private Virtualize<NodeSummary>? _virtualizeNodes;
+    private int DisplayedNodeCount => _nodes.Count;
 
     protected override async Task OnInitializedAsync()
     {
-        await RefreshFavoritesAsync(_cancellationTokenSource.Token);
-        _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _cancellationTokenSource.Cancel();
-
-        if (_refreshTask is not null)
-        {
-            try
-            {
-                await _refreshTask;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
-        _cancellationTokenSource.Dispose();
+        await RefreshNodesAsync();
     }
 
     private bool IsFavorite(string nodeId)
@@ -173,41 +173,9 @@
         return _favoriteNodeIds.Contains(nodeId);
     }
 
-    private async ValueTask<ItemsProviderResult<NodeSummary>> ProvideNodesAsync(ItemsProviderRequest request)
+    private async Task RefreshFavoritesAsync()
     {
-        var remaining = _maxDisplayed - request.StartIndex;
-
-        if (remaining <= 0)
-        {
-            return new ItemsProviderResult<NodeSummary>([], _displayedNodeCount);
-        }
-
-        var take = Math.Min(request.Count, remaining);
-        var page = await NodeService.GetNodesPage(
-            _query,
-            request.StartIndex,
-            take,
-            _cancellationTokenSource.Token);
-
-        _totalMatchedNodeCount = page.TotalCount;
-        _displayedNodeCount = Math.Min(_maxDisplayed, page.TotalCount);
-
-        return new ItemsProviderResult<NodeSummary>(page.Items, _displayedNodeCount);
-    }
-
-    private async Task RefreshAsync(CancellationToken cancellationToken)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
-
-        while (await timer.WaitForNextTickAsync(cancellationToken))
-        {
-            await RefreshNodesAsync();
-        }
-    }
-
-    private async Task RefreshFavoritesAsync(CancellationToken cancellationToken = default)
-    {
-        var favorites = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
+        var favorites = await FavoriteNodeService.GetFavoriteNodes();
 
         _favoriteNodeIds.Clear();
 
@@ -219,24 +187,70 @@
 
     private async Task RefreshNodesAsync()
     {
+        var requestVersion = System.Threading.Interlocked.Increment(ref _requestVersion);
+        _isLoadingNodes = true;
+
         try
         {
-            await RefreshFavoritesAsync(_cancellationTokenSource.Token);
+            await RefreshFavoritesAsync();
+            var page = await NodeService.GetNodesPage(_query, 0, _maxDisplayed);
 
-            if (_virtualizeNodes is not null)
+            if (requestVersion != _requestVersion)
             {
-                await _virtualizeNodes.RefreshDataAsync();
+                return;
             }
 
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (OperationCanceledException)
-        {
+            _nodes.Clear();
+            _nodes.AddRange(page.Items);
+            _totalMatchedNodeCount = page.TotalCount;
         }
         catch (Exception exception)
         {
             _favoriteStatusMessage = $"Load failed: {exception.Message}";
-            await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            if (requestVersion == _requestVersion)
+            {
+                _isLoadingNodes = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private async Task LoadMoreNodesAsync()
+    {
+        if (_isLoadingNodes || DisplayedNodeCount >= _totalMatchedNodeCount)
+        {
+            return;
+        }
+
+        var requestVersion = _requestVersion;
+        _isLoadingNodes = true;
+
+        try
+        {
+            var page = await NodeService.GetNodesPage(_query, DisplayedNodeCount, _maxDisplayed);
+
+            if (requestVersion != _requestVersion)
+            {
+                return;
+            }
+
+            _totalMatchedNodeCount = page.TotalCount;
+            _nodes.AddRange(page.Items);
+        }
+        catch (Exception exception)
+        {
+            _favoriteStatusMessage = $"Load failed: {exception.Message}";
+        }
+        finally
+        {
+            if (requestVersion == _requestVersion)
+            {
+                _isLoadingNodes = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -264,7 +278,15 @@
                 _favoriteStatusMessage = $"Saved {node.NodeId} as favorite.";
             }
 
-            await RefreshNodesAsync();
+            await RefreshFavoritesAsync();
+
+            if (_query.OnlyFavorites)
+            {
+                await RefreshNodesAsync();
+                return;
+            }
+
+            await InvokeAsync(StateHasChanged);
         }
         catch (Exception exception)
         {

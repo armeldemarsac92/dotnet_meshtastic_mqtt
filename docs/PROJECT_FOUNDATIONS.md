@@ -301,11 +301,11 @@ Current implementation status:
 - The `nodes` table now also stores `last_heard_channel` (format `<region>/<channel>`) and fills it from MQTT topic parsing.
 - `/nodes` now renders position plus the currently persisted device and environment telemetry fields.
 - Node querying now supports SQL-backed filtering and sorting by search text, favorites, location presence, telemetry presence, and sort mode.
-- The `/nodes` page now uses virtualized infinite scrolling with a default display cap of 100 nodes to avoid full-table reads.
+- The `/nodes` page now loads nodes in explicit SQL-backed batches with a default page size of 100 and a `Load more` action to avoid full-table reads.
 - `/nodes` now links each row to node details and channel details pages, and displays device/environment telemetry in bubble-style badges.
 - The `/nodes` page now also supports in-place favorite toggle actions and a favorites-only view backed by the existing favorite-node service and repository flow.
-- `/nodes/details/{nodeId}` now provides a node details view with packet stats, channel link, map embedding when coordinates exist, and telemetry cards.
-- `/channels/{region}/{channel}` now provides channel-level stats (traffic volume, sender counts, decoded ratio, top nodes, recent messages) plus subscribe/unsubscribe.
+- `/nodes/details/{nodeId}` now provides a node details view with packet stats, channel link, map embedding when coordinates exist, telemetry cards, and a direct back link to `/nodes`.
+- `/channels/{region}/{channel}` now provides channel-level stats (traffic volume, sender counts, decoded ratio, top nodes, recent messages), subscribe/unsubscribe, and a direct back link to `/channels`.
 - The `/favorites` page is now actionable: favorite nodes can be removed directly from the table while preserving service-layer transaction and exception behavior.
 - Live startup and migration for telemetry were verified against the public broker. Decoder correctness for telemetry payloads is covered by unit tests because a fresh public-broker telemetry sample was not guaranteed during the short validation window.
 - Integration tests now cover duplicate packet ingestion rollback semantics end-to-end against SQLite/Dapper to ensure duplicate packets do not mutate node state.
@@ -313,6 +313,7 @@ Current implementation status:
 - Topic management now includes unsubscribe support in the MQTT abstraction/service layer, an explorer view with recommended and discovered channels, and preset-save actions from both discovered channels and custom topic filters.
 - Topic discovery now includes active probing from the Topics search context (temporary wildcard subscriptions over recommended channels, then automatic unsubscribe).
 - Recommended channel catalog now explicitly includes `MediumFast` variants so EU MediumFast can be discovered/saved/subscribed directly.
+- The `/messages` stream table now renders only the normalized `<region>/<channel>` badge in the channel column instead of raw full MQTT topic strings.
 
 ## Initial Functional Slices
 

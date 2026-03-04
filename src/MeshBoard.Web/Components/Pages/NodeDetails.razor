@@ -4,16 +4,22 @@
 
 <PageTitle>Node Details</PageTitle>
 
-@if (_node is null)
-{
-    <div class="space-y-3">
-        <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node not found</h1>
-        <p class="text-cinder-800">No observed node matched <code class="rounded-full bg-sand-100 px-3 py-1 text-xs">@NodeId</code>.</p>
-    </div>
-}
-else
-{
-    <div class="space-y-6">
+<div class="space-y-6">
+    <a href="/nodes"
+       class="inline-flex cursor-pointer items-center rounded-full bg-cinder-900/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition hover:bg-cinder-900/15">
+        Back to nodes
+    </a>
+
+    @if (_node is null)
+    {
+        <div class="space-y-3">
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node not found</h1>
+            <p class="text-cinder-800">No observed node matched <code class="rounded-full bg-sand-100 px-3 py-1 text-xs">@NodeId</code>.</p>
+        </div>
+    }
+    else
+    {
+        <div class="space-y-6">
         <header class="space-y-3">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Node details</p>
@@ -103,7 +109,8 @@ else
             </article>
         </section>
     </div>
-}
+    }
+</div>
 
 @code {
     [Parameter]
