@@ -1,8 +1,8 @@
 ﻿@inherits LayoutComponentBase
 
 <div class="liquid-stage min-h-screen text-cinder-950">
-    <div class="relative z-10 grid min-h-screen lg:grid-cols-[18.5rem_1fr]">
-        <aside class="liquid-sidebar flex flex-col gap-6 border-b px-6 py-8 text-sand-50 lg:border-r lg:border-b-0">
+    <div class="relative z-10 grid min-h-screen lg:h-screen lg:grid-cols-[18.5rem_1fr] lg:overflow-hidden">
+        <aside class="liquid-sidebar flex flex-col gap-6 border-b px-6 py-8 text-sand-50 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:border-r lg:border-b-0">
             <div class="flex items-center gap-4">
                 <div class="grid size-12 place-items-center rounded-2xl border border-white/50 bg-linear-to-br from-white/96 via-sand-100/90 to-signal-400/70 font-display text-lg text-cinder-950 shadow-lg shadow-cinder-950/35">
                     MB
@@ -25,11 +25,12 @@
             </nav>
 
             <div class="liquid-sidebar-note mt-auto rounded-[1.4rem] p-4 text-sm leading-7 text-sand-100/82">
-                The UI stays thin. Application services own orchestration. Infrastructure stays replaceable.
+                crafted by Armel de Marsac, want to contribute?
+                <a class="underline underline-offset-4" href="https://github.com/armeldemarsac92/dotnet_meshtastic_mqtt" target="_blank" rel="noopener noreferrer">open a pr</a>
             </div>
         </aside>
 
-        <main class="px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
+        <main class="px-5 py-6 sm:px-8 sm:py-8 lg:h-screen lg:overflow-y-auto lg:px-10 lg:py-10">
             @Body
         </main>
     </div>
