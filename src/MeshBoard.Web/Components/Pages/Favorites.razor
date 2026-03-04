@@ -15,6 +15,11 @@
         </p>
     </header>
 
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <p class="text-sm text-cinder-800/82">@_statusMessage</p>
+    }
+
     <section class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
         @if (_favoriteNodes.Count == 0)
         {
@@ -30,6 +35,7 @@
                         <th class="px-5 py-4">Node ID</th>
                         <th class="px-5 py-4">Short name</th>
                         <th class="px-5 py-4">Long name</th>
+                        <th class="px-5 py-4">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -39,6 +45,13 @@
                             <td class="px-5 py-4"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@favoriteNode.NodeId</code></td>
                             <td class="px-5 py-4 font-medium">@(favoriteNode.ShortName ?? "-")</td>
                             <td class="px-5 py-4">@(favoriteNode.LongName ?? "-")</td>
+                            <td class="px-5 py-4">
+                                <button @onclick="() => RemoveFavoriteAsync(favoriteNode.NodeId)"
+                                        disabled="@(_pendingNodeId == favoriteNode.NodeId)"
+                                        class="rounded-full bg-cinder-950 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-cinder-800 disabled:cursor-not-allowed disabled:opacity-60">
+                                    Remove
+                                </button>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -49,9 +62,37 @@
 
 @code {
     private IReadOnlyCollection<FavoriteNode> _favoriteNodes = [];
+    private string? _pendingNodeId;
+    private string? _statusMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
         _favoriteNodes = await FavoriteNodeService.GetFavoriteNodes();
+    }
+
+    private async Task RemoveFavoriteAsync(string nodeId)
+    {
+        _pendingNodeId = nodeId;
+        _statusMessage = null;
+
+        try
+        {
+            await FavoriteNodeService.RemoveFavoriteNode(nodeId);
+            _statusMessage = $"Removed {nodeId} from favorites.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _statusMessage = exception.Message;
+        }
+        finally
+        {
+            _pendingNodeId = null;
+        }
     }
 }
