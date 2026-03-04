@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package meshtastic;
+
+option csharp_namespace = "MeshBoard.Infrastructure.Meshtastic.Protobuf";
+
+// Minimal Meshtastic schema subset for the current read-only monitoring slice.
+// Verified against the official Meshtastic protobuf definitions on 2026-03-04:
+// https://github.com/meshtastic/protobufs/blob/master/meshtastic/mqtt.proto
+// https://github.com/meshtastic/protobufs/blob/master/meshtastic/mesh.proto
+enum PortNum {
+  UNKNOWN_APP = 0;
+  TEXT_MESSAGE_APP = 1;
+  POSITION_APP = 3;
+  NODEINFO_APP = 4;
+  ROUTING_APP = 5;
+  TEXT_MESSAGE_COMPRESSED_APP = 7;
+  WAYPOINT_APP = 8;
+  TELEMETRY_APP = 67;
+  MAP_REPORT_APP = 73;
+}
+
+message ServiceEnvelope {
+  bytes packet = 1;
+  string gateway_id = 2;
+  string channel_id = 3;
+}
+
+message MeshPacket {
+  uint32 from = 1;
+  uint32 to = 2;
+  uint32 channel = 3;
+
+  oneof payload_variant {
+    Data decoded = 4;
+    bytes encrypted = 5;
+  }
+
+  uint32 id = 6;
+  uint32 rx_time = 7;
+  float rx_snr = 8;
+  uint32 hop_limit = 9;
+  bool want_ack = 10;
+  int32 rx_rssi = 12;
+  bool via_mqtt = 14;
+  uint32 hop_start = 15;
+}
+
+message Data {
+  PortNum portnum = 1;
+  bytes payload = 2;
+  bool want_response = 3;
+  fixed32 dest = 4;
+  fixed32 source = 5;
+  fixed32 request_id = 6;
+  fixed32 reply_id = 7;
+}
+
+message Position {
+  sfixed32 latitude_i = 1;
+  sfixed32 longitude_i = 2;
+  int32 altitude = 3;
+  fixed32 time = 4;
+  uint32 location_source = 5;
+  uint32 altitude_source = 6;
+  uint32 timestamp = 7;
+  uint32 timestamp_millis_adjust = 8;
+  uint32 altitude_hae = 9;
+  uint32 sats_in_view = 10;
+  float ground_speed = 11;
+  float ground_track = 12;
+  fixed32 precision_bits = 13;
+  uint32 fix_quality = 14;
+  uint32 fix_type = 15;
+  int32 pdop = 16;
+  int32 hdop = 17;
+  int32 vdop = 18;
+  uint32 gps_accuracy = 19;
+  uint32 heart_bpm = 21;
+  uint32 sp_o2 = 22;
+  uint32 sensor_id = 23;
+}
+
+message User {
+  string id = 1;
+  string long_name = 2;
+  string short_name = 3;
+  uint32 hw_model = 4;
+  bool is_licensed = 5;
+  uint32 role = 6;
+  bytes public_key = 7;
+}

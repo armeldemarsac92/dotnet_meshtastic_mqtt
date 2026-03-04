@@ -10,30 +10,63 @@ namespace MeshBoard.Infrastructure.Meshtastic.Hosted;
 
 internal sealed class MeshtasticMqttHostedService : IHostedService
 {
+    private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly BrokerOptions _brokerOptions;
     private readonly IMeshtasticEnvelopeReader _envelopeReader;
     private readonly ILogger<MeshtasticMqttHostedService> _logger;
     private readonly IMqttSession _mqttSession;
     private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly CancellationTokenSource _stoppingTokenSource = new();
+    private Task? _startupTask;
 
     public MeshtasticMqttHostedService(
         IMqttSession mqttSession,
         IMeshtasticEnvelopeReader envelopeReader,
         IServiceScopeFactory serviceScopeFactory,
+        IHostApplicationLifetime applicationLifetime,
         IOptions<BrokerOptions> brokerOptions,
         ILogger<MeshtasticMqttHostedService> logger)
     {
         _mqttSession = mqttSession;
         _envelopeReader = envelopeReader;
         _serviceScopeFactory = serviceScopeFactory;
+        _applicationLifetime = applicationLifetime;
         _brokerOptions = brokerOptions.Value;
         _logger = logger;
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
         _mqttSession.MessageReceived += OnMessageReceived;
 
+        _applicationLifetime.ApplicationStarted.Register(
+            () => _startupTask = Task.Run(() => ConnectAndSubscribeAsync(_stoppingTokenSource.Token), CancellationToken.None));
+
+        return Task.CompletedTask;
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _stoppingTokenSource.Cancel();
+        _mqttSession.MessageReceived -= OnMessageReceived;
+
+        if (_startupTask is not null)
+        {
+            try
+            {
+                await _startupTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        await _mqttSession.DisconnectAsync(cancellationToken);
+        _stoppingTokenSource.Dispose();
+    }
+
+    private async Task ConnectAndSubscribeAsync(CancellationToken cancellationToken)
+    {
         _logger.LogInformation("Attempting to start the Meshtastic MQTT hosted service");
 
         try
@@ -41,18 +74,15 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
             await _mqttSession.ConnectAsync(cancellationToken);
             await _mqttSession.SubscribeAsync(_brokerOptions.DefaultTopicPattern, cancellationToken);
         }
+        catch (OperationCanceledException)
+        {
+        }
         catch (Exception exception)
         {
             _logger.LogWarning(
                 exception,
                 "The Meshtastic MQTT hosted service could not connect and subscribe during startup");
         }
-    }
-
-    public async Task StopAsync(CancellationToken cancellationToken)
-    {
-        _mqttSession.MessageReceived -= OnMessageReceived;
-        await _mqttSession.DisconnectAsync(cancellationToken);
     }
 
     private async Task OnMessageReceived(MeshBoard.Contracts.Meshtastic.MqttInboundMessage inboundMessage)

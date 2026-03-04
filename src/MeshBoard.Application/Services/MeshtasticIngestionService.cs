@@ -56,8 +56,14 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                     new UpsertObservedNodeRequest
                     {
                         NodeId = envelope.FromNodeId,
+                        ShortName = envelope.ShortName,
+                        LongName = envelope.LongName,
                         LastHeardAtUtc = envelope.ReceivedAtUtc,
-                        LastTextMessageAtUtc = envelope.ReceivedAtUtc
+                        LastTextMessageAtUtc = envelope.PacketType == "Text Message"
+                            ? envelope.ReceivedAtUtc
+                            : null,
+                        LastKnownLatitude = envelope.Latitude,
+                        LastKnownLongitude = envelope.Longitude
                     },
                     cancellationToken);
             }

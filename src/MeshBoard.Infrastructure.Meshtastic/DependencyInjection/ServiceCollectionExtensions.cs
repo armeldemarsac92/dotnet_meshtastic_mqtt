@@ -1,6 +1,6 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Contracts.Configuration;
-using MeshBoard.Infrastructure.Meshtastic.Bootstrap;
+using MeshBoard.Infrastructure.Meshtastic.Decoding;
 using MeshBoard.Infrastructure.Meshtastic.Hosted;
 using MeshBoard.Infrastructure.Meshtastic.Mqtt;
 using Microsoft.Extensions.Configuration;
@@ -18,7 +18,7 @@ public static class ServiceCollectionExtensions
             .AddOptions<BrokerOptions>()
             .Bind(configuration.GetSection(BrokerOptions.SectionName));
 
-        services.AddSingleton<IMeshtasticEnvelopeReader, NullMeshtasticEnvelopeReader>();
+        services.AddSingleton<IMeshtasticEnvelopeReader, MeshtasticEnvelopeReader>();
         services.AddSingleton<IMqttSession, MqttSession>();
         services.AddHostedService<MeshtasticMqttHostedService>();
 

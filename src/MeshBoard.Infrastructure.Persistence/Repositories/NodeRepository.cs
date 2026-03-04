@@ -32,7 +32,7 @@ internal sealed class NodeRepository : INodeRepository
 
     public async Task UpsertAsync(UpsertObservedNodeRequest request, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to upsert observed node: {NodeId}", request.NodeId);
+        _logger.LogDebug("Attempting to upsert observed node: {NodeId}", request.NodeId);
 
         await _dbContext.ExecuteAsync(
             NodeQueries.UpsertNode,

@@ -273,8 +273,17 @@ Current implementation status:
 - The app now authenticates successfully against `mqtt.meshtastic.org:1883` using the documented Meshtastic public broker credentials.
 - Default broker settings are currently stored in `src/MeshBoard.Web/appsettings.json`.
 - Broker status now surfaces the latest connection status message to the UI so connect and auth failures are visible without reading server logs.
-- The active Meshtastic envelope reader is still a placeholder that persists raw packet metadata only.
-- Because protobuf decoding is not implemented yet, live traffic is stored, but node identity and packet semantics remain incomplete.
+- Meshtastic protobuf decoding is now implemented inside `MeshBoard.Infrastructure.Meshtastic` using a minimal compiled schema subset.
+- The current decoder supports:
+  - Meshtastic `ServiceEnvelope` parsing
+  - direct `MeshPacket` fallback parsing for broker payloads that are not wrapped the same way
+  - node sender extraction from packet metadata and MQTT topic suffixes
+  - text message payload previews
+  - node-info payload decoding into short name and long name
+  - position payload decoding into latitude and longitude
+- Encrypted or otherwise non-decoded packets are still persisted as opaque payload previews so the message stream remains complete.
+- The Meshtastic MQTT hosted service now delays connect and subscribe until `ApplicationStarted`, which avoids racing persistence initialization during host startup.
+- Live verification against the public broker has already produced decoded node identities such as `Meshtastic Salz (Salz)` and `Russell WSGP797 (Ru97)` in SQLite.
 
 ## Initial Functional Slices
 
