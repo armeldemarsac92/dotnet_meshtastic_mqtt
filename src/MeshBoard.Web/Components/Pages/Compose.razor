@@ -1,4 +1,6 @@
 @page "/compose"
+@implements IAsyncDisposable
+@inject ISendCapabilityService SendCapabilityService
 
 <PageTitle>Compose</PageTitle>
 
@@ -9,15 +11,107 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Message composition</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            Send flows are intentionally deferred. They should only be enabled once the app can verify that the user is
-            operating through a Meshtastic gateway node with supported downlink configuration.
+            Compose remains guarded behind explicit capability checks. This route now surfaces live readiness state so
+            the send workflow can only be unlocked when configuration and broker connectivity are valid.
         </p>
     </header>
 
-    <section class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
-        <div class="rounded-[1.25rem] border border-dashed border-signal-500/30 bg-signal-500/6 p-5 text-cinder-800/85">
-            The UI route exists, but no compose workflow is enabled yet. The next implementation step is to codify send
-            preconditions in an application service before any form is exposed.
-        </div>
+    <section class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+            <h2 class="font-display text-3xl text-cinder-950">Send Capability</h2>
+            <div class="mt-4 inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] @GetCapabilityBadgeClass()">
+                @(_capabilityStatus.IsEnabled ? "Enabled" : "Blocked")
+            </div>
+
+            @if (_capabilityStatus.BlockingReasons.Count == 0)
+            {
+                <p class="mt-4 text-cinder-800/82">
+                    Compose preconditions are currently satisfied. The next slice can safely enable a real send form.
+                </p>
+            }
+            else
+            {
+                <ul class="mt-4 list-disc space-y-2 pl-5 text-cinder-800/85">
+                    @foreach (var reason in _capabilityStatus.BlockingReasons)
+                    {
+                        <li>@reason</li>
+                    }
+                </ul>
+            }
+        </article>
+
+        <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+            <h2 class="font-display text-3xl text-cinder-950">Current Context</h2>
+            <dl class="mt-4 grid gap-3 sm:grid-cols-[9rem_1fr] text-sm">
+                <dt class="text-cinder-800/70">Broker</dt>
+                <dd class="text-cinder-950">@_capabilityStatus.Host:@_capabilityStatus.Port</dd>
+                <dt class="text-cinder-800/70">Connected</dt>
+                <dd class="text-cinder-950">@(_capabilityStatus.IsBrokerConnected ? "Yes" : "No")</dd>
+                <dt class="text-cinder-800/70">Downlink topic</dt>
+                <dd class="text-cinder-950"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@(_capabilityStatus.DownlinkTopic == string.Empty ? "(not configured)" : _capabilityStatus.DownlinkTopic)</code></dd>
+            </dl>
+
+            <h3 class="mt-6 text-sm font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Advisories</h3>
+            <ul class="mt-3 list-disc space-y-2 pl-5 text-cinder-800/85">
+                @foreach (var advisory in _capabilityStatus.Advisories)
+                {
+                    <li>@advisory</li>
+                }
+            </ul>
+        </article>
     </section>
 </div>
+
+@code {
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private SendCapabilityStatus _capabilityStatus = new();
+    private Task? _refreshTask;
+
+    protected override Task OnInitializedAsync()
+    {
+        RefreshStatus();
+        _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cancellationTokenSource.Cancel();
+
+        if (_refreshTask is not null)
+        {
+            try
+            {
+                await _refreshTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        _cancellationTokenSource.Dispose();
+    }
+
+    private async Task RefreshAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            RefreshStatus();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void RefreshStatus()
+    {
+        _capabilityStatus = SendCapabilityService.GetStatus();
+    }
+
+    private string GetCapabilityBadgeClass()
+    {
+        return _capabilityStatus.IsEnabled
+            ? "bg-signal-500/12 text-signal-600"
+            : "bg-cinder-900 text-white";
+    }
+}

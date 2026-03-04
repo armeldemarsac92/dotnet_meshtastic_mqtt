@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<INodeService, NodeService>();
+        services.AddScoped<ISendCapabilityService, SendCapabilityService>();
         services.AddScoped<ITopicPresetService, TopicPresetService>();
 
         return services;

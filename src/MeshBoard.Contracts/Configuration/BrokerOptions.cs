@@ -18,5 +18,7 @@ public sealed class BrokerOptions
 
     public string DefaultTopicPattern { get; set; } = "msh/US/2/e/#";
 
+    public string DownlinkTopic { get; set; } = "msh/US/2/json/mqtt/";
+
     public bool EnableSend { get; set; }
 }

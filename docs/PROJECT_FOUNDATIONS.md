@@ -289,6 +289,8 @@ Current implementation status:
 - The Meshtastic MQTT hosted service now delays connect and subscribe until `ApplicationStarted`, which avoids racing persistence initialization during host startup.
 - Live verification against the public broker has already produced decoded node identities such as `Meshtastic Salz (Salz)` and `Russell WSGP797 (Ru97)` in SQLite.
 - The `/messages` page now supports practical client-side filtering by visibility, packet type, and free-text search over recent persisted traffic.
+- Compose now uses a dedicated send-capability service instead of a static placeholder. It reports live blocker reasons from broker config and MQTT session state.
+- `Broker:DownlinkTopic` is now part of runtime configuration for future send workflows and is validated by the capability service.
 - The `nodes` table now stores a small telemetry set: battery level, voltage, channel utilization, air util TX, uptime, temperature, humidity, and barometric pressure.
 - `/nodes` now renders position plus the currently persisted device and environment telemetry fields.
 - Node querying now supports application-layer filtering and sorting by search text, location presence, telemetry presence, and sort mode.
