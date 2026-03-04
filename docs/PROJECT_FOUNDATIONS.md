@@ -64,10 +64,18 @@ Rules:
 - Prefer utility classes directly in Razor markup over hand-written component CSS.
 - Keep custom CSS limited to Tailwind input, theme tokens, and rare framework-level exceptions.
 - Use Tailwind's CSS-first configuration style, not legacy heavy config-first setup.
-- The active theme now uses a cooler modern palette and external web fonts (`Manrope` + `Space Grotesk`) through the Tailwind input file.
+- The active theme now uses a cooler modern palette and external web fonts (`Plus Jakarta Sans` + `Sora`) through the Tailwind input file.
 - The Tailwind input file lives at `src/MeshBoard.Web/Styles/app.css`.
 - The compiled stylesheet is written to `src/MeshBoard.Web/wwwroot/app.css`.
 - The root `package.json` owns the Tailwind scripts.
+
+Liquid glass conventions (2026-03-04 refresh):
+
+- The app now uses a shared glass utility layer in `src/MeshBoard.Web/Styles/app.css` with reusable classes: `liquid-stage`, `liquid-sidebar`, `liquid-nav-link`, `liquid-panel`, `liquid-subpanel`, `liquid-input`, and `liquid-table-head`.
+- Glass surfaces should use the shared classes instead of repeating long utility sequences (`border + bg + shadow + blur`) in each Razor component.
+- Keep legibility first: primary content text should remain `text-cinder-950` or equivalent high-contrast values, and translucent surfaces must not reduce contrast below WCAG AA-level expectations.
+- Inputs/selects/textarea should use `liquid-input` so focus rings and contrast remain consistent across pages.
+- New modal overlays should include slight backdrop blur to separate foreground content without reducing readability.
 
 Build commands:
 

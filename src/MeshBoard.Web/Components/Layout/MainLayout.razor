@@ -1,10 +1,10 @@
 ﻿@inherits LayoutComponentBase
 
-<div class="min-h-screen bg-[radial-gradient(circle_at_top,rgba(137,214,255,0.45),transparent_28%),linear-gradient(180deg,#f5fbff_0%,#eaf2ff_44%,#dfe9fb_100%)] text-stone-900">
-    <div class="grid min-h-screen lg:grid-cols-[18.5rem_1fr]">
-        <aside class="flex flex-col gap-6 border-b border-white/10 bg-linear-to-b from-cinder-900 via-cinder-900 to-cinder-950 px-6 py-8 text-sand-50 lg:border-r lg:border-b-0">
+<div class="liquid-stage min-h-screen text-cinder-950">
+    <div class="relative z-10 grid min-h-screen lg:grid-cols-[18.5rem_1fr]">
+        <aside class="liquid-sidebar flex flex-col gap-6 border-b px-6 py-8 text-sand-50 lg:border-r lg:border-b-0">
             <div class="flex items-center gap-4">
-                <div class="grid size-12 place-items-center rounded-2xl bg-linear-to-br from-signal-400 to-sand-200 font-display text-lg text-cinder-950 shadow-xl shadow-cinder-950/30">
+                <div class="grid size-12 place-items-center rounded-2xl border border-white/50 bg-linear-to-br from-white/96 via-sand-100/90 to-signal-400/70 font-display text-lg text-cinder-950 shadow-lg shadow-cinder-950/35">
                     MB
                 </div>
                 <div>
@@ -14,17 +14,17 @@
             </div>
 
             <nav class="grid gap-2 text-sm font-medium">
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/topics">Topics</NavLink>
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/messages">Messages</NavLink>
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/nodes">Nodes</NavLink>
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/channels">Channels</NavLink>
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/favorites">Favorites</NavLink>
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/compose">Compose</NavLink>
-                <NavLink class="rounded-full px-4 py-3 text-sand-100/80 transition hover:bg-white/8 hover:text-white [&.active]:bg-white/12 [&.active]:text-white" href="/settings">Settings</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/" Match="NavLinkMatch.All">Dashboard</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/topics">Topics</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/messages">Messages</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/nodes">Nodes</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/channels">Channels</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/favorites">Favorites</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/compose">Compose</NavLink>
+                <NavLink class="liquid-nav-link rounded-full px-4 py-3" href="/settings">Settings</NavLink>
             </nav>
 
-            <div class="mt-auto rounded-[1.4rem] border border-white/8 bg-white/5 p-4 text-sm leading-7 text-sand-100/76 shadow-lg shadow-cinder-950/20">
+            <div class="liquid-sidebar-note mt-auto rounded-[1.4rem] p-4 text-sm leading-7 text-sand-100/82">
                 The UI stays thin. Application services own orchestration. Infrastructure stays replaceable.
             </div>
         </aside>

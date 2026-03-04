@@ -24,14 +24,14 @@
 
     @if (_isLoading)
     {
-        <section class="rounded-[1.6rem] border border-white/50 bg-white/70 p-6 shadow-panel backdrop-blur">
+        <section class="liquid-panel rounded-[1.6rem] p-6">
             <p class="text-cinder-800/80">Loading the application shell...</p>
         </section>
     }
     else
     {
         <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+            <article class="liquid-panel rounded-[1.6rem] p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Broker</p>
                 <strong class="mt-3 block text-lg text-cinder-950">@_brokerStatus.Host:@_brokerStatus.Port</strong>
                 <span class="mt-2 block text-sm text-cinder-800/78">@(_brokerStatus.IsConnected ? "Connected to MQTT" : "Broker offline")</span>
@@ -40,17 +40,17 @@
                     <span class="mt-3 block text-xs leading-6 text-cinder-800/70">@_brokerStatus.LastStatusMessage</span>
                 }
             </article>
-            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+            <article class="liquid-panel rounded-[1.6rem] p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Persistence</p>
                 <strong class="mt-3 block text-lg text-cinder-950">@PersistenceConfiguration.Value.Provider</strong>
                 <span class="mt-2 block text-sm text-cinder-800/78">@(_favoriteNodes.Count) favorites saved</span>
             </article>
-            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+            <article class="liquid-panel rounded-[1.6rem] p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Subscriptions</p>
                 <strong class="mt-3 block text-lg text-cinder-950">@_brokerStatus.TopicFilters.Count</strong>
                 <span class="mt-2 block text-sm text-cinder-800/78">@(_topicPresets.Count) saved presets</span>
             </article>
-            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+            <article class="liquid-panel rounded-[1.6rem] p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Activity</p>
                 <strong class="mt-3 block text-lg text-cinder-950">@(_messages.Count) packets</strong>
                 <span class="mt-2 block text-sm text-cinder-800/78">@_observedNodeCount observed nodes</span>
@@ -58,7 +58,7 @@
         </section>
 
         <section class="grid gap-4 xl:grid-cols-2">
-            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+            <article class="liquid-panel rounded-[1.6rem] p-6">
                 <h2 class="font-display text-3xl text-cinder-950">Active topic filters</h2>
                 @if (_brokerStatus.TopicFilters.Count == 0)
                 {
@@ -77,7 +77,7 @@
                 }
             </article>
 
-            <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+            <article class="liquid-panel rounded-[1.6rem] p-6">
                 <h2 class="font-display text-3xl text-cinder-950">Current slice</h2>
                 <ul class="mt-4 list-disc space-y-3 pl-5 text-cinder-800/85">
                     <li>MQTT connects on startup and subscribes to the default Meshtastic topic.</li>

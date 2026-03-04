@@ -16,7 +16,7 @@
         </p>
     </header>
 
-    <section class="rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur">
+    <section class="liquid-panel rounded-[1.6rem] p-5">
         <div class="flex flex-wrap items-center gap-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Listening channels</span>
             @if (ChannelEntries.Count == 0)
@@ -41,19 +41,19 @@
         }
     </section>
 
-    <section class="grid gap-4 rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
+    <section class="liquid-panel grid gap-4 rounded-[1.6rem] p-5 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search</span>
             <input @bind="_filters.SearchText"
                    @bind:event="oninput"
-                   class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                    placeholder="Node id, packet type, or preview text" />
         </label>
 
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Visibility</span>
             <select @bind="_filters.Visibility"
-                    class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none">
+                    class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950">
                 <option value="@MessageVisibility.All">All packets</option>
                 <option value="@MessageVisibility.DecodedOnly">Decoded only</option>
                 <option value="@MessageVisibility.OpaqueOnly">Opaque only</option>
@@ -64,7 +64,7 @@
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Packet type</span>
             <select @bind="_filters.PacketType"
-                    class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none">
+                    class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950">
                 <option value="">Any packet type</option>
                 @foreach (var packetType in PacketTypes)
                 {
@@ -74,7 +74,7 @@
         </label>
     </section>
 
-    <section class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+    <section class="liquid-panel overflow-hidden rounded-[1.6rem]">
         @if (FilteredMessages.Count == 0)
         {
             <div class="p-6 text-cinder-800/78">
@@ -92,7 +92,7 @@
                     <col class="w-[10%]" />
                     <col class="w-[32%]" />
                 </colgroup>
-                <thead class="bg-sand-50/80">
+                <thead class="liquid-table-head">
                     <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <th class="px-5 py-4">Received</th>
                         <th class="px-5 py-4">Type</th>
@@ -154,9 +154,9 @@
 
 @if (_previewMessage is not null)
 {
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/35 p-4"
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-cinder-950/40 p-4 backdrop-blur-sm"
          @onclick="CloseMessagePreview">
-        <article class="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[1.6rem] border border-white/60 bg-white shadow-panel"
+        <article class="liquid-panel max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[1.6rem]"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between border-b border-sand-100/80 px-5 py-4">
                 <div class="space-y-1">
@@ -187,7 +187,7 @@
                     </button>
                 </div>
                 <p class="text-cinder-800/82">To: @(_previewMessage.ToNodeId ?? "Broadcast")</p>
-                <section class="rounded-2xl border border-sand-200 bg-sand-50/70 p-4">
+                <section class="liquid-subpanel rounded-2xl p-4">
                     <h2 class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Full preview</h2>
                     <p class="mt-2 whitespace-pre-wrap break-words text-sm text-cinder-950">@_previewMessage.PayloadPreview</p>
                 </section>

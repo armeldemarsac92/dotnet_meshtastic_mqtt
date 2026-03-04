@@ -18,7 +18,7 @@
     </header>
 
     <section class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+        <article class="liquid-panel rounded-[1.6rem] p-6">
             <h2 class="font-display text-3xl text-cinder-950">Send Capability</h2>
             <div class="mt-4 inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] @GetCapabilityBadgeClass()">
                 @(_capabilityStatus.IsEnabled ? "Enabled" : "Blocked")
@@ -40,13 +40,13 @@
                 </ul>
             }
 
-            <div class="mt-6 space-y-4 rounded-[1.25rem] border border-sand-200/80 bg-white/70 p-5">
+            <div class="liquid-subpanel mt-6 space-y-4 rounded-[1.25rem] p-5">
                 <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Compose text message</h3>
 
                 <label class="block space-y-2">
                     <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Private destination (optional)</span>
                     <InputText @bind-Value="_composeRequest.ToNodeId"
-                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                               class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                                placeholder="!a1b2c3d4" />
                 </label>
 
@@ -54,7 +54,7 @@
                     <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Message</span>
                     <InputTextArea @bind-Value="_composeRequest.Text"
                                    rows="4"
-                                   class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                                    placeholder="Type a message to publish to Meshtastic downlink..." />
                 </label>
 
@@ -71,7 +71,7 @@
             </div>
         </article>
 
-        <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+        <article class="liquid-panel rounded-[1.6rem] p-6">
             <h2 class="font-display text-3xl text-cinder-950">Current Context</h2>
             <dl class="mt-4 grid gap-3 sm:grid-cols-[9rem_1fr] text-sm">
                 <dt class="text-cinder-800/70">Broker</dt>

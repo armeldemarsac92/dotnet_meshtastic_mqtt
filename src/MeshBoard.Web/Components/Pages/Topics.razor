@@ -19,12 +19,12 @@
         </p>
     </header>
 
-    <section class="grid gap-4 rounded-[1.6rem] border border-white/60 bg-white/72 p-5 shadow-panel backdrop-blur lg:grid-cols-[1.4fr_1fr]">
+    <section class="liquid-panel grid gap-4 rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_1fr]">
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search topics</span>
             <input @bind="_explorerSearchText"
                    @bind:event="oninput"
-                   class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none"
+                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                    placeholder="Region, channel, or topic pattern" />
         </label>
         <div class="self-end space-y-3">
@@ -43,7 +43,7 @@
     </section>
 
     <section class="grid gap-4 xl:grid-cols-2">
-        <article class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+        <article class="liquid-panel overflow-hidden rounded-[1.6rem]">
             <div class="border-b border-sand-100/80 px-5 py-4">
                 <h2 class="font-display text-3xl text-cinder-950">Explorer</h2>
             </div>
@@ -58,7 +58,7 @@
                 <div class="grid gap-3 p-5">
                     @foreach (var entry in FilteredExplorerEntries)
                     {
-                        <article class="rounded-2xl border border-sand-200/80 bg-white/70 p-4">
+                        <article class="liquid-subpanel rounded-2xl p-4">
                             <div class="flex flex-wrap items-center gap-2">
                                 <strong class="text-sm text-cinder-950">@entry.Label</strong>
                                 @if (entry.IsRecommended)
@@ -94,7 +94,7 @@
             }
         </article>
 
-        <article class="rounded-[1.6rem] border border-white/60 bg-white/72 p-6 shadow-panel backdrop-blur">
+        <article class="liquid-panel rounded-[1.6rem] p-6">
             <h2 class="font-display text-3xl text-cinder-950">Live broker status</h2>
             <dl class="mt-5 grid gap-3 sm:grid-cols-[9rem_1fr]">
                 <dt class="text-cinder-800/70">Connection</dt>
@@ -112,15 +112,15 @@
                 <div class="mt-6 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Custom topic filter</label>
                     <InputText @bind-Value="_topicRequest.TopicFilter"
-                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
+                               class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950 ring-0"
                                placeholder="msh/US/2/e/LongFast/#" />
                     <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Preset name</label>
                     <InputText @bind-Value="_topicRequest.Name"
-                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
+                               class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950 ring-0"
                                placeholder="US LongFast" />
                     <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Channel key (optional)</label>
                     <InputText @bind-Value="_topicRequest.EncryptionKeyBase64"
-                               class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 outline-none ring-0"
+                               class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950 ring-0"
                                placeholder="Base64 or hex key" />
                     <div class="flex flex-wrap gap-2">
                         <button type="submit"
@@ -167,7 +167,7 @@
         </article>
     </section>
 
-    <section class="overflow-hidden rounded-[1.6rem] border border-white/60 bg-white/72 shadow-panel backdrop-blur">
+    <section class="liquid-panel overflow-hidden rounded-[1.6rem]">
         <div class="border-b border-sand-100/80 px-5 py-4">
             <h2 class="font-display text-3xl text-cinder-950">Saved presets</h2>
         </div>
@@ -180,7 +180,7 @@
         else
         {
             <table class="min-w-full border-collapse">
-                <thead class="bg-sand-50/80">
+                <thead class="liquid-table-head">
                     <tr class="text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <th class="px-5 py-4">Name</th>
                         <th class="px-5 py-4">Topic pattern</th>
