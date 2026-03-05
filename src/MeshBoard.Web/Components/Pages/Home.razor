@@ -13,12 +13,12 @@
 <div class="space-y-6">
     <header class="space-y-3">
         <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Foundation</p>
-            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Dependency-inverted Blazor shell</h1>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Overview</p>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Live Meshtastic dashboard</h1>
         </div>
         <p class="max-w-3xl text-base leading-8 text-cinder-800">
-            The app now has real SQLite persistence, live MQTT ingestion, and protobuf decoding for key Meshtastic
-            packet types. Current hardening work is focused on retention, diagnostics, and send-path safety.
+            Track broker status, subscriptions, traffic, and nodes in one place. Use Topics to subscribe and Messages
+            or Nodes to inspect live activity.
         </p>
     </header>
 
@@ -78,12 +78,12 @@
             </article>
 
             <article class="liquid-panel rounded-[1.6rem] p-6">
-                <h2 class="font-display text-3xl text-cinder-950">Current slice</h2>
+                <h2 class="font-display text-3xl text-cinder-950">What you can do</h2>
                 <ul class="mt-4 list-disc space-y-3 pl-5 text-cinder-800/85">
-                    <li>MQTT connects on startup and subscribes to the default Meshtastic topic.</li>
-                    <li>Incoming packets are decoded and persisted into SQLite through application services.</li>
-                    <li>The dashboard, nodes, and messages views refresh every 3 seconds.</li>
-                    <li>Current hardening adds retention controls and richer integration-test coverage.</li>
+                    <li>Connect to the public Meshtastic MQTT broker.</li>
+                    <li>Subscribe to channels and monitor recent packets.</li>
+                    <li>Browse discovered nodes and their latest telemetry.</li>
+                    <li>Save favorites and presets for faster follow-up.</li>
                 </ul>
             </article>
         </section>
