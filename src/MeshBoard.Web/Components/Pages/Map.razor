@@ -5,18 +5,18 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="flex h-[calc(100dvh-3rem)] min-h-0 flex-col gap-4 overflow-hidden sm:h-[calc(100dvh-4rem)] lg:h-[calc(100dvh-5rem)]">
+<div class="flex h-[calc(100dvh-3rem)] min-h-0 flex-col gap-4 sm:h-[calc(100dvh-4rem)] lg:h-[calc(100dvh-5rem)]">
     <header class="space-y-2">
         <div>
             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Geospatial view</p>
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
         </div>
-        <p class="max-w-3xl text-sm leading-7 text-cinder-800 sm:text-base">
+        <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
             Browse all observed nodes with coordinates. Click a marker to open node details.
         </p>
     </header>
 
-    <section class="liquid-panel grid shrink-0 gap-4 rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_auto_1fr]">
+    <section class="liquid-panel grid shrink-0 gap-4 overflow-hidden rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_auto_1fr]">
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search on map</span>
             <input @bind="_searchText"
@@ -46,7 +46,7 @@
 
     <section class="liquid-panel min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
         <div id="@MapElementId"
-             class="meshboard-node-map h-full w-full rounded-[1.25rem] border border-sand-200/80"></div>
+             class="meshboard-node-map h-full w-full overflow-hidden rounded-[1.25rem] border border-sand-200/80"></div>
     </section>
 </div>
 

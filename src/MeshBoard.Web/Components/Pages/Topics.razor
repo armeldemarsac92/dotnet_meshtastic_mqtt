@@ -13,7 +13,7 @@
             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Subscriptions</p>
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Topic explorer</h1>
         </div>
-        <p class="max-w-3xl text-base leading-8 text-cinder-800">
+        <p class="max-w-5xl text-base leading-8 text-cinder-800">
             Browse recommended and discovered channels, save useful patterns as presets, and toggle subscriptions
             without leaving the app.
         </p>
@@ -43,53 +43,57 @@
     </section>
 
     <section class="grid gap-4 xl:grid-cols-2">
-        <article class="liquid-panel overflow-hidden rounded-[1.6rem]">
+        <article class="liquid-panel flex h-[34rem] flex-col overflow-hidden rounded-[1.6rem] xl:h-[51rem]">
             <div class="border-b border-sand-100/80 px-5 py-4">
                 <h2 class="font-display text-3xl text-cinder-950">Explorer</h2>
             </div>
             @if (FilteredExplorerEntries.Count == 0)
             {
-                <div class="p-6 text-cinder-800/78">
+                <div class="flex flex-1 items-center p-6 text-cinder-800/78">
                     No topics match this search.
                 </div>
             }
             else
             {
-                <div class="grid gap-3 p-5">
-                    @foreach (var entry in FilteredExplorerEntries)
-                    {
-                        <article class="liquid-subpanel rounded-2xl p-4">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <strong class="text-sm text-cinder-950">@entry.Label</strong>
-                                @if (entry.IsRecommended)
-                                {
-                                    <span class="rounded-full bg-signal-500/12 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-signal-600">Recommended</span>
-                                }
-                                else
-                                {
-                                    <span class="rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900">Discovered</span>
-                                }
-                            </div>
-                            <code class="mt-3 block rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@entry.TopicPattern</code>
-                            <div class="mt-4 flex flex-wrap gap-2">
-                                <button type="button"
-                                        class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
-                                        @onclick="() => OpenChannelDetails(entry.Region, entry.Channel)">
-                                    Details
-                                </button>
-                                <button type="button"
-                                        class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(IsActiveSubscription(entry.TopicPattern) ? "liquid-inline-action-active" : "liquid-inline-action-accent")"
-                                        @onclick="() => ToggleSubscriptionAsync(entry.TopicPattern)">
-                                    @(IsActiveSubscription(entry.TopicPattern) ? "Unsubscribe" : "Subscribe")
-                                </button>
-                            </div>
-                        </article>
-                    }
+                <div class="fade-scroll-frame min-h-0 flex-1">
+                    <div class="fade-scroll-content fade-scroll-content-fill">
+                        <div class="grid gap-3 p-5">
+                            @foreach (var entry in FilteredExplorerEntries)
+                            {
+                                <article class="liquid-subpanel rounded-2xl p-4">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <strong class="text-sm text-cinder-950">@entry.Label</strong>
+                                        @if (entry.IsRecommended)
+                                        {
+                                            <span class="rounded-full bg-signal-500/12 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-signal-600">Recommended</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="rounded-full bg-cinder-900/8 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900">Discovered</span>
+                                        }
+                                    </div>
+                                    <code class="mt-3 block rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@entry.TopicPattern</code>
+                                    <div class="mt-4 flex flex-wrap gap-2">
+                                        <button type="button"
+                                                class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                                                @onclick="() => OpenChannelDetails(entry.Region, entry.Channel)">
+                                            Details
+                                        </button>
+                                        <button type="button"
+                                                class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(IsActiveSubscription(entry.TopicPattern) ? "liquid-inline-action-active" : "liquid-inline-action-accent")"
+                                                @onclick="() => ToggleSubscriptionAsync(entry.TopicPattern)">
+                                            @(IsActiveSubscription(entry.TopicPattern) ? "Unsubscribe" : "Subscribe")
+                                        </button>
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    </div>
                 </div>
             }
         </article>
 
-        <article class="liquid-panel rounded-[1.6rem] p-6">
+        <article class="liquid-panel rounded-[1.6rem] p-6 xl:h-[51rem] xl:overflow-y-auto">
             <h2 class="font-display text-3xl text-cinder-950">Live broker status</h2>
             <dl class="mt-5 grid gap-3 sm:grid-cols-[9rem_1fr]">
                 <dt class="text-cinder-800/70">Connection</dt>
