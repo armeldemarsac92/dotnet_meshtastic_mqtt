@@ -43,6 +43,17 @@ dotnet test tests/MeshBoard.UnitTests/MeshBoard.UnitTests.csproj
 dotnet test tests/MeshBoard.IntegrationTests/MeshBoard.IntegrationTests.csproj
 ```
 
+Optional live decode smoke (real MQTT traffic, disabled by default):
+
+```bash
+MESHBOARD_LIVE_DECODE_SMOKE=1 \
+MESHBOARD_LIVE_DECODE_SECONDS=25 \
+MESHBOARD_LIVE_DECODE_KEYS="AQ==" \
+dotnet test tests/MeshBoard.UnitTests/MeshBoard.UnitTests.csproj --filter LiveDecodeSmoke
+```
+
+Set `MESHBOARD_LIVE_DECODE_REQUIRE_TEXT=1` to fail the smoke test unless at least one text message is decoded.
+
 ## Docker
 
 Build image:

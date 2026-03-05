@@ -200,6 +200,19 @@ public sealed class MeshtasticEnvelopeReaderTests
         Assert.Equal((uint)0x55667788, envelope.PacketId);
     }
 
+    [Fact]
+    public async Task Read_ShouldIgnorePayload_WhenMeshPacketHasNoKnownFields()
+    {
+        var reader = CreateReader();
+
+        // Protobuf field 99 (length-delimited): unknown to MeshPacket and ServiceEnvelope.
+        var payload = new byte[] { 0x9A, 0x06, 0x04, 0x6E, 0x6F, 0x6F, 0x70 };
+
+        var envelope = await reader.Read("msh/US/2/e/LongFast/!11223344", payload);
+
+        Assert.Null(envelope);
+    }
+
     private static MeshtasticEnvelopeReader CreateReader()
     {
         return new MeshtasticEnvelopeReader(

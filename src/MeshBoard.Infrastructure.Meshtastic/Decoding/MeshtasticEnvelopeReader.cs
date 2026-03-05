@@ -57,7 +57,9 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             return await MapEnvelope(topic, serviceEnvelope.Packet, payload.Length, cancellationToken);
         }
 
-        if (TryParseMeshPacket(payload, out var directPacket) && directPacket is not null)
+        if (TryParseMeshPacket(payload, out var directPacket) &&
+            directPacket is not null &&
+            HasPacketContent(directPacket))
         {
             return await MapEnvelope(topic, directPacket, payload.Length, cancellationToken);
         }
