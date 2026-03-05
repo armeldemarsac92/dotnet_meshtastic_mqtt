@@ -21,9 +21,9 @@ enum PortNum {
 }
 
 message ServiceEnvelope {
-  bytes packet = 1;
-  string gateway_id = 2;
-  string channel_id = 3;
+  MeshPacket packet = 1;
+  string channel_id = 2;
+  string gateway_id = 3;
 }
 
 message MeshPacket {

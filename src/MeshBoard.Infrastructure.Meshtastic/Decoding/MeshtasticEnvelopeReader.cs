@@ -51,11 +51,10 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
     {
         if (TryParseServiceEnvelope(payload, out var serviceEnvelope) &&
             serviceEnvelope is not null &&
-            !serviceEnvelope.Packet.IsEmpty &&
-            TryParseMeshPacket(serviceEnvelope.Packet.ToByteArray(), out var servicePacket) &&
-            servicePacket is not null)
+            serviceEnvelope.Packet is not null &&
+            HasPacketContent(serviceEnvelope.Packet))
         {
-            return await MapEnvelope(topic, servicePacket, payload.Length, cancellationToken);
+            return await MapEnvelope(topic, serviceEnvelope.Packet, payload.Length, cancellationToken);
         }
 
         if (TryParseMeshPacket(payload, out var directPacket) && directPacket is not null)
@@ -890,5 +889,13 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             serviceEnvelope = null;
             return false;
         }
+    }
+
+    private static bool HasPacketContent(MeshPacket packet)
+    {
+        return packet.From != 0 ||
+            packet.To != 0 ||
+            packet.Id != 0 ||
+            packet.PayloadVariantCase != MeshPacket.PayloadVariantOneofCase.None;
     }
 }

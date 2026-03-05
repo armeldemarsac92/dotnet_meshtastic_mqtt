@@ -168,6 +168,38 @@ public sealed class MeshtasticEnvelopeReaderTests
         Assert.Equal("65a4", envelope.ShortName);
     }
 
+    [Fact]
+    public async Task Read_ShouldDecodeServiceEnvelope_WithNestedMeshPacket()
+    {
+        var reader = CreateReader();
+        var payloadBytes = Encoding.UTF8.GetBytes("hello from service envelope");
+        var serviceEnvelope = new ServiceEnvelope
+        {
+            ChannelId = "LongFast",
+            GatewayId = "!cafebabe",
+            Packet = new MeshPacket
+            {
+                From = 0x11223344,
+                To = uint.MaxValue,
+                Id = 0x55667788,
+                Decoded = new Data
+                {
+                    Portnum = PortNum.TextMessageApp,
+                    Payload = ByteString.CopyFrom(payloadBytes)
+                }
+            }
+        };
+
+        var envelope = await reader.Read("msh/US/2/e/LongFast/!11223344", serviceEnvelope.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Text Message", envelope.PacketType);
+        Assert.Equal("hello from service envelope", envelope.PayloadPreview);
+        Assert.Equal("!11223344", envelope.FromNodeId);
+        Assert.Null(envelope.ToNodeId);
+        Assert.Equal((uint)0x55667788, envelope.PacketId);
+    }
+
     private static MeshtasticEnvelopeReader CreateReader()
     {
         return new MeshtasticEnvelopeReader(
