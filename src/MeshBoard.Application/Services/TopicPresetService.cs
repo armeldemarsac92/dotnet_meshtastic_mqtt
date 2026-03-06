@@ -15,17 +15,20 @@ public interface ITopicPresetService
 
 public sealed class TopicPresetService : ITopicPresetService
 {
+    private readonly IBrokerServerProfileService _brokerServerProfileService;
     private readonly ILogger<TopicPresetService> _logger;
     private readonly ITopicEncryptionKeyResolver? _topicEncryptionKeyResolver;
     private readonly ITopicPresetRepository _topicPresetRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public TopicPresetService(
+        IBrokerServerProfileService brokerServerProfileService,
         ITopicPresetRepository topicPresetRepository,
         IUnitOfWork unitOfWork,
         ITopicEncryptionKeyResolver topicEncryptionKeyResolver,
         ILogger<TopicPresetService> logger)
     {
+        _brokerServerProfileService = brokerServerProfileService;
         _topicPresetRepository = topicPresetRepository;
         _unitOfWork = unitOfWork;
         _topicEncryptionKeyResolver = topicEncryptionKeyResolver;
@@ -34,11 +37,15 @@ public sealed class TopicPresetService : ITopicPresetService
 
     public async Task<IReadOnlyCollection<TopicPreset>> GetTopicPresets(CancellationToken cancellationToken = default)
     {
+        var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
         _logger.LogDebug("Attempting to get topic presets");
 
-        var topicPresets = await _topicPresetRepository.GetAllAsync(cancellationToken);
+        var topicPresets = await _topicPresetRepository.GetAllAsync(activeServerAddress, cancellationToken);
 
-        _logger.LogDebug("Retrieved {TopicPresetCount} topic presets", topicPresets.Count);
+        _logger.LogDebug(
+            "Retrieved {TopicPresetCount} topic presets for broker {BrokerServer}",
+            topicPresets.Count,
+            activeServerAddress);
 
         return topicPresets;
     }
@@ -47,6 +54,7 @@ public sealed class TopicPresetService : ITopicPresetService
         SaveTopicPresetRequest request,
         CancellationToken cancellationToken = default)
     {
+        var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
         var topicPattern = request.TopicPattern.Trim();
         var name = request.Name.Trim();
 
@@ -69,6 +77,7 @@ public sealed class TopicPresetService : ITopicPresetService
         try
         {
             var topicPreset = await _topicPresetRepository.UpsertAsync(
+                activeServerAddress,
                 new SaveTopicPresetRequest
                 {
                     Name = name,
@@ -90,6 +99,12 @@ public sealed class TopicPresetService : ITopicPresetService
             await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
         }
+    }
+
+    private async Task<string> ResolveActiveServerAddress(CancellationToken cancellationToken)
+    {
+        var activeProfile = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        return activeProfile.ServerAddress;
     }
 
     private static string? NormalizeEncryptionKey(string? encryptionKeyBase64)

@@ -6,7 +6,8 @@ internal static class TopicPresetQueries
         """
         UPDATE topic_presets
         SET is_default = 0
-        WHERE is_default = 1;
+        WHERE is_default = 1
+          AND broker_server = @BrokerServer;
         """;
 
     public static string GetTopicPresetByTopicPattern =>
@@ -19,7 +20,8 @@ internal static class TopicPresetQueries
             is_default AS IsDefault,
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
-        WHERE topic_pattern = @TopicPattern;
+        WHERE broker_server = @BrokerServer
+          AND topic_pattern = @TopicPattern;
         """;
 
     public static string GetTopicPresets =>
@@ -32,6 +34,7 @@ internal static class TopicPresetQueries
             is_default AS IsDefault,
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
+        WHERE broker_server = @BrokerServer
         ORDER BY is_default DESC, name ASC;
         """;
 
@@ -39,6 +42,7 @@ internal static class TopicPresetQueries
         """
         INSERT OR IGNORE INTO topic_presets (
             id,
+            broker_server,
             name,
             topic_pattern,
             encryption_key_base64,
@@ -46,6 +50,7 @@ internal static class TopicPresetQueries
             created_at_utc)
         VALUES (
             @Id,
+            @BrokerServer,
             @Name,
             @TopicPattern,
             @EncryptionKeyBase64,
@@ -57,6 +62,7 @@ internal static class TopicPresetQueries
         """
         INSERT INTO topic_presets (
             id,
+            broker_server,
             name,
             topic_pattern,
             encryption_key_base64,
@@ -64,12 +70,13 @@ internal static class TopicPresetQueries
             created_at_utc)
         VALUES (
             @Id,
+            @BrokerServer,
             @Name,
             @TopicPattern,
             @EncryptionKeyBase64,
             @IsDefault,
             @CreatedAtUtc)
-        ON CONFLICT(topic_pattern) DO UPDATE SET
+        ON CONFLICT(broker_server, topic_pattern) DO UPDATE SET
             name = excluded.name,
             encryption_key_base64 = excluded.encryption_key_base64,
             is_default = excluded.is_default;

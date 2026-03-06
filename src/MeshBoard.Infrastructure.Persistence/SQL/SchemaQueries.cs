@@ -32,15 +32,13 @@ internal static class SchemaQueries
 
         CREATE TABLE IF NOT EXISTS topic_presets (
             id TEXT NOT NULL PRIMARY KEY,
+            broker_server TEXT NOT NULL,
             name TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
             encryption_key_base64 TEXT NULL,
             is_default INTEGER NOT NULL,
             created_at_utc TEXT NOT NULL
         );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_topic_pattern
-            ON topic_presets(topic_pattern);
 
         CREATE TABLE IF NOT EXISTS broker_server_profiles (
             id TEXT NOT NULL PRIMARY KEY,
@@ -62,15 +60,17 @@ internal static class SchemaQueries
             ON broker_server_profiles(name);
 
         CREATE TABLE IF NOT EXISTS discovered_topics (
-            topic_pattern TEXT NOT NULL PRIMARY KEY,
+            broker_server TEXT NOT NULL,
+            topic_pattern TEXT NOT NULL,
             region TEXT NOT NULL,
             channel TEXT NOT NULL,
             first_observed_at_utc TEXT NOT NULL,
-            last_observed_at_utc TEXT NOT NULL
+            last_observed_at_utc TEXT NOT NULL,
+            PRIMARY KEY (broker_server, topic_pattern)
         );
 
         CREATE INDEX IF NOT EXISTS ix_discovered_topics_last_observed_at_utc
-            ON discovered_topics(last_observed_at_utc DESC);
+            ON discovered_topics(broker_server, last_observed_at_utc DESC);
 
         CREATE TABLE IF NOT EXISTS nodes (
             node_id TEXT NOT NULL PRIMARY KEY,
@@ -187,6 +187,78 @@ internal static class SchemaQueries
         PRAGMA table_info(nodes);
         """;
 
+    public static string GetDiscoveredTopicColumns =>
+        """
+        PRAGMA table_info(discovered_topics);
+        """;
+
+    public static string DropDiscoveredTopicsLegacyTable =>
+        """
+        DROP TABLE IF EXISTS discovered_topics_legacy;
+        """;
+
+    public static string RenameDiscoveredTopicsToLegacy =>
+        """
+        ALTER TABLE discovered_topics RENAME TO discovered_topics_legacy;
+        """;
+
+    public static string RecreateDiscoveredTopicsWithBrokerServer =>
+        """
+        CREATE TABLE IF NOT EXISTS discovered_topics (
+            broker_server TEXT NOT NULL,
+            topic_pattern TEXT NOT NULL,
+            region TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            first_observed_at_utc TEXT NOT NULL,
+            last_observed_at_utc TEXT NOT NULL,
+            PRIMARY KEY (broker_server, topic_pattern)
+        );
+        """;
+
+    public static string CreateDiscoveredTopicsLastObservedIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_discovered_topics_last_observed_at_utc
+            ON discovered_topics(broker_server, last_observed_at_utc DESC);
+        """;
+
+    public static string CopyDiscoveredTopicsFromLegacyWithoutBrokerServer =>
+        """
+        INSERT INTO discovered_topics (
+            broker_server,
+            topic_pattern,
+            region,
+            channel,
+            first_observed_at_utc,
+            last_observed_at_utc)
+        SELECT
+            @BrokerServer AS broker_server,
+            topic_pattern,
+            region,
+            channel,
+            first_observed_at_utc,
+            last_observed_at_utc
+        FROM discovered_topics_legacy;
+        """;
+
+    public static string CopyDiscoveredTopicsFromLegacyWithBrokerServer =>
+        """
+        INSERT INTO discovered_topics (
+            broker_server,
+            topic_pattern,
+            region,
+            channel,
+            first_observed_at_utc,
+            last_observed_at_utc)
+        SELECT
+            COALESCE(NULLIF(broker_server, ''), @BrokerServer) AS broker_server,
+            topic_pattern,
+            region,
+            channel,
+            first_observed_at_utc,
+            last_observed_at_utc
+        FROM discovered_topics_legacy;
+        """;
+
     public static string GetTopicPresetColumns =>
         """
         PRAGMA table_info(topic_presets);
@@ -196,6 +268,30 @@ internal static class SchemaQueries
         """
         ALTER TABLE topic_presets
         ADD COLUMN encryption_key_base64 TEXT NULL;
+        """;
+
+    public static string AddTopicPresetsBrokerServerColumn =>
+        """
+        ALTER TABLE topic_presets
+        ADD COLUMN broker_server TEXT NULL;
+        """;
+
+    public static string BackfillTopicPresetsBrokerServer =>
+        """
+        UPDATE topic_presets
+        SET broker_server = COALESCE(NULLIF(broker_server, ''), @BrokerServer)
+        WHERE broker_server IS NULL OR broker_server = '';
+        """;
+
+    public static string DropTopicPresetsLegacyTopicPatternIndex =>
+        """
+        DROP INDEX IF EXISTS ux_topic_presets_topic_pattern;
+        """;
+
+    public static string CreateTopicPresetsBrokerServerTopicPatternIndex =>
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_broker_server_topic_pattern
+            ON topic_presets(broker_server, topic_pattern);
         """;
 
     public static string AddNodesBatteryLevelPercentColumn =>

@@ -73,6 +73,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             await _topicDiscoveryService.RecordObservedTopic(
                 envelope.Topic,
                 envelope.ReceivedAtUtc,
+                envelope.BrokerServer,
                 cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))

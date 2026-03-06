@@ -78,7 +78,8 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     public async Task SubscribeToDefaultTopic(CancellationToken cancellationToken = default)
     {
         var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
-        await SubscribeToTopic(activeServer.DefaultTopicPattern, cancellationToken);
+        var topicFilter = NormalizeToServerRootTopicFilter(activeServer.DefaultTopicPattern);
+        await SubscribeToTopic(topicFilter, cancellationToken);
     }
 
     public async Task SubscribeToTopic(string topicFilter, CancellationToken cancellationToken = default)
@@ -110,12 +111,21 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
             _activeServerName,
             _activeServerAddress);
 
+        var previousTopicFilters = _mqttSession.TopicFilters.ToList();
+
+        foreach (var topicFilter in previousTopicFilters)
+        {
+            await _mqttSession.UnsubscribeAsync(topicFilter, cancellationToken);
+        }
+
         await _mqttSession.DisconnectAsync(cancellationToken);
         await _mqttSession.ConnectAsync(cancellationToken);
 
-        if (_mqttSession.TopicFilters.Count == 0)
+        if (!string.IsNullOrWhiteSpace(activeProfile.DefaultTopicPattern))
         {
-            await SubscribeToTopic(activeProfile.DefaultTopicPattern, cancellationToken);
+            await SubscribeToTopic(
+                NormalizeToServerRootTopicFilter(activeProfile.DefaultTopicPattern),
+                cancellationToken);
         }
     }
 
@@ -211,6 +221,22 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
         }
 
         return string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeToServerRootTopicFilter(string topicFilter)
+    {
+        if (!TrySplitMeshtasticTopic(topicFilter, out var segments))
+        {
+            return topicFilter;
+        }
+
+        if (!string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase))
+        {
+            return topicFilter;
+        }
+
+        return string.Join('/', segments[..4]) + "/#";
     }
 
     private async Task RefreshActiveServerSnapshot(CancellationToken cancellationToken)

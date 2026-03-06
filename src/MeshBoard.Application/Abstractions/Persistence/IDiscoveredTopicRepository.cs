@@ -4,9 +4,12 @@ namespace MeshBoard.Application.Abstractions.Persistence;
 
 public interface IDiscoveredTopicRepository
 {
-    Task<IReadOnlyCollection<TopicCatalogEntry>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<TopicCatalogEntry>> GetAllAsync(
+        string brokerServer,
+        CancellationToken cancellationToken = default);
 
     Task UpsertAsync(
+        string brokerServer,
         string topicPattern,
         string region,
         string channel,

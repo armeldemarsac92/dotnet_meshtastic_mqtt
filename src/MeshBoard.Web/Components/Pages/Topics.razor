@@ -440,8 +440,6 @@
             var discoveredTopicsTask = TopicDiscoveryService.GetDiscoveredTopics();
             var serverProfilesTask = BrokerServerProfileService.GetServerProfiles();
 
-            _recommendedTopics = TopicExplorerService.GetRecommendedTopics();
-
             await Task.WhenAll(topicPresetsTask, discoveredTopicsTask, serverProfilesTask);
 
             _topicPresets = await topicPresetsTask;
@@ -450,6 +448,7 @@
             _brokerStatus = BrokerMonitorService.GetBrokerStatus();
 
             SyncSelectedServerFromStatus(applyDefaults: false);
+            ApplyRecommendedTopicsForSelectedServer();
         }
         finally
         {
@@ -596,6 +595,27 @@
         {
             _topicRequest.TopicFilter = _selectedServerProfile.DefaultTopicPattern;
         }
+    }
+
+    private void ApplyRecommendedTopicsForSelectedServer()
+    {
+        var recommendedTopics = TopicExplorerService.GetRecommendedTopics();
+
+        if (_selectedServerProfile is null ||
+            !TryExtractRegionAndVersionFromTopicPattern(
+                _selectedServerProfile.DefaultTopicPattern,
+                out var region,
+                out var version))
+        {
+            _recommendedTopics = recommendedTopics;
+            return;
+        }
+
+        _recommendedTopics = recommendedTopics
+            .Where(
+                entry => string.Equals(entry.Region, region, StringComparison.OrdinalIgnoreCase) &&
+                    entry.TopicPattern.Contains($"/{version}/", StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     private bool MatchesExplorerSearch(TopicCatalogEntry entry)
@@ -800,6 +820,28 @@
         region = segments[1];
         channel = segments[4];
         return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
+    private static bool TryExtractRegionAndVersionFromTopicPattern(string topicPattern, out string region, out string version)
+    {
+        region = string.Empty;
+        version = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(topicPattern))
+        {
+            return false;
+        }
+
+        var segments = topicPattern.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length < 3 || !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        region = segments[1];
+        version = segments[2];
+
+        return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(version);
     }
 
     private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)

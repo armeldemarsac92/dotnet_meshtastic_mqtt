@@ -53,6 +53,7 @@ internal sealed class SqliteDatabaseInitializer
         await connection.ExecuteAsync(createSchemaCommand);
         await MigrateMessageHistoryAsync(connection, cancellationToken);
         await MigrateNodesAsync(connection, cancellationToken);
+        await MigrateDiscoveredTopicsAsync(connection, cancellationToken);
         await MigrateTopicPresetsAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
@@ -67,8 +68,9 @@ internal sealed class SqliteDatabaseInitializer
 
         await connection.ExecuteAsync(retentionCommand);
 
-        await SeedTopicPresetAsync(connection, "US Public Feed", _brokerOptions.DefaultTopicPattern, true, cancellationToken);
-        await SeedTopicPresetAsync(connection, "EU Public Feed", "msh/EU_433/2/e/#", false, cancellationToken);
+        var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
+        await SeedTopicPresetAsync(connection, fallbackBrokerServer, "US Public Feed", _brokerOptions.DefaultTopicPattern, true, cancellationToken);
+        await SeedTopicPresetAsync(connection, fallbackBrokerServer, "EU Public Feed", "msh/EU_433/2/e/#", false, cancellationToken);
         await SeedBrokerServerProfileAsync(connection, cancellationToken);
 
         _logger.LogInformation("Initialized the SQLite database successfully");
@@ -165,10 +167,78 @@ internal sealed class SqliteDatabaseInitializer
                 cancellationToken: cancellationToken));
     }
 
-    private static async Task MigrateTopicPresetsAsync(
+    private async Task MigrateDiscoveredTopicsAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
     {
+        var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
+        var columnCommand = new CommandDefinition(
+            SchemaQueries.GetDiscoveredTopicColumns,
+            cancellationToken: cancellationToken);
+
+        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand)).ToList();
+        var columnNames = columns
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var hasBrokerServerColumn = columnNames.Contains("broker_server");
+        var hasCompositePrimaryKey =
+            columns.Any(column => string.Equals(column.Name, "broker_server", StringComparison.OrdinalIgnoreCase) && column.Pk > 0) &&
+            columns.Any(column => string.Equals(column.Name, "topic_pattern", StringComparison.OrdinalIgnoreCase) && column.Pk > 0);
+
+        if (hasBrokerServerColumn && hasCompositePrimaryKey)
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.CreateDiscoveredTopicsLastObservedIndex,
+                    cancellationToken: cancellationToken));
+            return;
+        }
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropDiscoveredTopicsLegacyTable,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.RenameDiscoveredTopicsToLegacy,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.RecreateDiscoveredTopicsWithBrokerServer,
+                cancellationToken: cancellationToken));
+
+        var copyQuery = hasBrokerServerColumn
+            ? SchemaQueries.CopyDiscoveredTopicsFromLegacyWithBrokerServer
+            : SchemaQueries.CopyDiscoveredTopicsFromLegacyWithoutBrokerServer;
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                copyQuery,
+                new
+                {
+                    BrokerServer = fallbackBrokerServer
+                },
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropDiscoveredTopicsLegacyTable,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateDiscoveredTopicsLastObservedIndex,
+                cancellationToken: cancellationToken));
+    }
+
+    private async Task MigrateTopicPresetsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
         var columnCommand = new CommandDefinition(
             SchemaQueries.GetTopicPresetColumns,
             cancellationToken: cancellationToken);
@@ -183,6 +253,32 @@ internal sealed class SqliteDatabaseInitializer
             "encryption_key_base64",
             SchemaQueries.AddTopicPresetsEncryptionKeyBase64Column,
             cancellationToken);
+
+        await EnsureColumnAsync(
+            connection,
+            columns,
+            "broker_server",
+            SchemaQueries.AddTopicPresetsBrokerServerColumn,
+            cancellationToken);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.BackfillTopicPresetsBrokerServer,
+                new
+                {
+                    BrokerServer = fallbackBrokerServer
+                },
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropTopicPresetsLegacyTopicPatternIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateTopicPresetsBrokerServerTopicPatternIndex,
+                cancellationToken: cancellationToken));
     }
 
     private static Task EnsureColumnAsync(
@@ -212,6 +308,7 @@ internal sealed class SqliteDatabaseInitializer
 
     private static Task SeedTopicPresetAsync(
         SqliteConnection connection,
+        string brokerServer,
         string name,
         string topicPattern,
         bool isDefault,
@@ -222,6 +319,7 @@ internal sealed class SqliteDatabaseInitializer
             new
             {
                 Id = Guid.NewGuid().ToString(),
+                BrokerServer = brokerServer,
                 Name = name,
                 TopicPattern = topicPattern,
                 EncryptionKeyBase64 = (string?)null,

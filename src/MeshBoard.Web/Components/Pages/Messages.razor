@@ -1,7 +1,9 @@
 @page "/messages"
 @implements IAsyncDisposable
+@using MeshBoard.Web.State
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IMessageService MessageService
+@inject ServerSelectionNotifier ServerSelectionNotifier
 
 <PageTitle>Messages</PageTitle>
 
@@ -265,15 +267,23 @@
 
     protected override async Task OnInitializedAsync()
     {
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
         await LoadAsync(_cancellationTokenSource.Token);
         _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
     }
 
     public ValueTask DisposeAsync()
     {
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
         _cancellationTokenSource.Cancel();
         _cancellationTokenSource.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private async Task HandleServerSelectionChangedAsync()
+    {
+        await LoadAsync(_cancellationTokenSource.Token);
+        await InvokeAsync(StateHasChanged);
     }
 
     private bool IsActiveSubscription(string topicPattern)

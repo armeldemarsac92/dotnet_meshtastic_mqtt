@@ -493,6 +493,81 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task TopicPreset_ShouldBeScopedToActiveServer()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var topicPresetService = scope.ServiceProvider.GetRequiredService<ITopicPresetService>();
+                var brokerServerProfileService = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+
+                var defaultProfile = await brokerServerProfileService.GetActiveServerProfile();
+                var sharedTopicPattern = "msh/US/2/e/Shared/#";
+
+                await topicPresetService.SaveTopicPreset(
+                    new SaveTopicPresetRequest
+                    {
+                        Name = "Default server preset",
+                        TopicPattern = sharedTopicPattern,
+                        EncryptionKeyBase64 = "AQ==",
+                        IsDefault = false
+                    });
+
+                await brokerServerProfileService.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "EU profile",
+                        Host = "mqtt-eu.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/EU_868/2/e/#",
+                        DefaultEncryptionKeyBase64 = "AQ==",
+                        DownlinkTopic = "msh/EU_868/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await topicPresetService.SaveTopicPreset(
+                    new SaveTopicPresetRequest
+                    {
+                        Name = "EU server preset",
+                        TopicPattern = sharedTopicPattern,
+                        EncryptionKeyBase64 = "AQ==",
+                        IsDefault = false
+                    });
+
+                var euPresets = await topicPresetService.GetTopicPresets();
+                Assert.Contains(euPresets, preset => preset.Name == "EU server preset");
+                Assert.DoesNotContain(euPresets, preset => preset.Name == "Default server preset");
+
+                await brokerServerProfileService.SetActiveServerProfile(defaultProfile.Id);
+
+                var defaultPresets = await topicPresetService.GetTopicPresets();
+                Assert.Contains(defaultPresets, preset => preset.Name == "Default server preset");
+                Assert.DoesNotContain(defaultPresets, preset => preset.Name == "EU server preset");
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task TopicDiscovery_ShouldPersistObservedTopicPatterns()
     {
         var databasePath = CreateTemporaryDatabasePath();
@@ -548,6 +623,87 @@ public sealed class PersistenceIntegrationTests
                 Assert.Contains(discoveredTopics, topic => topic.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
                 Assert.Contains(discoveredTopics, topic => topic.TopicPattern == "msh/US/2/e/LongFast/#");
                 Assert.All(discoveredTopics, topic => Assert.False(topic.IsRecommended));
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task TopicDiscovery_ShouldReturnTopicsForActiveServerOnly()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var ingestionService = scope.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
+                var topicDiscoveryService = scope.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+                var brokerServerProfileService = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+
+                var defaultProfile = await brokerServerProfileService.GetActiveServerProfile();
+
+                await ingestionService.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        BrokerServer = defaultProfile.ServerAddress,
+                        Topic = "msh/US/2/e/LongFast/!abc12345",
+                        PacketType = "Text Message",
+                        PacketId = 0x00030001,
+                        PayloadPreview = "Default server message",
+                        FromNodeId = "!abc12345",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 9, 0, 0, TimeSpan.Zero)
+                    });
+
+                var euProfile = await brokerServerProfileService.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "EU server",
+                        Host = "mqtt-eu.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/EU_868/2/e/#",
+                        DefaultEncryptionKeyBase64 = "AQ==",
+                        DownlinkTopic = "msh/EU_868/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await ingestionService.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        BrokerServer = euProfile.ServerAddress,
+                        Topic = "msh/EU_868/2/e/MediumFast/!def67890",
+                        PacketType = "Text Message",
+                        PacketId = 0x00030002,
+                        PayloadPreview = "EU server message",
+                        FromNodeId = "!def67890",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 9, 0, 1, TimeSpan.Zero)
+                    });
+
+                var euTopics = await topicDiscoveryService.GetDiscoveredTopics();
+                Assert.Contains(euTopics, topic => topic.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
+                Assert.DoesNotContain(euTopics, topic => topic.TopicPattern == "msh/US/2/e/LongFast/#");
+
+                await brokerServerProfileService.SetActiveServerProfile(defaultProfile.Id);
+
+                var defaultTopics = await topicDiscoveryService.GetDiscoveredTopics();
+                Assert.Contains(defaultTopics, topic => topic.TopicPattern == "msh/US/2/e/LongFast/#");
+                Assert.DoesNotContain(defaultTopics, topic => topic.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
             }
             finally
             {

@@ -19,29 +19,43 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
         _logger = logger;
     }
 
-    public async Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(
+        string brokerServer,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to fetch topic presets");
+        _logger.LogDebug("Attempting to fetch topic presets for broker {BrokerServer}", brokerServer);
 
         var topicPresets = await _dbContext.QueryAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresets,
+            new
+            {
+                BrokerServer = brokerServer
+            },
             cancellationToken: cancellationToken);
 
         return topicPresets.Select(x => x.MapToTopicPreset()).ToList();
     }
 
     public async Task<TopicPreset> UpsertAsync(
+        string brokerServer,
         SaveTopicPresetRequest request,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to upsert topic preset: {TopicPattern}", request.TopicPattern);
+        _logger.LogInformation(
+            "Attempting to upsert topic preset: {TopicPattern} for broker {BrokerServer}",
+            request.TopicPattern,
+            brokerServer);
 
-        var sqlRequest = request.ToSqlRequest();
+        var sqlRequest = request.ToSqlRequest(brokerServer);
 
         if (sqlRequest.IsDefault == 1)
         {
             await _dbContext.ExecuteAsync(
                 TopicPresetQueries.ClearDefaultTopicPresets,
+                new
+                {
+                    BrokerServer = brokerServer
+                },
                 cancellationToken: cancellationToken);
         }
 
@@ -52,7 +66,11 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
 
         var topicPreset = await _dbContext.QueryFirstOrDefaultAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresetByTopicPattern,
-            new { sqlRequest.TopicPattern },
+            new
+            {
+                BrokerServer = brokerServer,
+                sqlRequest.TopicPattern
+            },
             cancellationToken);
 
         if (topicPreset is null)

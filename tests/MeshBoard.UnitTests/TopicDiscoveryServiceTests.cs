@@ -1,5 +1,6 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,13 +13,15 @@ public sealed class TopicDiscoveryServiceTests
     {
         var repository = new FakeDiscoveredTopicRepository();
         var service = new TopicDiscoveryService(
+            new FakeBrokerServerProfileService(),
             repository,
             new TopicExplorerService(),
             NullLogger<TopicDiscoveryService>.Instance);
         var observedAtUtc = new DateTimeOffset(2026, 3, 4, 23, 0, 0, TimeSpan.Zero);
 
-        await service.RecordObservedTopic("msh/EU_868/2/json/MediumFast/!12345678", observedAtUtc);
+        await service.RecordObservedTopic("msh/EU_868/2/json/MediumFast/!12345678", observedAtUtc, "mqtt.eu:1883");
 
+        Assert.Equal("mqtt.eu:1883", repository.LastBrokerServer);
         Assert.Equal("msh/EU_868/2/e/MediumFast/#", repository.LastTopicPattern);
         Assert.Equal("EU_868", repository.LastRegion);
         Assert.Equal("MediumFast", repository.LastChannel);
@@ -30,6 +33,7 @@ public sealed class TopicDiscoveryServiceTests
     {
         var repository = new FakeDiscoveredTopicRepository();
         var service = new TopicDiscoveryService(
+            new FakeBrokerServerProfileService(),
             repository,
             new TopicExplorerService(),
             NullLogger<TopicDiscoveryService>.Instance);
@@ -41,6 +45,8 @@ public sealed class TopicDiscoveryServiceTests
 
     private sealed class FakeDiscoveredTopicRepository : IDiscoveredTopicRepository
     {
+        public string? LastBrokerServer { get; private set; }
+
         public string? LastChannel { get; private set; }
 
         public DateTimeOffset? LastObservedAtUtc { get; private set; }
@@ -51,25 +57,64 @@ public sealed class TopicDiscoveryServiceTests
 
         public int UpsertCount { get; private set; }
 
-        public Task<IReadOnlyCollection<TopicCatalogEntry>> GetAllAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<TopicCatalogEntry>> GetAllAsync(
+            string brokerServer,
+            CancellationToken cancellationToken = default)
         {
             IReadOnlyCollection<TopicCatalogEntry> discoveredTopics = [];
             return Task.FromResult(discoveredTopics);
         }
 
         public Task UpsertAsync(
+            string brokerServer,
             string topicPattern,
             string region,
             string channel,
             DateTimeOffset observedAtUtc,
             CancellationToken cancellationToken = default)
         {
+            LastBrokerServer = brokerServer;
             LastTopicPattern = topicPattern;
             LastRegion = region;
             LastChannel = channel;
             LastObservedAtUtc = observedAtUtc;
             UpsertCount++;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
+    {
+        public Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default)
+        {
+            IReadOnlyCollection<BrokerServerProfile> profiles = [];
+            return Task.FromResult(profiles);
+        }
+
+        public Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(
+                new BrokerServerProfile
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Default",
+                    Host = "mqtt.meshtastic.org",
+                    Port = 1883,
+                    DefaultTopicPattern = "msh/US/2/e/#",
+                    DownlinkTopic = "msh/US/2/json/mqtt/"
+                });
+        }
+
+        public Task<BrokerServerProfile> SaveServerProfile(
+            SaveBrokerServerProfileRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BrokerServerProfile> SetActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
     }
 }
