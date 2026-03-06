@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();
+        services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
         services.AddScoped<IMessageComposerService, MessageComposerService>();
         services.AddScoped<IMessageRetentionService, MessageRetentionService>();

@@ -108,6 +108,18 @@ public sealed class MessageComposerServiceTests
         return new MessageComposerService(
             mqttSession,
             sendCapabilityService,
+            new FakeBrokerServerProfileService(
+                new BrokerServerProfile
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Active server",
+                    Host = "mqtt.meshtastic.org",
+                    Port = 1883,
+                    DefaultTopicPattern = "msh/US/2/e/LongFast/#",
+                    DownlinkTopic = "msh/US/2/json/mqtt/",
+                    EnableSend = true,
+                    IsActive = true
+                }),
             Options.Create(
                 new BrokerOptions
                 {
@@ -174,6 +186,38 @@ public sealed class MessageComposerServiceTests
         public SendCapabilityStatus GetStatus()
         {
             return _status;
+        }
+    }
+
+    private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
+    {
+        private readonly BrokerServerProfile _activeProfile;
+
+        public FakeBrokerServerProfileService(BrokerServerProfile activeProfile)
+        {
+            _activeProfile = activeProfile;
+        }
+
+        public Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<BrokerServerProfile>>([_activeProfile]);
+        }
+
+        public Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_activeProfile);
+        }
+
+        public Task<BrokerServerProfile> SaveServerProfile(
+            SaveBrokerServerProfileRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BrokerServerProfile> SetActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
     }
 }

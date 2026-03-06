@@ -69,6 +69,7 @@ internal sealed class SqliteDatabaseInitializer
 
         await SeedTopicPresetAsync(connection, "US Public Feed", _brokerOptions.DefaultTopicPattern, true, cancellationToken);
         await SeedTopicPresetAsync(connection, "EU Public Feed", "msh/EU_433/2/e/#", false, cancellationToken);
+        await SeedBrokerServerProfileAsync(connection, cancellationToken);
 
         _logger.LogInformation("Initialized the SQLite database successfully");
     }
@@ -101,6 +102,14 @@ internal sealed class SqliteDatabaseInitializer
                     cancellationToken: cancellationToken));
         }
 
+        if (!columns.Contains("broker_server"))
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.AddMessageHistoryBrokerServerColumn,
+                    cancellationToken: cancellationToken));
+        }
+
         await connection.ExecuteAsync(
             new CommandDefinition(
                 SchemaQueries.BackfillMessageHistoryPacketType,
@@ -109,6 +118,11 @@ internal sealed class SqliteDatabaseInitializer
         await connection.ExecuteAsync(
             new CommandDefinition(
                 SchemaQueries.BackfillMessageHistoryMessageKey,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.BackfillMessageHistoryBrokerServer,
                 cancellationToken: cancellationToken));
 
         await connection.ExecuteAsync(
@@ -138,6 +152,12 @@ internal sealed class SqliteDatabaseInitializer
         await EnsureColumnAsync(connection, columns, "relative_humidity", SchemaQueries.AddNodesRelativeHumidityColumn, cancellationToken);
         await EnsureColumnAsync(connection, columns, "barometric_pressure", SchemaQueries.AddNodesBarometricPressureColumn, cancellationToken);
         await EnsureColumnAsync(connection, columns, "last_heard_channel", SchemaQueries.AddNodesLastHeardChannelColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columns, "broker_server", SchemaQueries.AddNodesBrokerServerColumn, cancellationToken);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.BackfillNodesBrokerServer,
+                cancellationToken: cancellationToken));
 
         await connection.ExecuteAsync(
             new CommandDefinition(
@@ -206,6 +226,35 @@ internal sealed class SqliteDatabaseInitializer
                 TopicPattern = topicPattern,
                 EncryptionKeyBase64 = (string?)null,
                 IsDefault = isDefault ? 1 : 0,
+                CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")
+            },
+            cancellationToken: cancellationToken);
+
+        return connection.ExecuteAsync(command);
+    }
+
+    private Task SeedBrokerServerProfileAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var normalizedDefaultKey = Contracts.Topics.TopicEncryptionKey.NormalizeToBase64OrNull(_brokerOptions.DefaultEncryptionKeyBase64) ??
+            Contracts.Topics.TopicEncryptionKey.DefaultKeyBase64;
+
+        var command = new CommandDefinition(
+            BrokerServerProfileQueries.InsertIfNoProfilesExist,
+            new
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Default server",
+                Host = _brokerOptions.Host,
+                Port = _brokerOptions.Port,
+                UseTls = _brokerOptions.UseTls ? 1 : 0,
+                Username = _brokerOptions.Username,
+                Password = _brokerOptions.Password,
+                DefaultTopicPattern = _brokerOptions.DefaultTopicPattern,
+                DefaultEncryptionKeyBase64 = normalizedDefaultKey,
+                DownlinkTopic = _brokerOptions.DownlinkTopic,
+                EnableSend = _brokerOptions.EnableSend ? 1 : 0,
                 CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")
             },
             cancellationToken: cancellationToken);

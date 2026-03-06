@@ -13,29 +13,43 @@ public interface IBrokerMonitorService
 
     BrokerStatus GetBrokerStatus();
 
+    Task SubscribeToDefaultTopic(CancellationToken cancellationToken = default);
+
     Task SubscribeToTopic(string topicFilter, CancellationToken cancellationToken = default);
+
+    Task SwitchActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default);
 
     Task UnsubscribeFromTopic(string topicFilter, CancellationToken cancellationToken = default);
 }
 
 public sealed class BrokerMonitorService : IBrokerMonitorService
 {
-    private readonly BrokerOptions _brokerOptions;
+    private readonly BrokerOptions _fallbackBrokerOptions;
+    private readonly IBrokerServerProfileService _brokerServerProfileService;
     private readonly ILogger<BrokerMonitorService> _logger;
     private readonly IMqttSession _mqttSession;
+    private Guid? _activeServerProfileId;
+    private string _activeServerAddress;
+    private string _activeServerName;
 
     public BrokerMonitorService(
         IMqttSession mqttSession,
+        IBrokerServerProfileService brokerServerProfileService,
         IOptions<BrokerOptions> brokerOptions,
         ILogger<BrokerMonitorService> logger)
     {
         _mqttSession = mqttSession;
-        _brokerOptions = brokerOptions.Value;
+        _brokerServerProfileService = brokerServerProfileService;
+        _fallbackBrokerOptions = brokerOptions.Value;
         _logger = logger;
+        _activeServerName = "Default server";
+        _activeServerAddress = $"{_fallbackBrokerOptions.Host}:{_fallbackBrokerOptions.Port}";
     }
 
     public async Task EnsureConnected(CancellationToken cancellationToken = default)
     {
+        await RefreshActiveServerSnapshot(cancellationToken);
+
         if (_mqttSession.IsConnected)
         {
             return;
@@ -50,12 +64,21 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     {
         return new BrokerStatus
         {
-            Host = _brokerOptions.Host,
-            Port = _brokerOptions.Port,
+            ActiveServerProfileId = _activeServerProfileId,
+            ActiveServerName = _activeServerName,
+            ActiveServerAddress = _activeServerAddress,
+            Host = _activeServerAddress.Split(':', 2)[0],
+            Port = TryParsePort(_activeServerAddress),
             IsConnected = _mqttSession.IsConnected,
             LastStatusMessage = _mqttSession.LastStatusMessage,
             TopicFilters = NormalizeTopicFiltersForDisplay(_mqttSession.TopicFilters)
         };
+    }
+
+    public async Task SubscribeToDefaultTopic(CancellationToken cancellationToken = default)
+    {
+        var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        await SubscribeToTopic(activeServer.DefaultTopicPattern, cancellationToken);
     }
 
     public async Task SubscribeToTopic(string topicFilter, CancellationToken cancellationToken = default)
@@ -72,6 +95,27 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
         foreach (var filter in ExpandWithCompanionFilter(topicFilter.Trim()))
         {
             await _mqttSession.SubscribeAsync(filter, cancellationToken);
+        }
+    }
+
+    public async Task SwitchActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
+    {
+        var activeProfile = await _brokerServerProfileService.SetActiveServerProfile(profileId, cancellationToken);
+        _activeServerProfileId = activeProfile.Id;
+        _activeServerName = activeProfile.Name;
+        _activeServerAddress = activeProfile.ServerAddress;
+
+        _logger.LogInformation(
+            "Attempting to switch active MQTT server to {ServerName} ({ServerAddress})",
+            _activeServerName,
+            _activeServerAddress);
+
+        await _mqttSession.DisconnectAsync(cancellationToken);
+        await _mqttSession.ConnectAsync(cancellationToken);
+
+        if (_mqttSession.TopicFilters.Count == 0)
+        {
+            await SubscribeToTopic(activeProfile.DefaultTopicPattern, cancellationToken);
         }
     }
 
@@ -167,5 +211,19 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
         }
 
         return string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task RefreshActiveServerSnapshot(CancellationToken cancellationToken)
+    {
+        var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        _activeServerProfileId = activeServer.Id;
+        _activeServerName = activeServer.Name;
+        _activeServerAddress = activeServer.ServerAddress;
+    }
+
+    private static int TryParsePort(string serverAddress)
+    {
+        var split = serverAddress.Split(':', 2, StringSplitOptions.TrimEntries);
+        return split.Length == 2 && int.TryParse(split[1], out var port) ? port : 0;
     }
 }

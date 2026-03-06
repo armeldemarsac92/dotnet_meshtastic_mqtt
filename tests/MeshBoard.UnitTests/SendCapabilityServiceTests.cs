@@ -69,7 +69,54 @@ public sealed class SendCapabilityServiceTests
 
     private static SendCapabilityService CreateService(BrokerOptions options, bool isConnected)
     {
-        return new SendCapabilityService(Options.Create(options), new FakeMqttSession(isConnected));
+        return new SendCapabilityService(
+            Options.Create(options),
+            new FakeMqttSession(isConnected),
+            new FakeBrokerServerProfileService(
+                new BrokerServerProfile
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Active server",
+                    Host = options.Host,
+                    Port = options.Port,
+                    DefaultTopicPattern = options.DefaultTopicPattern,
+                    DefaultEncryptionKeyBase64 = options.DefaultEncryptionKeyBase64,
+                    DownlinkTopic = options.DownlinkTopic,
+                    EnableSend = options.EnableSend,
+                    IsActive = true
+                }));
+    }
+
+    private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
+    {
+        private readonly BrokerServerProfile _activeProfile;
+
+        public FakeBrokerServerProfileService(BrokerServerProfile activeProfile)
+        {
+            _activeProfile = activeProfile;
+        }
+
+        public Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<BrokerServerProfile>>([_activeProfile]);
+        }
+
+        public Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_activeProfile);
+        }
+
+        public Task<BrokerServerProfile> SaveServerProfile(
+            SaveBrokerServerProfileRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BrokerServerProfile> SetActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 
 #pragma warning disable CS0067

@@ -1,7 +1,7 @@
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IBrokerServerProfileService BrokerServerProfileService
 @inject IMessageService MessageService
 @inject ITopicPresetService TopicPresetService
-@inject IOptions<BrokerOptions> BrokerOptions
 
 @if (IsOpen)
 {
@@ -35,6 +35,13 @@
                             <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
                                 <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@Region</span>
                                 <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@TopicFilter</code>
+                                @if (_observedBrokerServers.Count > 0)
+                                {
+                                    @foreach (var brokerServer in _observedBrokerServers)
+                                    {
+                                        <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">MQTT @brokerServer</span>
+                                    }
+                                }
                             </div>
                         </header>
 
@@ -65,7 +72,7 @@
 
                             <p class="mt-3 text-xs text-cinder-800/78">
                                 Default channel key:
-                                <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@DefaultEncryptionKeyBase64</code>
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@_defaultEncryptionKeyBase64</code>
                             </p>
 
                             @if (!string.IsNullOrWhiteSpace(_statusMessage))
@@ -195,11 +202,8 @@
     private string? _statusMessage;
     private IReadOnlyCollection<TopNodeEntry> _topNodes = [];
     private int _uniqueSenderCount;
-
-    private string DefaultEncryptionKeyBase64 =>
-        string.IsNullOrWhiteSpace(BrokerOptions.Value.DefaultEncryptionKeyBase64)
-            ? TopicEncryptionKey.DefaultKeyBase64
-            : BrokerOptions.Value.DefaultEncryptionKeyBase64;
+    private IReadOnlyCollection<string> _observedBrokerServers = [];
+    private string _defaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64;
 
     private bool IsSubscribed =>
         BrokerMonitorService.GetBrokerStatus().TopicFilters.Contains(TopicFilter, StringComparer.Ordinal);
@@ -234,15 +238,28 @@
         {
             var messagesTask = MessageService.GetRecentMessages(5_000);
             var presetsTask = TopicPresetService.GetTopicPresets();
+            var activeServerTask = BrokerServerProfileService.GetActiveServerProfile();
 
-            await Task.WhenAll(messagesTask, presetsTask);
+            await Task.WhenAll(messagesTask, presetsTask, activeServerTask);
 
             var messages = await messagesTask;
             var presets = await presetsTask;
+            var activeServer = await activeServerTask;
+
+            _defaultEncryptionKeyBase64 = string.IsNullOrWhiteSpace(activeServer.DefaultEncryptionKeyBase64)
+                ? TopicEncryptionKey.DefaultKeyBase64
+                : activeServer.DefaultEncryptionKeyBase64;
 
             _channelMessages = messages
                 .Where(message => IsTopicInChannel(message.Topic, Region, Channel))
                 .OrderByDescending(message => message.ReceivedAtUtc)
+                .ToList();
+
+            _observedBrokerServers = _channelMessages
+                .Select(message => message.BrokerServer)
+                .Where(server => !string.IsNullOrWhiteSpace(server))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(server => server, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             _uniqueSenderCount = _channelMessages
@@ -296,6 +313,7 @@
             _decodedRatio = 0;
             _uniqueSenderCount = 0;
             _lastSeenAtUtc = null;
+            _observedBrokerServers = [];
         }
         finally
         {

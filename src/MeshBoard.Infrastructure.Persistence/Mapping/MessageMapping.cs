@@ -18,6 +18,7 @@ internal static class MessageMapping
         return new MessageSummary
         {
             Id = ParseOrDeriveGuid(response.Id),
+            BrokerServer = response.BrokerServer,
             Topic = response.Topic,
             PacketType = response.PacketType,
             FromNodeId = response.FromNodeId,

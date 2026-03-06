@@ -1,17 +1,14 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Services;
-using MeshBoard.Contracts.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace MeshBoard.Infrastructure.Meshtastic.Hosted;
 
 internal sealed class MeshtasticMqttHostedService : IHostedService
 {
     private readonly IHostApplicationLifetime _applicationLifetime;
-    private readonly BrokerOptions _brokerOptions;
     private readonly IMeshtasticEnvelopeReader _envelopeReader;
     private readonly ILogger<MeshtasticMqttHostedService> _logger;
     private readonly IMqttSession _mqttSession;
@@ -24,14 +21,12 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
         IMeshtasticEnvelopeReader envelopeReader,
         IServiceScopeFactory serviceScopeFactory,
         IHostApplicationLifetime applicationLifetime,
-        IOptions<BrokerOptions> brokerOptions,
         ILogger<MeshtasticMqttHostedService> logger)
     {
         _mqttSession = mqttSession;
         _envelopeReader = envelopeReader;
         _serviceScopeFactory = serviceScopeFactory;
         _applicationLifetime = applicationLifetime;
-        _brokerOptions = brokerOptions.Value;
         _logger = logger;
     }
 
@@ -71,11 +66,11 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
         try
         {
-            using var scope = _serviceScopeFactory.CreateScope();
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
             var brokerMonitorService = scope.ServiceProvider.GetRequiredService<IBrokerMonitorService>();
 
             await brokerMonitorService.EnsureConnected(cancellationToken);
-            await brokerMonitorService.SubscribeToTopic(_brokerOptions.DefaultTopicPattern, cancellationToken);
+            await brokerMonitorService.SubscribeToDefaultTopic(cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -97,12 +92,14 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
             return;
         }
 
-        if (envelope.ReceivedAtUtc == default)
+        envelope.ReceivedAtUtc = inboundMessage.ReceivedAtUtc;
+
+        if (string.IsNullOrWhiteSpace(envelope.BrokerServer))
         {
-            envelope.ReceivedAtUtc = inboundMessage.ReceivedAtUtc;
+            envelope.BrokerServer = inboundMessage.BrokerServer;
         }
 
-        using var scope = _serviceScopeFactory.CreateScope();
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
         var ingestionService = scope.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
 
         await ingestionService.IngestEnvelope(envelope);

@@ -2,6 +2,7 @@ using MeshBoard.Application.DependencyInjection;
 using MeshBoard.Infrastructure.Meshtastic.DependencyInjection;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using MeshBoard.Web.Components;
+using MeshBoard.Web.State;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,7 @@ builder.Services.AddPersistenceInfrastructure(builder.Configuration);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddSingleton<ServerSelectionNotifier>();
 
 var app = builder.Build();
 

@@ -55,6 +55,28 @@ internal sealed class MessageRepository : IMessageRepository
         return sqlResponses.MapToMessages();
     }
 
+    public async Task<IReadOnlyCollection<MessageSummary>> GetRecentByBrokerAsync(
+        string brokerServer,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch recent messages for broker {BrokerServer} with take: {Take}",
+            brokerServer,
+            take);
+
+        var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
+            MessageQueries.GetRecentMessagesByBroker,
+            new
+            {
+                BrokerServer = brokerServer,
+                Take = take
+            },
+            cancellationToken);
+
+        return sqlResponses.MapToMessages();
+    }
+
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentBySenderAsync(
         string senderNodeId,
         int take,

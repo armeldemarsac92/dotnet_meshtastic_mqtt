@@ -8,6 +8,11 @@ public interface IMessageService
 {
     Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(int take = 250, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<MessageSummary>> GetRecentMessagesByBroker(
+        string brokerServer,
+        int take = 250,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<MessageSummary>> GetRecentMessagesBySender(
         string senderNodeId,
         int take = 250,
@@ -34,6 +39,34 @@ public sealed class MessageService : IMessageService
         var messages = await _messageRepository.GetRecentAsync(take, cancellationToken);
 
         _logger.LogDebug("Retrieved {MessageCount} recent messages", messages.Count);
+
+        return messages;
+    }
+
+    public async Task<IReadOnlyCollection<MessageSummary>> GetRecentMessagesByBroker(
+        string brokerServer,
+        int take = 250,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(brokerServer))
+        {
+            return await GetRecentMessages(take, cancellationToken);
+        }
+
+        _logger.LogDebug(
+            "Attempting to get recent messages for broker {BrokerServer} with take: {Take}",
+            brokerServer,
+            take);
+
+        var messages = await _messageRepository.GetRecentByBrokerAsync(
+            brokerServer.Trim(),
+            take,
+            cancellationToken);
+
+        _logger.LogDebug(
+            "Retrieved {MessageCount} recent messages for broker {BrokerServer}",
+            messages.Count,
+            brokerServer);
 
         return messages;
     }

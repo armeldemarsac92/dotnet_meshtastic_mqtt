@@ -10,6 +10,11 @@ public interface IMessageRepository
 
     Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(int take, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<MessageSummary>> GetRecentByBrokerAsync(
+        string brokerServer,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<MessageSummary>> GetRecentBySenderAsync(
         string senderNodeId,
         int take,

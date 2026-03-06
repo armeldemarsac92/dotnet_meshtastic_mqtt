@@ -18,7 +18,8 @@ public interface IMessageComposerService
 
 public sealed partial class MessageComposerService : IMessageComposerService
 {
-    private readonly BrokerOptions _brokerOptions;
+    private readonly BrokerOptions _fallbackBrokerOptions;
+    private readonly IBrokerServerProfileService _brokerServerProfileService;
     private readonly ILogger<MessageComposerService> _logger;
     private readonly IMqttSession _mqttSession;
     private readonly ISendCapabilityService _sendCapabilityService;
@@ -26,12 +27,14 @@ public sealed partial class MessageComposerService : IMessageComposerService
     public MessageComposerService(
         IMqttSession mqttSession,
         ISendCapabilityService sendCapabilityService,
+        IBrokerServerProfileService brokerServerProfileService,
         IOptions<BrokerOptions> brokerOptions,
         ILogger<MessageComposerService> logger)
     {
         _mqttSession = mqttSession;
         _sendCapabilityService = sendCapabilityService;
-        _brokerOptions = brokerOptions.Value;
+        _brokerServerProfileService = brokerServerProfileService;
+        _fallbackBrokerOptions = brokerOptions.Value;
         _logger = logger;
     }
 
@@ -69,15 +72,18 @@ public sealed partial class MessageComposerService : IMessageComposerService
             toNodeId is not null,
             toNodeId);
 
+        var activeServer = await ResolveActiveServerProfile(cancellationToken);
+        var downlinkTopic = activeServer?.DownlinkTopic ?? _fallbackBrokerOptions.DownlinkTopic;
+
         var payload = toNodeId is null
             ? JsonSerializer.Serialize(new { type = "sendtext", payload = messageText })
             : JsonSerializer.Serialize(new { type = "sendtext", payload = messageText, to = toNodeId });
 
-        await _mqttSession.PublishAsync(_brokerOptions.DownlinkTopic, payload, cancellationToken);
+        await _mqttSession.PublishAsync(downlinkTopic, payload, cancellationToken);
 
         return new ComposeTextMessageResult
         {
-            Topic = _brokerOptions.DownlinkTopic,
+            Topic = downlinkTopic,
             IsPrivate = toNodeId is not null,
             ToNodeId = toNodeId,
             SentAtUtc = DateTimeOffset.UtcNow,
@@ -85,6 +91,18 @@ public sealed partial class MessageComposerService : IMessageComposerService
                 ? "Published public send request."
                 : $"Published private send request to {toNodeId}."
         };
+    }
+
+    private async Task<BrokerServerProfile?> ResolveActiveServerProfile(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string? NormalizeNodeId(string? nodeId)

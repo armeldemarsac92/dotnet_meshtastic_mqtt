@@ -16,6 +16,7 @@ internal static class NodeMapping
         return new NodeSummary
         {
             NodeId = response.NodeId,
+            BrokerServer = response.BrokerServer,
             ShortName = response.ShortName,
             LongName = response.LongName,
             LastHeardAtUtc = ParseNullableDateTimeOffset(response.LastHeardAtUtc),

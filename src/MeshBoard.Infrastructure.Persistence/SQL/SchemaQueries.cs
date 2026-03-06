@@ -42,6 +42,25 @@ internal static class SchemaQueries
         CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_topic_pattern
             ON topic_presets(topic_pattern);
 
+        CREATE TABLE IF NOT EXISTS broker_server_profiles (
+            id TEXT NOT NULL PRIMARY KEY,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            use_tls INTEGER NOT NULL,
+            username TEXT NULL,
+            password TEXT NULL,
+            default_topic_pattern TEXT NOT NULL,
+            default_encryption_key_base64 TEXT NOT NULL,
+            downlink_topic TEXT NOT NULL,
+            enable_send INTEGER NOT NULL,
+            is_active INTEGER NOT NULL,
+            created_at_utc TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_broker_server_profiles_name
+            ON broker_server_profiles(name);
+
         CREATE TABLE IF NOT EXISTS discovered_topics (
             topic_pattern TEXT NOT NULL PRIMARY KEY,
             region TEXT NOT NULL,
@@ -55,6 +74,7 @@ internal static class SchemaQueries
 
         CREATE TABLE IF NOT EXISTS nodes (
             node_id TEXT NOT NULL PRIMARY KEY,
+            broker_server TEXT NULL,
             short_name TEXT NULL,
             long_name TEXT NULL,
             last_heard_at_utc TEXT NULL,
@@ -78,6 +98,7 @@ internal static class SchemaQueries
         CREATE TABLE IF NOT EXISTS message_history (
             id TEXT NOT NULL PRIMARY KEY,
             topic TEXT NOT NULL,
+            broker_server TEXT NULL,
             packet_type TEXT NOT NULL,
             message_key TEXT NOT NULL,
             from_node_id TEXT NOT NULL,
@@ -120,6 +141,12 @@ internal static class SchemaQueries
         ADD COLUMN message_key TEXT NULL;
         """;
 
+    public static string AddMessageHistoryBrokerServerColumn =>
+        """
+        ALTER TABLE message_history
+        ADD COLUMN broker_server TEXT NULL;
+        """;
+
     public static string BackfillMessageHistoryPacketType =>
         """
         UPDATE message_history
@@ -140,6 +167,13 @@ internal static class SchemaQueries
         UPDATE message_history
         SET message_key = id
         WHERE message_key IS NULL OR message_key = '';
+        """;
+
+    public static string BackfillMessageHistoryBrokerServer =>
+        """
+        UPDATE message_history
+        SET broker_server = COALESCE(NULLIF(broker_server, ''), 'mqtt.meshtastic.org:1883')
+        WHERE broker_server IS NULL OR broker_server = '';
         """;
 
     public static string CreateMessageHistoryMessageKeyIndex =>
@@ -210,6 +244,19 @@ internal static class SchemaQueries
         """
         ALTER TABLE nodes
         ADD COLUMN barometric_pressure REAL NULL;
+        """;
+
+    public static string AddNodesBrokerServerColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN broker_server TEXT NULL;
+        """;
+
+    public static string BackfillNodesBrokerServer =>
+        """
+        UPDATE nodes
+        SET broker_server = COALESCE(NULLIF(broker_server, ''), 'mqtt.meshtastic.org:1883')
+        WHERE broker_server IS NULL OR broker_server = '';
         """;
 
     public static string AddNodesLastHeardChannelColumn =>

@@ -47,6 +47,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             var messageInserted = await _messageRepository.AddAsync(
                 new SaveObservedMessageRequest
                 {
+                    BrokerServer = envelope.BrokerServer,
                     Topic = envelope.Topic,
                     PacketType = envelope.PacketType,
                     MessageKey = messageKey,
@@ -80,6 +81,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                     new UpsertObservedNodeRequest
                     {
                         NodeId = envelope.FromNodeId,
+                        BrokerServer = envelope.BrokerServer,
                         ShortName = envelope.ShortName,
                         LongName = envelope.LongName,
                         LastHeardAtUtc = envelope.ReceivedAtUtc,
@@ -114,11 +116,11 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     {
         if (envelope.PacketId.HasValue && !string.IsNullOrWhiteSpace(envelope.FromNodeId))
         {
-            return $"{envelope.FromNodeId}:{envelope.PacketId.Value:x8}";
+            return $"{envelope.BrokerServer}|{envelope.FromNodeId}:{envelope.PacketId.Value:x8}";
         }
 
         var rawKey =
-            $"{envelope.PacketType}|{envelope.FromNodeId}|{envelope.ToNodeId}|{envelope.PayloadPreview}|{envelope.ReceivedAtUtc:O}";
+            $"{envelope.BrokerServer}|{envelope.PacketType}|{envelope.FromNodeId}|{envelope.ToNodeId}|{envelope.PayloadPreview}|{envelope.ReceivedAtUtc:O}";
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
         return Convert.ToHexStringLower(hashBytes);

@@ -77,8 +77,72 @@ public sealed class BrokerMonitorServiceTests
     {
         return new BrokerMonitorService(
             mqttSession,
+            new FakeBrokerServerProfileService(
+                new BrokerServerProfile
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Default server",
+                    Host = "mqtt.meshtastic.org",
+                    Port = 1883,
+                    DefaultTopicPattern = "msh/US/2/e/LongFast/#",
+                    DownlinkTopic = "msh/US/2/json/mqtt/",
+                    EnableSend = true,
+                    IsActive = true
+                }),
             Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
             NullLogger<BrokerMonitorService>.Instance);
+    }
+
+    private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
+    {
+        private BrokerServerProfile _activeProfile;
+
+        public FakeBrokerServerProfileService(BrokerServerProfile activeProfile)
+        {
+            _activeProfile = activeProfile;
+        }
+
+        public Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<BrokerServerProfile>>([_activeProfile]);
+        }
+
+        public Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_activeProfile);
+        }
+
+        public Task<BrokerServerProfile> SaveServerProfile(
+            SaveBrokerServerProfileRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            _activeProfile = new BrokerServerProfile
+            {
+                Id = request.Id is { } existingId && existingId != Guid.Empty
+                    ? existingId
+                    : Guid.NewGuid(),
+                Name = request.Name,
+                Host = request.Host,
+                Port = request.Port,
+                UseTls = request.UseTls,
+                Username = request.Username,
+                Password = request.Password,
+                DefaultTopicPattern = request.DefaultTopicPattern,
+                DefaultEncryptionKeyBase64 = request.DefaultEncryptionKeyBase64,
+                DownlinkTopic = request.DownlinkTopic,
+                EnableSend = request.EnableSend,
+                IsActive = request.IsActive
+            };
+
+            return Task.FromResult(_activeProfile);
+        }
+
+        public Task<BrokerServerProfile> SetActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            _activeProfile.Id = profileId;
+            _activeProfile.IsActive = true;
+            return Task.FromResult(_activeProfile);
+        }
     }
 
 #pragma warning disable CS0067

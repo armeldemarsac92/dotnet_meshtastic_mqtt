@@ -44,6 +44,10 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
                                 <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_node.NodeId</code>
+                                @if (!string.IsNullOrWhiteSpace(_node.BrokerServer))
+                                {
+                                    <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">MQTT @_node.BrokerServer</span>
+                                }
                                 @if (!string.IsNullOrWhiteSpace(_node.LastHeardChannel))
                                 {
                                     <button type="button"

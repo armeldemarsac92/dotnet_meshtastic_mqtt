@@ -4,6 +4,8 @@ public sealed class MessageSummary
 {
     public Guid Id { get; set; }
 
+    public string BrokerServer { get; set; } = string.Empty;
+
     public string Topic { get; set; } = string.Empty;
 
     public string PacketType { get; set; } = string.Empty;

@@ -1,9 +1,14 @@
 @page "/topics"
+@using MeshBoard.Contracts.Configuration
+@using MeshBoard.Contracts.Topics
+@using MeshBoard.Web.State
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IBrokerServerProfileService BrokerServerProfileService
 @inject ITopicDiscoveryService TopicDiscoveryService
 @inject ITopicExplorerService TopicExplorerService
 @inject ITopicProbeService TopicProbeService
 @inject ITopicPresetService TopicPresetService
+@inject ServerSelectionNotifier ServerSelectionNotifier
 
 <PageTitle>Topics</PageTitle>
 
@@ -14,10 +19,170 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Topic explorer</h1>
         </div>
         <p class="max-w-5xl text-base leading-8 text-cinder-800">
-            Browse recommended and discovered channels, save useful patterns as presets, and toggle subscriptions
-            without leaving the app.
+            Choose the active MQTT server with tabs, manage server profiles, then subscribe to channels for the selected server.
         </p>
     </header>
+
+    <section class="liquid-panel rounded-[1.6rem] p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="font-display text-3xl text-cinder-950">Servers</h2>
+                <p class="mt-2 text-xs leading-6 text-cinder-800/78">
+                    Topic actions on this page apply to the currently active server.
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button type="button"
+                        class="liquid-inline-action liquid-inline-action-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="OpenAddServerEditor">
+                    Add server
+                </button>
+                <button type="button"
+                        class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                        @onclick="OpenSelectedServerEditor"
+                        disabled="@(_selectedServerProfile is null)">
+                    Edit selected
+                </button>
+            </div>
+        </div>
+
+        @if (_isLoadingServerProfiles)
+        {
+            <p class="mt-4 text-cinder-800/78">Loading server profiles...</p>
+        }
+        else if (_serverProfiles.Count == 0)
+        {
+            <p class="mt-4 text-cinder-800/78">No server profiles yet. Add one to start listening.</p>
+        }
+        else
+        {
+            <div class="mt-4 flex flex-wrap gap-2">
+                @foreach (var profile in _serverProfiles)
+                {
+                    <button type="button"
+                            class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(_selectedServerProfile?.Id == profile.Id ? "liquid-inline-action-active" : "")"
+                            @onclick="() => ActivateServerTabAsync(profile.Id)">
+                        @profile.Name
+                    </button>
+                }
+            </div>
+
+            @if (_selectedServerProfile is not null)
+            {
+                <dl class="mt-4 grid gap-2 text-sm sm:grid-cols-[11rem_1fr]">
+                    <dt class="text-cinder-800/70">Endpoint</dt>
+                    <dd class="font-medium text-cinder-950">@_selectedServerProfile.ServerAddress</dd>
+                    <dt class="text-cinder-800/70">Default topic</dt>
+                    <dd class="font-medium text-cinder-950">
+                        <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_selectedServerProfile.DefaultTopicPattern</code>
+                    </dd>
+                    <dt class="text-cinder-800/70">Downlink</dt>
+                    <dd class="font-medium text-cinder-950">
+                        <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_selectedServerProfile.DownlinkTopic</code>
+                    </dd>
+                </dl>
+            }
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_serverStatusMessage))
+        {
+            <p class="mt-4 text-sm text-cinder-800/82">@_serverStatusMessage</p>
+        }
+
+        @if (_showServerEditor)
+        {
+            <div class="mt-5 border-t border-sand-200/80 pt-4">
+                <h3 class="font-display text-2xl text-cinder-950">@(_serverForm.Id.HasValue ? "Edit server" : "Add server")</h3>
+
+                <div class="mt-4 grid gap-3 lg:grid-cols-2">
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Name</span>
+                        <InputText @bind-Value="_serverForm.Name"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   placeholder="Public Meshtastic" />
+                    </label>
+
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Host</span>
+                        <InputText @bind-Value="_serverForm.Host"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   placeholder="mqtt.meshtastic.org" />
+                    </label>
+
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Port</span>
+                        <InputNumber @bind-Value="_serverForm.Port"
+                                     class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                     min="1"
+                                     max="65535" />
+                    </label>
+
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Username</span>
+                        <InputText @bind-Value="_serverForm.Username"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   placeholder="meshdev" />
+                    </label>
+
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Password</span>
+                        <InputText @bind-Value="_serverForm.Password"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   placeholder="large4cats" />
+                    </label>
+
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Default topic</span>
+                        <InputText @bind-Value="_serverForm.DefaultTopicPattern"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   placeholder="msh/US/2/e/#" />
+                    </label>
+
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Default channel key</span>
+                        <InputText @bind-Value="_serverForm.DefaultEncryptionKeyBase64"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   placeholder="AQ==" />
+                    </label>
+
+                    <label class="space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Downlink topic</span>
+                        <InputText @bind-Value="_serverForm.DownlinkTopic"
+                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   placeholder="msh/US/2/json/mqtt/" />
+                    </label>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-4 text-sm text-cinder-900">
+                    <label class="flex items-center gap-2">
+                        <InputCheckbox @bind-Value="_serverForm.UseTls" />
+                        Use TLS
+                    </label>
+                    <label class="flex items-center gap-2">
+                        <InputCheckbox @bind-Value="_serverForm.EnableSend" />
+                        Enable send
+                    </label>
+                    <label class="flex items-center gap-2">
+                        <InputCheckbox @bind-Value="_serverForm.IsActive" />
+                        Make active after save
+                    </label>
+                </div>
+
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <button type="button"
+                            class="liquid-inline-action liquid-inline-action-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="SaveServerProfileAsync">
+                        Save server
+                    </button>
+                    <button type="button"
+                            class="liquid-inline-action cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="CloseServerEditor">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        }
+    </section>
 
     <section class="liquid-panel grid gap-4 rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_1fr]">
         <label class="space-y-2">
@@ -29,9 +194,8 @@
         </label>
         <div class="self-end space-y-3">
             <p class="text-xs leading-6 text-cinder-800/78">
-                Use <strong class="text-cinder-950">Subscribe</strong> to start listening immediately and use
-                <strong class="text-cinder-950">Live broker status</strong> to save custom presets.
-                <strong class="text-cinder-950">Probe MQTT</strong> actively discovers channels from broker traffic.
+                Use <strong class="text-cinder-950">Subscribe</strong> to listen immediately.
+                <strong class="text-cinder-950">Probe MQTT</strong> discovers channels from live traffic.
             </p>
             <button type="button"
                     class="liquid-inline-action liquid-inline-action-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
@@ -96,10 +260,12 @@
         <article class="liquid-panel rounded-[1.6rem] p-6 xl:h-[51rem] xl:overflow-y-auto">
             <h2 class="font-display text-3xl text-cinder-950">Live broker status</h2>
             <dl class="mt-5 grid gap-3 sm:grid-cols-[9rem_1fr]">
+                <dt class="text-cinder-800/70">Server</dt>
+                <dd class="font-medium text-cinder-950">@(_brokerStatus.ActiveServerName ?? "Unknown")</dd>
                 <dt class="text-cinder-800/70">Connection</dt>
                 <dd class="font-medium text-cinder-950">@(_brokerStatus.IsConnected ? "Connected" : "Disconnected")</dd>
                 <dt class="text-cinder-800/70">Endpoint</dt>
-                <dd class="font-medium text-cinder-950">@_brokerStatus.Host:@_brokerStatus.Port</dd>
+                <dd class="font-medium text-cinder-950">@(_brokerStatus.ActiveServerAddress ?? $"{_brokerStatus.Host}:{_brokerStatus.Port}")</dd>
                 @if (!string.IsNullOrWhiteSpace(_brokerStatus.LastStatusMessage))
                 {
                     <dt class="text-cinder-800/70">Status</dt>
@@ -230,11 +396,17 @@
     private BrokerStatus _brokerStatus = new();
     private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
     private string _explorerSearchText = string.Empty;
-    private IReadOnlyCollection<TopicCatalogEntry> _recommendedTopics = [];
+    private bool _isLoadingServerProfiles;
     private bool _isProbingTopics;
+    private IReadOnlyCollection<TopicCatalogEntry> _recommendedTopics = [];
     private string? _selectedChannel;
     private string? _selectedNodeId;
     private string? _selectedRegion;
+    private BrokerServerProfile? _selectedServerProfile;
+    private IReadOnlyCollection<BrokerServerProfile> _serverProfiles = [];
+    private ServerProfileForm _serverForm = new();
+    private string? _serverStatusMessage;
+    private bool _showServerEditor;
     private string? _statusMessage;
     private TopicRequest _topicRequest = new();
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
@@ -260,10 +432,170 @@
 
     private async Task LoadAsync()
     {
-        _topicPresets = await TopicPresetService.GetTopicPresets();
-        _brokerStatus = BrokerMonitorService.GetBrokerStatus();
-        _recommendedTopics = TopicExplorerService.GetRecommendedTopics();
-        _discoveredTopics = await TopicDiscoveryService.GetDiscoveredTopics();
+        _isLoadingServerProfiles = true;
+
+        try
+        {
+            var topicPresetsTask = TopicPresetService.GetTopicPresets();
+            var discoveredTopicsTask = TopicDiscoveryService.GetDiscoveredTopics();
+            var serverProfilesTask = BrokerServerProfileService.GetServerProfiles();
+
+            _recommendedTopics = TopicExplorerService.GetRecommendedTopics();
+
+            await Task.WhenAll(topicPresetsTask, discoveredTopicsTask, serverProfilesTask);
+
+            _topicPresets = await topicPresetsTask;
+            _discoveredTopics = await discoveredTopicsTask;
+            _serverProfiles = await serverProfilesTask;
+            _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+
+            SyncSelectedServerFromStatus(applyDefaults: false);
+        }
+        finally
+        {
+            _isLoadingServerProfiles = false;
+        }
+    }
+
+    private async Task ActivateServerTabAsync(Guid profileId)
+    {
+        if (_selectedServerProfile?.Id == profileId)
+        {
+            return;
+        }
+
+        try
+        {
+            await BrokerMonitorService.SwitchActiveServerProfile(profileId);
+            _serverStatusMessage = "Switched active MQTT server.";
+            await ServerSelectionNotifier.NotifyChangedAsync();
+        }
+        catch (Exception exception)
+        {
+            _serverStatusMessage = $"Switch failed: {exception.Message}";
+        }
+
+        await LoadAsync();
+        SyncSelectedServerFromStatus(applyDefaults: true);
+    }
+
+    private void OpenAddServerEditor()
+    {
+        ResetServerForm();
+        _showServerEditor = true;
+    }
+
+    private void OpenSelectedServerEditor()
+    {
+        if (_selectedServerProfile is null)
+        {
+            return;
+        }
+
+        LoadProfileIntoForm(_selectedServerProfile);
+        _showServerEditor = true;
+    }
+
+    private async Task SaveServerProfileAsync()
+    {
+        var switchedActiveServer = false;
+
+        try
+        {
+            var savedProfile = await BrokerServerProfileService.SaveServerProfile(
+                new SaveBrokerServerProfileRequest
+                {
+                    Id = _serverForm.Id,
+                    Name = _serverForm.Name,
+                    Host = _serverForm.Host,
+                    Port = _serverForm.Port,
+                    UseTls = _serverForm.UseTls,
+                    Username = _serverForm.Username,
+                    Password = _serverForm.Password,
+                    DefaultTopicPattern = _serverForm.DefaultTopicPattern,
+                    DefaultEncryptionKeyBase64 = _serverForm.DefaultEncryptionKeyBase64,
+                    DownlinkTopic = _serverForm.DownlinkTopic,
+                    EnableSend = _serverForm.EnableSend,
+                    IsActive = _serverForm.IsActive
+                });
+
+            if (savedProfile.IsActive)
+            {
+                await BrokerMonitorService.SwitchActiveServerProfile(savedProfile.Id);
+                switchedActiveServer = true;
+            }
+
+            _serverStatusMessage = $"Saved server profile '{savedProfile.Name}'.";
+            _showServerEditor = false;
+            ResetServerForm();
+
+            if (switchedActiveServer)
+            {
+                await ServerSelectionNotifier.NotifyChangedAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            _serverStatusMessage = $"Server save failed: {exception.Message}";
+        }
+
+        await LoadAsync();
+
+        if (switchedActiveServer)
+        {
+            SyncSelectedServerFromStatus(applyDefaults: true);
+        }
+    }
+
+    private void CloseServerEditor()
+    {
+        _showServerEditor = false;
+    }
+
+    private void LoadProfileIntoForm(BrokerServerProfile profile)
+    {
+        _serverForm = new ServerProfileForm
+        {
+            Id = profile.Id,
+            Name = profile.Name,
+            Host = profile.Host,
+            Port = profile.Port,
+            UseTls = profile.UseTls,
+            Username = profile.Username,
+            Password = profile.Password,
+            DefaultTopicPattern = profile.DefaultTopicPattern,
+            DefaultEncryptionKeyBase64 = profile.DefaultEncryptionKeyBase64,
+            DownlinkTopic = profile.DownlinkTopic,
+            EnableSend = profile.EnableSend,
+            IsActive = profile.IsActive
+        };
+    }
+
+    private void ResetServerForm()
+    {
+        _serverForm = new ServerProfileForm();
+    }
+
+    private void SyncSelectedServerFromStatus(bool applyDefaults)
+    {
+        var activeProfileId = _brokerStatus.ActiveServerProfileId;
+
+        _selectedServerProfile = activeProfileId.HasValue
+            ? _serverProfiles.FirstOrDefault(profile => profile.Id == activeProfileId.Value)
+            : null;
+
+        _selectedServerProfile ??= _serverProfiles.FirstOrDefault(profile => profile.IsActive);
+        _selectedServerProfile ??= _serverProfiles.FirstOrDefault();
+
+        if (_selectedServerProfile is null)
+        {
+            return;
+        }
+
+        if (applyDefaults || string.IsNullOrWhiteSpace(_topicRequest.TopicFilter))
+        {
+            _topicRequest.TopicFilter = _selectedServerProfile.DefaultTopicPattern;
+        }
     }
 
     private bool MatchesExplorerSearch(TopicCatalogEntry entry)
@@ -489,6 +821,33 @@
         region = segments[0];
         channel = segments[1];
         return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
+    private sealed class ServerProfileForm
+    {
+        public Guid? Id { get; set; }
+
+        public string Name { get; set; } = string.Empty;
+
+        public string Host { get; set; } = "mqtt.meshtastic.org";
+
+        public int Port { get; set; } = 1883;
+
+        public bool UseTls { get; set; }
+
+        public string Username { get; set; } = "meshdev";
+
+        public string Password { get; set; } = "large4cats";
+
+        public string DefaultTopicPattern { get; set; } = "msh/US/2/e/#";
+
+        public string DefaultEncryptionKeyBase64 { get; set; } = TopicEncryptionKey.DefaultKeyBase64;
+
+        public string DownlinkTopic { get; set; } = "msh/US/2/json/mqtt/";
+
+        public bool EnableSend { get; set; }
+
+        public bool IsActive { get; set; } = true;
     }
 
     private sealed class TopicRequest

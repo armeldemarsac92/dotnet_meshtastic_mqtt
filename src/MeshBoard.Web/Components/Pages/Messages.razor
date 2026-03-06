@@ -283,8 +283,13 @@
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        _messages = await MessageService.GetRecentMessages(RecentMessageTake, cancellationToken);
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+        _messages = string.IsNullOrWhiteSpace(_brokerStatus.ActiveServerAddress)
+            ? await MessageService.GetRecentMessages(RecentMessageTake, cancellationToken)
+            : await MessageService.GetRecentMessagesByBroker(
+                _brokerStatus.ActiveServerAddress,
+                RecentMessageTake,
+                cancellationToken);
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)

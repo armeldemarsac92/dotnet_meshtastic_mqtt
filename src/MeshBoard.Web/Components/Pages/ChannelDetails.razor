@@ -23,6 +23,13 @@
     <section class="liquid-panel rounded-[1.6rem] p-5">
         <div class="flex flex-wrap items-center gap-2">
             <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@TopicFilter</code>
+            @if (_observedBrokerServers.Count > 0)
+            {
+                @foreach (var brokerServer in _observedBrokerServers)
+                {
+                    <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">MQTT @brokerServer</span>
+                }
+            }
             <button type="button"
                     class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] @(IsSubscribed ? "liquid-button-active" : "liquid-button-accent")"
                     @onclick="ToggleSubscriptionAsync">
@@ -128,6 +135,7 @@
     private string? _statusMessage;
     private IReadOnlyCollection<TopNodeEntry> _topNodes = [];
     private int _uniqueSenderCount;
+    private IReadOnlyCollection<string> _observedBrokerServers = [];
 
     private string TopicFilter => $"msh/{Region}/2/e/{Channel}/#";
 
@@ -145,6 +153,13 @@
         _channelMessages = messages
             .Where(message => IsTopicInChannel(message.Topic, Region, Channel))
             .OrderByDescending(message => message.ReceivedAtUtc)
+            .ToList();
+
+        _observedBrokerServers = _channelMessages
+            .Select(message => message.BrokerServer)
+            .Where(server => !string.IsNullOrWhiteSpace(server))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(server => server, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         _uniqueSenderCount = _channelMessages

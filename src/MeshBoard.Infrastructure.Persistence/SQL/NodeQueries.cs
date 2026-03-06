@@ -12,6 +12,7 @@ internal static class NodeQueries
         $"""
         SELECT
             n.node_id AS NodeId,
+            COALESCE(n.broker_server, 'unknown') AS BrokerServer,
             n.short_name AS ShortName,
             n.long_name AS LongName,
             n.last_heard_at_utc AS LastHeardAtUtc,
@@ -34,6 +35,7 @@ internal static class NodeQueries
         """
         INSERT INTO nodes (
             node_id,
+            broker_server,
             short_name,
             long_name,
             last_heard_at_utc,
@@ -51,6 +53,7 @@ internal static class NodeQueries
             barometric_pressure)
         VALUES (
             @NodeId,
+            COALESCE(NULLIF(@BrokerServer, ''), 'unknown'),
             @ShortName,
             @LongName,
             @LastHeardAtUtc,
@@ -67,6 +70,7 @@ internal static class NodeQueries
             @RelativeHumidity,
             @BarometricPressure)
         ON CONFLICT(node_id) DO UPDATE SET
+            broker_server = COALESCE(NULLIF(excluded.broker_server, ''), nodes.broker_server),
             short_name = COALESCE(excluded.short_name, nodes.short_name),
             long_name = COALESCE(excluded.long_name, nodes.long_name),
             last_heard_at_utc = COALESCE(excluded.last_heard_at_utc, nodes.last_heard_at_utc),

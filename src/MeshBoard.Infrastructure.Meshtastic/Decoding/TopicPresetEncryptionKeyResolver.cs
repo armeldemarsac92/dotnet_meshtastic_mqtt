@@ -13,11 +13,12 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromSeconds(2);
 
     private readonly object _cacheSync = new();
-    private readonly byte[] _defaultKeyBytes;
+    private readonly byte[] _fallbackDefaultKeyBytes;
     private readonly ILogger<TopicPresetEncryptionKeyResolver> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private DateTimeOffset _cacheUpdatedAtUtc = DateTimeOffset.MinValue;
+    private byte[] _currentDefaultKeyBytes = [..TopicEncryptionKey.DefaultKeyBytes];
     private IReadOnlyCollection<KeyMapping> _mappings = [];
 
     public TopicPresetEncryptionKeyResolver(
@@ -27,7 +28,8 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
     {
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
-        _defaultKeyBytes = ResolveDefaultKeyBytes(brokerOptions.Value.DefaultEncryptionKeyBase64);
+        _fallbackDefaultKeyBytes = ResolveDefaultKeyBytes(brokerOptions.Value.DefaultEncryptionKeyBase64);
+        _currentDefaultKeyBytes = [.._fallbackDefaultKeyBytes];
     }
 
     public async Task<IReadOnlyCollection<byte[]>> ResolveCandidateKeysAsync(
@@ -37,18 +39,19 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         await EnsureCacheIsFreshAsync(cancellationToken);
 
         var bestCustomMatch = TryFindBestMatch(topic);
+        var defaultKeyBytes = _currentDefaultKeyBytes;
 
         if (bestCustomMatch is null)
         {
-            return [[.._defaultKeyBytes]];
+            return [[..defaultKeyBytes]];
         }
 
-        if (bestCustomMatch.KeyBytes.SequenceEqual(_defaultKeyBytes))
+        if (bestCustomMatch.KeyBytes.SequenceEqual(defaultKeyBytes))
         {
-            return [[.._defaultKeyBytes]];
+            return [[..defaultKeyBytes]];
         }
 
-        return [[..bestCustomMatch.KeyBytes], [.._defaultKeyBytes]];
+        return [[..bestCustomMatch.KeyBytes], [..defaultKeyBytes]];
     }
 
     public void InvalidateCache()
@@ -72,9 +75,12 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
                 return;
             }
 
-            using var scope = _serviceScopeFactory.CreateScope();
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
             var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
+            var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
             var presets = await topicPresetRepository.GetAllAsync(cancellationToken);
+            var activeServer = await brokerServerProfileRepository.GetActiveAsync(cancellationToken);
+            var defaultKeyBytes = ResolveDefaultKeyBytes(activeServer?.DefaultEncryptionKeyBase64 ?? string.Empty);
 
             var mappings = presets
                 .Select(TryMapPresetToKeyMapping)
@@ -85,6 +91,7 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
             lock (_cacheSync)
             {
                 _mappings = mappings;
+                _currentDefaultKeyBytes = defaultKeyBytes;
                 _cacheUpdatedAtUtc = DateTimeOffset.UtcNow;
             }
         }

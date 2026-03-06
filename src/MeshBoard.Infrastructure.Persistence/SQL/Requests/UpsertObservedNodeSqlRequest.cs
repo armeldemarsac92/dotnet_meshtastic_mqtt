@@ -4,6 +4,8 @@ internal sealed class UpsertObservedNodeSqlRequest
 {
     public required string NodeId { get; set; }
 
+    public required string BrokerServer { get; set; }
+
     public string? ShortName { get; set; }
 
     public string? LongName { get; set; }
