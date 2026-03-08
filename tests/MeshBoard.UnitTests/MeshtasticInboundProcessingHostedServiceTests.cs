@@ -63,6 +63,56 @@ public sealed class MeshtasticInboundProcessingHostedServiceTests
         Assert.Equal(new DateTimeOffset(2026, 3, 8, 16, 0, 0, TimeSpan.Zero), ingestedEnvelope.ReceivedAtUtc);
     }
 
+    [Fact]
+    public async Task StartAsync_ShouldDropQueuedMessages_WhenWorkspaceIdIsMissing()
+    {
+        var queue = new MeshtasticInboundMessageQueue(
+            Options.Create(
+                new MeshtasticRuntimeOptions
+                {
+                    InboundQueueCapacity = 8,
+                    InboundWorkerCount = 1
+                }),
+            TimeProvider.System);
+        var envelopeReader = new FakeEnvelopeReader();
+        var ingestionTracker = new IngestionTracker();
+        var services = new ServiceCollection();
+        services.AddSingleton(ingestionTracker);
+        services.AddScoped<IMeshtasticIngestionService, TrackingIngestionService>();
+        await using var provider = services.BuildServiceProvider();
+        var service = new MeshtasticInboundProcessingHostedService(
+            queue,
+            envelopeReader,
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(
+                new MeshtasticRuntimeOptions
+                {
+                    InboundWorkerCount = 1
+                }),
+            TimeProvider.System,
+            NullLogger<MeshtasticInboundProcessingHostedService>.Instance);
+
+        await service.StartAsync(CancellationToken.None);
+
+        var accepted = queue.TryEnqueue(
+            new MqttInboundMessage
+            {
+                WorkspaceId = string.Empty,
+                BrokerServer = "mqtt-a.example.org:1883",
+                Topic = "msh/US/2/e/LongFast/#",
+                Payload = [0x01, 0x02],
+                ReceivedAtUtc = new DateTimeOffset(2026, 3, 8, 16, 0, 0, TimeSpan.Zero)
+            });
+
+        Assert.True(accepted);
+
+        await Task.Delay(250);
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.Empty(envelopeReader.WorkspaceIds);
+        Assert.False(ingestionTracker.HasRecordedEnvelope);
+    }
+
     private sealed class FakeEnvelopeReader : IMeshtasticEnvelopeReader
     {
         public List<string> WorkspaceIds { get; } = [];
@@ -88,6 +138,8 @@ public sealed class MeshtasticInboundProcessingHostedServiceTests
     private sealed class IngestionTracker
     {
         private readonly TaskCompletionSource<MeshtasticEnvelope> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool HasRecordedEnvelope => _tcs.Task.IsCompletedSuccessfully;
 
         public Task RecordAsync(MeshtasticEnvelope envelope)
         {

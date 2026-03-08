@@ -121,6 +121,7 @@ public sealed class PersistenceIntegrationTests
                 await ingestionService.IngestEnvelope(
                     new MeshtasticEnvelope
                     {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                         Topic = "msh/US/2/e/LongFast/!gateway01",
                         PacketType = "Text Message",
                         PacketId = 0xAABBCCDD,
@@ -136,6 +137,7 @@ public sealed class PersistenceIntegrationTests
                 await ingestionService.IngestEnvelope(
                     new MeshtasticEnvelope
                     {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                         Topic = "msh/US/2/e/LongFast/!gateway02",
                         PacketType = "Text Message",
                         PacketId = 0xAABBCCDD,
@@ -157,6 +159,47 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal("Alpha", storedNode.ShortName);
                 Assert.Equal("Alpha Node", storedNode.LongName);
                 Assert.Equal(95, storedNode.BatteryLevelPercent);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Ingestion_ShouldRejectEnvelope_WhenWorkspaceIdIsMissing()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var ingestionService = scope.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
+
+                var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                    () => ingestionService.IngestEnvelope(
+                        new MeshtasticEnvelope
+                        {
+                            Topic = "msh/US/2/e/LongFast/!abc12345",
+                            PacketType = "Text Message",
+                            PacketId = 0xAABBCCDD,
+                            PayloadPreview = "missing workspace",
+                            FromNodeId = "!abc12345",
+                            ReceivedAtUtc = new DateTimeOffset(2026, 3, 4, 16, 0, 0, TimeSpan.Zero)
+                        }));
+
+                Assert.Equal("A workspace ID is required to ingest Meshtastic envelopes.", exception.Message);
             }
             finally
             {
@@ -2147,6 +2190,7 @@ public sealed class PersistenceIntegrationTests
                 await ingestionService.IngestEnvelope(
                     new MeshtasticEnvelope
                     {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                         Topic = "msh/EU_868/2/e/MediumFast/!abc12345",
                         PacketType = "Encrypted Packet",
                         PacketId = 0x00010001,
@@ -2158,6 +2202,7 @@ public sealed class PersistenceIntegrationTests
                 await ingestionService.IngestEnvelope(
                     new MeshtasticEnvelope
                     {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                         Topic = "msh/EU_868/2/json/MediumFast/!abc12345",
                         PacketType = "Text Message",
                         PacketId = 0x00010001,
@@ -2169,6 +2214,7 @@ public sealed class PersistenceIntegrationTests
                 await ingestionService.IngestEnvelope(
                     new MeshtasticEnvelope
                     {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                         Topic = "msh/US/2/e/LongFast/!def67890",
                         PacketType = "Text Message",
                         PacketId = 0x00020002,
@@ -2218,6 +2264,7 @@ public sealed class PersistenceIntegrationTests
                 await ingestionService.IngestEnvelope(
                     new MeshtasticEnvelope
                     {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                         BrokerServer = defaultProfile.ServerAddress,
                         Topic = "msh/US/2/e/LongFast/!abc12345",
                         PacketType = "Text Message",
@@ -2246,6 +2293,7 @@ public sealed class PersistenceIntegrationTests
                 await ingestionService.IngestEnvelope(
                     new MeshtasticEnvelope
                     {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                         BrokerServer = euProfile.ServerAddress,
                         Topic = "msh/EU_868/2/e/MediumFast/!def67890",
                         PacketType = "Text Message",

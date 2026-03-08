@@ -3,7 +3,6 @@ using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
 using MeshBoard.Contracts.Realtime;
-using MeshBoard.Contracts.Workspaces;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
@@ -43,6 +42,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     public async Task IngestEnvelope(MeshtasticEnvelope envelope, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Attempting to ingest Meshtastic envelope from topic: {Topic}", envelope.Topic);
+        var workspaceId = RequireWorkspaceId(envelope);
         var messageKey = BuildMessageKey(envelope);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -111,7 +111,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
 
             await _unitOfWork.CommitAsync(cancellationToken);
 
-            await PublishProjectionChangesAsync(envelope, cancellationToken);
+            await PublishProjectionChangesAsync(workspaceId, envelope, cancellationToken);
         }
         catch
         {
@@ -120,12 +120,11 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
         }
     }
 
-    private async Task PublishProjectionChangesAsync(MeshtasticEnvelope envelope, CancellationToken cancellationToken)
+    private async Task PublishProjectionChangesAsync(
+        string workspaceId,
+        MeshtasticEnvelope envelope,
+        CancellationToken cancellationToken)
     {
-        var workspaceId = string.IsNullOrWhiteSpace(envelope.WorkspaceId)
-            ? WorkspaceConstants.DefaultWorkspaceId
-            : envelope.WorkspaceId;
-
         var changes = new List<ProjectionChangeDescriptor>
         {
             new()
@@ -161,6 +160,16 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 workspaceId,
                 envelope.Topic);
         }
+    }
+
+    private static string RequireWorkspaceId(MeshtasticEnvelope envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.WorkspaceId))
+        {
+            throw new InvalidOperationException("A workspace ID is required to ingest Meshtastic envelopes.");
+        }
+
+        return envelope.WorkspaceId.Trim();
     }
 
     private static string? ResolveChannelEntityKey(MeshtasticEnvelope envelope)

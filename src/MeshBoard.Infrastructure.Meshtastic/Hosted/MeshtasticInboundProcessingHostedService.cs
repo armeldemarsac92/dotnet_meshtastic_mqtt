@@ -85,6 +85,14 @@ internal sealed class MeshtasticInboundProcessingHostedService : BackgroundServi
                 workerId);
         }
 
+        if (string.IsNullOrWhiteSpace(inboundMessage.WorkspaceId))
+        {
+            _logger.LogWarning(
+                "Dropping Meshtastic inbound message for topic {Topic} because it does not specify a workspace ID",
+                inboundMessage.Topic);
+            return;
+        }
+
         var envelope = await _envelopeReader.Read(
             inboundMessage.WorkspaceId,
             inboundMessage.Topic,
