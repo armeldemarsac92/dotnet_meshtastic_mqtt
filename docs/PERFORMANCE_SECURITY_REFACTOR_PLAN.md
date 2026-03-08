@@ -6,6 +6,7 @@ It is intentionally narrower than `docs/ARCHITECTURE_REFACTOR_ROADMAP.md`.
 The existing roadmap establishes the multi-user direction. This document adds the missing constraint that performance improvements must not weaken private-channel security.
 
 For the Option B implementation path that keeps the main app server-based while moving private feeds into Interactive WebAssembly, see `docs/PRIVATE_FEEDS_INTERACTIVE_WASM_PLAN.md`.
+For the broader browser-first direction that reduces long-term Blazor Server circuit load, see `docs/BROWSER_FIRST_ARCHITECTURE_PLAN.md`.
 
 ## Goal
 

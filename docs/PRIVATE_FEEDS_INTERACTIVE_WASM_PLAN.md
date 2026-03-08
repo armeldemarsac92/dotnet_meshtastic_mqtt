@@ -8,6 +8,8 @@ This document plans Option B for MeshBoard:
 
 This is the preferred direction when private-channel security is more important than feature symmetry with public feeds.
 
+If the product direction shifts toward reducing overall Blazor Server circuit load for most user-facing pages, see the broader `docs/BROWSER_FIRST_ARCHITECTURE_PLAN.md`.
+
 ## Objective
 
 For private or sensitive feeds:
