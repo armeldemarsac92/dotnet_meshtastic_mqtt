@@ -37,11 +37,11 @@ public sealed class FavoriteNodeService : IFavoriteNodeService
     public async Task<IReadOnlyCollection<FavoriteNode>> GetFavoriteNodes(CancellationToken cancellationToken = default)
     {
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
-        _logger.LogInformation("Attempting to get favorite nodes");
+        _logger.LogDebug("Attempting to get favorite nodes");
 
         var favoriteNodes = await _favoriteNodeRepository.GetAllAsync(workspaceId, cancellationToken);
 
-        _logger.LogInformation("Retrieved {FavoriteNodeCount} favorite nodes", favoriteNodes.Count);
+        _logger.LogDebug("Retrieved {FavoriteNodeCount} favorite nodes", favoriteNodes.Count);
 
         return favoriteNodes;
     }

@@ -2,6 +2,7 @@
 @implements IAsyncDisposable
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IHomeDashboardService HomeDashboardService
+@inject IMessageService MessageService
 @inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject IOptions<PersistenceOptions> PersistenceConfiguration
 @inject ProjectionChangeNotifier ProjectionChangeNotifier
@@ -98,6 +99,8 @@
     private bool _isLoading = true;
     private IReadOnlyCollection<MessageSummary> _messages = [];
     private int _observedNodeCount;
+    private bool _pendingBrokerStatusRefresh;
+    private bool _pendingMessagesRefresh;
     private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private Task? _refreshTask;
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
@@ -158,22 +161,22 @@
 
     private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
     {
-        if (!IsRelevantProjectionChange(change))
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
         {
             return Task.CompletedTask;
         }
 
-        return ScheduleRealtimeRefreshAsync();
-    }
-
-    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
-    {
-        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        switch (change.Kind)
         {
-            return false;
+            case ProjectionChangeKind.MessageAdded:
+                _pendingMessagesRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
+            case ProjectionChangeKind.RuntimeStatusChanged:
+                _pendingBrokerStatusRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
+            default:
+                return Task.CompletedTask;
         }
-
-        return change.Kind is ProjectionChangeKind.MessageAdded or ProjectionChangeKind.NodeUpdated or ProjectionChangeKind.RuntimeStatusChanged;
     }
 
     private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)
@@ -187,7 +190,17 @@
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await LoadAsync(debounceCancellationTokenSource.Token, forceRefresh);
+            if (forceRefresh)
+            {
+                _pendingBrokerStatusRefresh = false;
+                _pendingMessagesRefresh = false;
+                await LoadAsync(debounceCancellationTokenSource.Token, true);
+            }
+            else
+            {
+                await ApplyPushUpdatesAsync(debounceCancellationTokenSource.Token);
+            }
+
             await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
@@ -201,6 +214,21 @@
             }
 
             debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task ApplyPushUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingBrokerStatusRefresh)
+        {
+            _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+            _pendingBrokerStatusRefresh = false;
+        }
+
+        if (_pendingMessagesRefresh)
+        {
+            _messages = await MessageService.GetRecentMessages(120, cancellationToken);
+            _pendingMessagesRefresh = false;
         }
     }
 }

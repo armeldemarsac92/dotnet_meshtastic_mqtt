@@ -78,7 +78,7 @@ public sealed class HomeDashboardService : IHomeDashboardService
         var brokerStatus = _brokerMonitorService.GetBrokerStatus();
         var topicPresetsTask = _topicPresetService.GetTopicPresets(cancellationToken);
         var favoriteNodesTask = _favoriteNodeService.GetFavoriteNodes(cancellationToken);
-        var observedNodeCountTask = _nodeService.GetNodesPage(offset: 0, take: 1, cancellationToken: cancellationToken);
+        var observedNodeCountTask = _nodeService.CountNodes(cancellationToken: cancellationToken);
         var messagesTask = _messageService.GetRecentMessages(120, cancellationToken);
 
         await Task.WhenAll(topicPresetsTask, favoriteNodesTask, observedNodeCountTask, messagesTask);
@@ -88,7 +88,7 @@ public sealed class HomeDashboardService : IHomeDashboardService
             BrokerStatus = brokerStatus,
             TopicPresets = await topicPresetsTask,
             FavoriteNodes = await favoriteNodesTask,
-            ObservedNodeCount = (await observedNodeCountTask).TotalCount,
+            ObservedNodeCount = await observedNodeCountTask,
             Messages = await messagesTask
         };
 

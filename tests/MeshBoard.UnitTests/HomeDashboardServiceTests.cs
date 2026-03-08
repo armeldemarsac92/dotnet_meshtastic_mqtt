@@ -44,7 +44,7 @@ public sealed class HomeDashboardServiceTests
         Assert.Equal(1, brokerMonitorService.GetBrokerStatusCallCount);
         Assert.Equal(1, favoriteNodeService.GetFavoriteNodesCallCount);
         Assert.Equal(1, messageService.GetRecentMessagesCallCount);
-        Assert.Equal(1, nodeService.GetNodesPageCallCount);
+        Assert.Equal(1, nodeService.CountNodesCallCount);
         Assert.Equal(1, topicPresetService.GetTopicPresetsCallCount);
         Assert.Same(firstSnapshot, secondSnapshot);
 
@@ -55,7 +55,7 @@ public sealed class HomeDashboardServiceTests
         Assert.Equal(2, brokerMonitorService.GetBrokerStatusCallCount);
         Assert.Equal(2, favoriteNodeService.GetFavoriteNodesCallCount);
         Assert.Equal(2, messageService.GetRecentMessagesCallCount);
-        Assert.Equal(2, nodeService.GetNodesPageCallCount);
+        Assert.Equal(2, nodeService.CountNodesCallCount);
         Assert.Equal(2, topicPresetService.GetTopicPresetsCallCount);
         Assert.NotSame(firstSnapshot, thirdSnapshot);
 
@@ -93,7 +93,7 @@ public sealed class HomeDashboardServiceTests
         Assert.Equal(2, brokerMonitorService.GetBrokerStatusCallCount);
         Assert.Equal(2, favoriteNodeService.GetFavoriteNodesCallCount);
         Assert.Equal(2, messageService.GetRecentMessagesCallCount);
-        Assert.Equal(2, nodeService.GetNodesPageCallCount);
+        Assert.Equal(2, nodeService.CountNodesCallCount);
         Assert.Equal(2, topicPresetService.GetTopicPresetsCallCount);
 
         var snapshot = metricsService.GetSnapshots().Single(metric => metric.Kind == ReadModelMetricKind.DashboardSnapshot);
@@ -262,7 +262,13 @@ public sealed class HomeDashboardServiceTests
 
     private sealed class FakeNodeService : INodeService
     {
-        public int GetNodesPageCallCount { get; private set; }
+        public int CountNodesCallCount { get; private set; }
+
+        public Task<int> CountNodes(NodeQuery? query = null, CancellationToken cancellationToken = default)
+        {
+            CountNodesCallCount++;
+            return Task.FromResult(7);
+        }
 
         public Task<NodeSummary?> GetNodeById(string nodeId, CancellationToken cancellationToken = default)
         {
@@ -291,12 +297,7 @@ public sealed class HomeDashboardServiceTests
             int take = 100,
             CancellationToken cancellationToken = default)
         {
-            GetNodesPageCallCount++;
-
-            return Task.FromResult(new NodePageResult
-            {
-                TotalCount = 7
-            });
+            throw new NotSupportedException();
         }
     }
 

@@ -29,7 +29,7 @@ internal sealed class NodeRepository : INodeRepository
 
     public Task<int> CountAsync(NodeQuery query, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to count nodes");
+        _logger.LogDebug("Attempting to count nodes");
 
         return _dbContext.QueryFirstOrDefaultAsync<int>(
             NodeQueries.CountNodes,
@@ -41,7 +41,7 @@ internal sealed class NodeRepository : INodeRepository
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
 
-        _logger.LogInformation("Attempting to fetch node by id {NodeId}", nodeId);
+        _logger.LogDebug("Attempting to fetch node by id {NodeId}", nodeId);
 
         var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
             NodeQueries.SelectNodeById,
@@ -56,7 +56,7 @@ internal sealed class NodeRepository : INodeRepository
         int take,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to fetch located nodes with take {Take}", take);
+        _logger.LogDebug("Attempting to fetch located nodes with take {Take}", take);
 
         var normalizedSearchText = searchText?.Trim() ?? string.Empty;
         var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
@@ -78,7 +78,7 @@ internal sealed class NodeRepository : INodeRepository
         int take,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to fetch nodes with offset {Offset} and take {Take}", offset, take);
+        _logger.LogDebug("Attempting to fetch nodes with offset {Offset} and take {Take}", offset, take);
 
         var sqlBuilder = new StringBuilder(NodeQueries.SelectNodes)
             .AppendLine()

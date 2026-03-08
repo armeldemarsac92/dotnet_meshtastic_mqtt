@@ -100,7 +100,6 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
             case ProjectionChangeKind.MessageAdded:
                 _readModelCacheInvalidator.Invalidate(
                     change.WorkspaceId,
-                    ReadModelCacheRegion.Dashboard,
                     ReadModelCacheRegion.MessagePages,
                     ReadModelCacheRegion.NodeDetails,
                     ReadModelCacheRegion.ChannelDetails);
@@ -108,7 +107,6 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
             case ProjectionChangeKind.NodeUpdated:
                 _readModelCacheInvalidator.Invalidate(
                     change.WorkspaceId,
-                    ReadModelCacheRegion.Dashboard,
                     ReadModelCacheRegion.NodeDetails);
                 break;
             case ProjectionChangeKind.ChannelSummaryUpdated:

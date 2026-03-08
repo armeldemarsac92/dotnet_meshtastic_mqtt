@@ -92,6 +92,11 @@ public sealed class CachedNodeDetailServiceTests
     {
         public int GetNodeByIdCallCount { get; private set; }
 
+        public Task<int> CountNodes(NodeQuery? query = null, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<NodeSummary?> GetNodeById(string nodeId, CancellationToken cancellationToken = default)
         {
             GetNodeByIdCallCount++;

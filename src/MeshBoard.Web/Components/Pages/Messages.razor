@@ -400,7 +400,7 @@
             return false;
         }
 
-        return change.Kind is ProjectionChangeKind.MessageAdded or ProjectionChangeKind.NodeUpdated or ProjectionChangeKind.RuntimeStatusChanged;
+        return change.Kind is ProjectionChangeKind.MessageAdded or ProjectionChangeKind.RuntimeStatusChanged;
     }
 
     private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)

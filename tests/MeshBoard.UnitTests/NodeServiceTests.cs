@@ -110,8 +110,11 @@ public sealed class NodeServiceTests
 
         public string? LastNodeId { get; private set; }
 
+        public int CountCallCount { get; private set; }
+
         public Task<int> CountAsync(NodeQuery query, CancellationToken cancellationToken = default)
         {
+            CountCallCount++;
             return Task.FromResult(_nodes.Count);
         }
 

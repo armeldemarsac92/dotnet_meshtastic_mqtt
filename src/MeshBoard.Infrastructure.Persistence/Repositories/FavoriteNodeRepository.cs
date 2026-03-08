@@ -23,7 +23,7 @@ internal sealed class FavoriteNodeRepository : IFavoriteNodeRepository
         string workspaceId,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to fetch favorite nodes for workspace {WorkspaceId}", workspaceId);
+        _logger.LogDebug("Attempting to fetch favorite nodes for workspace {WorkspaceId}", workspaceId);
 
         var favoriteNodes = await _dbContext.QueryAsync<FavoriteNodeSqlResponse>(
             FavoriteNodeQueries.GetFavoriteNodes,

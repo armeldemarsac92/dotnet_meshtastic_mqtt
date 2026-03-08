@@ -197,6 +197,7 @@
 
 @code {
     private const string MapElementId = "meshboard-node-map";
+    private const int MaxLocatedNodeCount = 5_000;
     private readonly CancellationTokenSource _componentCancellationTokenSource = new();
     private DotNetObjectReference<Map>? _mapCallbackReference;
     private bool _isLoading;
@@ -204,6 +205,7 @@
     private IJSObjectReference? _mapModule;
     private int _locatedNodeCount;
     private readonly Dictionary<string, int> _pendingActivityPulseCounts = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _pendingNodeRefreshIds = new(StringComparer.Ordinal);
     private IReadOnlyCollection<MapNodeActivity> _activityPulses = [];
     private IReadOnlyCollection<ChannelLegendEntry> _channelLegendEntries = [];
     private int _hiddenChannelLegendCount;
@@ -306,6 +308,7 @@
         {
             _pendingActivityPulseCounts.TryGetValue(change.EntityKey, out var pulseCount);
             _pendingActivityPulseCounts[change.EntityKey] = pulseCount + 1;
+            _pendingNodeRefreshIds.Add(change.EntityKey);
         }
 
         return ScheduleRealtimeRefreshAsync();
@@ -328,7 +331,7 @@
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await RefreshNodesAsync(fitMapToNodes: false);
+            await ApplyPendingNodeUpdatesAsync(debounceCancellationTokenSource.Token);
         }
         catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
         {
@@ -342,6 +345,74 @@
 
             debounceCancellationTokenSource.Dispose();
         }
+    }
+
+    private async Task ApplyPendingNodeUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingNodeRefreshIds.Count == 0)
+        {
+            if (_pendingActivityPulseCounts.Count > 0)
+            {
+                _activityPulses = _pendingActivityPulseCounts
+                    .Select(entry => new MapNodeActivity
+                    {
+                        NodeId = entry.Key,
+                        PulseCount = entry.Value
+                    })
+                    .ToList();
+                _pendingActivityPulseCounts.Clear();
+                _isMapRenderPending = true;
+                await InvokeAsync(StateHasChanged);
+            }
+
+            return;
+        }
+
+        var nodeIds = _pendingNodeRefreshIds.ToArray();
+        _pendingNodeRefreshIds.Clear();
+
+        var updatedNodes = await Task.WhenAll(nodeIds.Select(nodeId =>
+            NodeService.GetNodeById(nodeId, cancellationToken)));
+
+        var nodesById = _nodesWithLocation
+            .GroupBy(node => node.NodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+
+        foreach (var updatedNode in updatedNodes)
+        {
+            if (updatedNode is null || !MatchesLocatedNodeQuery(updatedNode))
+            {
+                if (updatedNode is not null)
+                {
+                    nodesById.Remove(updatedNode.NodeId);
+                }
+
+                continue;
+            }
+
+            nodesById[updatedNode.NodeId] = updatedNode;
+        }
+
+        _nodesWithLocation = nodesById.Values
+            .OrderByDescending(node => node.LastHeardAtUtc ?? DateTimeOffset.MinValue)
+            .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxLocatedNodeCount)
+            .ToList();
+
+        _locatedNodeCount = _nodesWithLocation.Count;
+        ApplyMapPoints();
+        _shouldFitMapToNodes = false;
+        _activityPulses = _pendingActivityPulseCounts.Count == 0
+            ? []
+            : _pendingActivityPulseCounts
+                .Select(entry => new MapNodeActivity
+                {
+                    NodeId = entry.Key,
+                    PulseCount = entry.Value
+                })
+                .ToList();
+        _pendingActivityPulseCounts.Clear();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ScheduleSearchRefreshAsync()
@@ -447,6 +518,7 @@
         {
             var nodes = await NodeService.GetLocatedNodes(
                 normalizedSearchText,
+                take: MaxLocatedNodeCount,
                 cancellationToken: _componentCancellationTokenSource.Token);
 
             if (requestVersion != _refreshRequestVersion)
@@ -653,6 +725,32 @@
     private static string GetCoordinateText(MapNodePoint node)
     {
         return $"{node.Latitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}, {node.Longitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
+    private bool MatchesLocatedNodeQuery(NodeSummary node)
+    {
+        if (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue)
+        {
+            return false;
+        }
+
+        var normalizedSearchText = _searchText.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalizedSearchText))
+        {
+            return true;
+        }
+
+        return ContainsIgnoreCase(node.NodeId, normalizedSearchText) ||
+            ContainsIgnoreCase(node.ShortName, normalizedSearchText) ||
+            ContainsIgnoreCase(node.LongName, normalizedSearchText) ||
+            ContainsIgnoreCase(node.LastHeardChannel, normalizedSearchText);
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string searchText)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetChannelChipClass(bool isFocused)
