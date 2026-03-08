@@ -5,6 +5,7 @@
     <Project Path="src/MeshBoard.Infrastructure.Meshtastic/MeshBoard.Infrastructure.Meshtastic.csproj" />
     <Project Path="src/MeshBoard.Infrastructure.Persistence/MeshBoard.Infrastructure.Persistence.csproj" />
     <Project Path="src/MeshBoard.Web/MeshBoard.Web.csproj" />
+    <Project Path="src/MeshBoard.Worker.Ingestion/MeshBoard.Worker.Ingestion.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/MeshBoard.IntegrationTests/MeshBoard.IntegrationTests.csproj" />
