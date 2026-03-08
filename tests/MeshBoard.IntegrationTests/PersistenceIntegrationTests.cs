@@ -8,7 +8,9 @@ using MeshBoard.Contracts.Favorites;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
+using MeshBoard.Contracts.Realtime;
 using MeshBoard.Contracts.Topics;
+using MeshBoard.Contracts.Workspaces;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
@@ -1726,6 +1728,127 @@ public sealed class PersistenceIntegrationTests
             {
                 await StopHostedServicesAsync(hostedServicesB);
                 await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeStatusRegistry_ShouldPersistProjectionChanges()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: WorkspaceConstants.DefaultWorkspaceId);
+
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                var runtimeRegistry = provider.GetRequiredService<IBrokerRuntimeRegistry>();
+                var projectionChangeRepository = provider.GetRequiredService<IProjectionChangeRepository>();
+                var baselineId = await projectionChangeRepository.GetLatestIdAsync();
+
+                runtimeRegistry.UpdateSnapshot(
+                    "workspace-a",
+                    new BrokerRuntimeSnapshot
+                    {
+                        ActiveServerName = "Workspace A runtime",
+                        ActiveServerAddress = "mqtt-a.example.org:1883",
+                        IsConnected = true,
+                        TopicFilters = ["msh/US/2/e/LongFast/#"]
+                    });
+
+                var changes = await projectionChangeRepository.GetChangesAfterAsync(baselineId, 10);
+
+                var runtimeChange = Assert.Single(changes);
+                Assert.Equal("workspace-a", runtimeChange.WorkspaceId);
+                Assert.Equal(ProjectionChangeKind.RuntimeStatusChanged, runtimeChange.Kind);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Ingestion_ShouldPersistProjectionChanges()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var ingestionService = scope.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
+                var brokerServerProfileService = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var projectionChangeRepository = scope.ServiceProvider.GetRequiredService<IProjectionChangeRepository>();
+                var baselineId = await projectionChangeRepository.GetLatestIdAsync();
+                var activeProfile = await brokerServerProfileService.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Projection test broker",
+                        Host = "mqtt-projection.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = "AQ==",
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await ingestionService.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
+                        BrokerServer = activeProfile.ServerAddress,
+                        Topic = "msh/US/2/e/LongFast/!abc12345",
+                        PacketType = "Text Message",
+                        PacketId = 0x00050001,
+                        PayloadPreview = "Projection change payload",
+                        FromNodeId = "!abc12345",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 8, 19, 0, 0, TimeSpan.Zero)
+                    });
+
+                var changes = await projectionChangeRepository.GetChangesAfterAsync(baselineId, 10);
+
+                Assert.Equal(
+                    [
+                        ProjectionChangeKind.MessageAdded,
+                        ProjectionChangeKind.ChannelSummaryUpdated,
+                        ProjectionChangeKind.NodeUpdated
+                    ],
+                    changes.Select(change => change.Kind).ToArray());
+                Assert.All(changes, change => Assert.Equal(WorkspaceConstants.DefaultWorkspaceId, change.WorkspaceId));
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
             }
         }
         finally

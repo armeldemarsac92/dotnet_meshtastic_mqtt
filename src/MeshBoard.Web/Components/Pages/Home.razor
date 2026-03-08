@@ -4,8 +4,11 @@
 @inject IFavoriteNodeService FavoriteNodeService
 @inject IMessageService MessageService
 @inject INodeService NodeService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject IOptions<BrokerOptions> BrokerConfiguration
 @inject IOptions<PersistenceOptions> PersistenceConfiguration
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
+@inject ServerSelectionNotifier ServerSelectionNotifier
 @inject ITopicPresetService TopicPresetService
 
 <PageTitle>Dashboard</PageTitle>
@@ -92,17 +95,21 @@
 </div>
 
 @code {
+    private static readonly TimeSpan FallbackRefreshInterval = TimeSpan.FromSeconds(30);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private BrokerStatus _brokerStatus = new();
     private IReadOnlyCollection<FavoriteNode> _favoriteNodes = [];
     private bool _isLoading = true;
     private IReadOnlyCollection<MessageSummary> _messages = [];
     private int _observedNodeCount;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private Task? _refreshTask;
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
 
     protected override async Task OnInitializedAsync()
     {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
         await BrokerMonitorService.EnsureConnected(_cancellationTokenSource.Token);
         await LoadAsync(_cancellationTokenSource.Token);
         _isLoading = false;
@@ -111,7 +118,11 @@
 
     public ValueTask DisposeAsync()
     {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
         _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
         _cancellationTokenSource.Dispose();
         return ValueTask.CompletedTask;
     }
@@ -137,7 +148,7 @@
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            using var timer = new PeriodicTimer(FallbackRefreshInterval);
 
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
@@ -147,6 +158,59 @@
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+    }
+
+    private Task HandleServerSelectionChangedAsync()
+    {
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return change.Kind is ProjectionChangeKind.MessageAdded or ProjectionChangeKind.NodeUpdated or ProjectionChangeKind.RuntimeStatusChanged;
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
         }
     }
 }

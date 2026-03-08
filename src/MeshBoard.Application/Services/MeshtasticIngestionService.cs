@@ -2,6 +2,8 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
+using MeshBoard.Contracts.Realtime;
+using MeshBoard.Contracts.Workspaces;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,18 +20,21 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     private readonly ILogger<MeshtasticIngestionService> _logger;
     private readonly IMessageRepository _messageRepository;
     private readonly INodeRepository _nodeRepository;
+    private readonly IProjectionChangeRepository _projectionChangeRepository;
     private readonly ITopicDiscoveryService _topicDiscoveryService;
     private readonly IUnitOfWork _unitOfWork;
 
     public MeshtasticIngestionService(
         IMessageRepository messageRepository,
         INodeRepository nodeRepository,
+        IProjectionChangeRepository projectionChangeRepository,
         ITopicDiscoveryService topicDiscoveryService,
         IUnitOfWork unitOfWork,
         ILogger<MeshtasticIngestionService> logger)
     {
         _messageRepository = messageRepository;
         _nodeRepository = nodeRepository;
+        _projectionChangeRepository = projectionChangeRepository;
         _topicDiscoveryService = topicDiscoveryService;
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -105,11 +110,44 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             }
 
             await _unitOfWork.CommitAsync(cancellationToken);
+
+            await PublishProjectionChangesAsync(envelope, cancellationToken);
         }
         catch
         {
             await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
+        }
+    }
+
+    private async Task PublishProjectionChangesAsync(MeshtasticEnvelope envelope, CancellationToken cancellationToken)
+    {
+        var workspaceId = string.IsNullOrWhiteSpace(envelope.WorkspaceId)
+            ? WorkspaceConstants.DefaultWorkspaceId
+            : envelope.WorkspaceId;
+
+        var changeKinds = new List<ProjectionChangeKind>
+        {
+            ProjectionChangeKind.MessageAdded,
+            ProjectionChangeKind.ChannelSummaryUpdated
+        };
+
+        if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
+        {
+            changeKinds.Add(ProjectionChangeKind.NodeUpdated);
+        }
+
+        try
+        {
+            await _projectionChangeRepository.AppendAsync(workspaceId, changeKinds, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to persist projection change notifications for workspace {WorkspaceId} after ingesting topic {Topic}",
+                workspaceId,
+                envelope.Topic);
         }
     }
 

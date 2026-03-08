@@ -3,6 +3,7 @@ using Dapper;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Meshtastic;
+using MeshBoard.Contracts.Realtime;
 using MeshBoard.Infrastructure.Persistence.SQL;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Data.Sqlite;
@@ -87,6 +88,15 @@ internal sealed class SqliteBrokerRuntimeRegistry : IBrokerRuntimeRegistry
                 LastStatusMessage = snapshot.LastStatusMessage,
                 TopicFiltersJson = JsonSerializer.Serialize(normalizedTopicFilters, JsonSerializerOptions),
                 UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("O")
+            });
+
+        connection.Execute(
+            ProjectionChangeQueries.Insert,
+            new
+            {
+                WorkspaceId = workspaceId,
+                ChangeKind = ProjectionChangeKind.RuntimeStatusChanged.ToString(),
+                OccurredAtUtc = DateTimeOffset.UtcNow.ToString("O")
             });
     }
 

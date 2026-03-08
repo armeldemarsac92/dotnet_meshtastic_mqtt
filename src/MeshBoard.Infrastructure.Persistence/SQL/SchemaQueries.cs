@@ -110,6 +110,16 @@ internal static class SchemaQueries
         CREATE INDEX IF NOT EXISTS ix_broker_runtime_commands_workspace_status_created_at_utc
             ON broker_runtime_commands(workspace_id, status, created_at_utc);
 
+        CREATE TABLE IF NOT EXISTS projection_change_log (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            workspace_id TEXT NOT NULL,
+            change_kind TEXT NOT NULL,
+            occurred_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_projection_change_log_workspace_id_id
+            ON projection_change_log(workspace_id, id);
+
         CREATE TABLE IF NOT EXISTS runtime_pipeline_status (
             id TEXT NOT NULL PRIMARY KEY,
             inbound_queue_capacity INTEGER NOT NULL,

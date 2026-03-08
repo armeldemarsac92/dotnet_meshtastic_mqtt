@@ -13,6 +13,8 @@ builder.Services.AddPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddSingleton<ServerSelectionNotifier>();
+builder.Services.AddSingleton<ProjectionChangeNotifier>();
+builder.Services.AddHostedService<ProjectionChangeDispatchHostedService>();
 
 var app = builder.Build();
 

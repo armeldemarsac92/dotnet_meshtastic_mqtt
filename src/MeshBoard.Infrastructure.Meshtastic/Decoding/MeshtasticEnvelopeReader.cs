@@ -66,7 +66,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             return await MapEnvelope(workspaceId, topic, directPacket, payload.Length, cancellationToken);
         }
 
-        if (TryParseJsonEnvelope(topic, payload, out var jsonEnvelope) && jsonEnvelope is not null)
+        if (TryParseJsonEnvelope(workspaceId, topic, payload, out var jsonEnvelope) && jsonEnvelope is not null)
         {
             return jsonEnvelope;
         }
@@ -83,6 +83,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
     {
         var envelope = new MeshtasticEnvelope
         {
+            WorkspaceId = workspaceId,
             Topic = topic,
             PacketId = packet.Id == 0 ? null : packet.Id,
             FromNodeId = FormatNodeId(packet.From) ?? TryExtractNodeIdFromTopic(topic),
@@ -175,7 +176,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         return nonce;
     }
 
-    private bool TryParseJsonEnvelope(string topic, byte[] payload, out MeshtasticEnvelope? envelope)
+    private bool TryParseJsonEnvelope(string workspaceId, string topic, byte[] payload, out MeshtasticEnvelope? envelope)
     {
         var trimmedPayload = TrimLeadingWhitespace(payload);
 
@@ -195,7 +196,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
                 return false;
             }
 
-            envelope = MapJsonEnvelope(topic, document.RootElement, payload.Length);
+            envelope = MapJsonEnvelope(workspaceId, topic, document.RootElement, payload.Length);
             return true;
         }
         catch (JsonException)
@@ -205,10 +206,11 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         }
     }
 
-    private MeshtasticEnvelope MapJsonEnvelope(string topic, JsonElement root, int payloadLength)
+    private MeshtasticEnvelope MapJsonEnvelope(string workspaceId, string topic, JsonElement root, int payloadLength)
     {
         var envelope = new MeshtasticEnvelope
         {
+            WorkspaceId = workspaceId,
             Topic = topic,
             LastHeardChannel = TryExtractChannelFromTopic(topic),
             FromNodeId = TryGetNodeId(root, "fromId", "from_id", "from", "sender"),
