@@ -4,6 +4,8 @@ This document is the implementation roadmap for turning MeshBoard into a high-sc
 
 It replaces the earlier ambiguous operating-model discussion. The operating model is now fixed.
 
+For the performance-and-security refactor that distinguishes public shared feeds from private-key-protected traffic, see `docs/PERFORMANCE_SECURITY_REFACTOR_PLAN.md`.
+
 ## Accepted Product Direction
 
 MeshBoard is intended to be:
