@@ -22,6 +22,16 @@ public interface IBrokerServerProfileRepository
         Guid id,
         CancellationToken cancellationToken = default);
 
+    Task<bool> AreSubscriptionIntentsInitializedAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default);
+
+    Task MarkSubscriptionIntentsInitializedAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default);
+
     Task<BrokerServerProfile> UpsertAsync(
         string workspaceId,
         SaveBrokerServerProfileRequest request,

@@ -89,6 +89,48 @@ internal sealed class BrokerServerProfileRepository : IBrokerServerProfileReposi
             cancellationToken);
     }
 
+    public async Task<bool> AreSubscriptionIntentsInitializedAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to read subscription intent initialization state for profile {ProfileId} in workspace {WorkspaceId}",
+            id,
+            workspaceId);
+
+        var initialized = await _dbContext.QueryFirstOrDefaultAsync<int>(
+            BrokerServerProfileQueries.GetSubscriptionIntentsInitialized,
+            new
+            {
+                WorkspaceId = workspaceId,
+                Id = id.ToString()
+            },
+            cancellationToken);
+
+        return initialized == 1;
+    }
+
+    public Task MarkSubscriptionIntentsInitializedAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to mark subscription intents initialized for profile {ProfileId} in workspace {WorkspaceId}",
+            id,
+            workspaceId);
+
+        return _dbContext.ExecuteAsync(
+            BrokerServerProfileQueries.MarkSubscriptionIntentsInitialized,
+            new
+            {
+                WorkspaceId = workspaceId,
+                Id = id.ToString()
+            },
+            cancellationToken);
+    }
+
     public async Task<BrokerServerProfile> UpsertAsync(
         string workspaceId,
         SaveBrokerServerProfileRequest request,

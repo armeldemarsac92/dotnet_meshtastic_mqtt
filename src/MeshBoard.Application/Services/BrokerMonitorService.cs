@@ -1,4 +1,6 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Meshtastic;
@@ -17,28 +19,41 @@ public interface IBrokerMonitorService
 
     Task SubscribeToTopic(string topicFilter, CancellationToken cancellationToken = default);
 
+    Task SubscribeToEphemeralTopic(string topicFilter, CancellationToken cancellationToken = default);
+
     Task SwitchActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default);
 
     Task UnsubscribeFromTopic(string topicFilter, CancellationToken cancellationToken = default);
+
+    Task UnsubscribeFromEphemeralTopic(string topicFilter, CancellationToken cancellationToken = default);
 }
 
 public sealed class BrokerMonitorService : IBrokerMonitorService
 {
     private readonly BrokerOptions _fallbackBrokerOptions;
+    private readonly IBrokerServerProfileRepository _brokerServerProfileRepository;
     private readonly IBrokerServerProfileService _brokerServerProfileService;
+    private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
     private readonly ILogger<BrokerMonitorService> _logger;
-    private readonly IMqttSession _mqttSession;
     private readonly IBrokerRuntimeRegistry _brokerRuntimeRegistry;
+    private readonly ISubscriptionIntentRepository _subscriptionIntentRepository;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public BrokerMonitorService(
-        IMqttSession mqttSession,
+        IWorkspaceBrokerSessionManager brokerSessionManager,
         IBrokerServerProfileService brokerServerProfileService,
+        IBrokerServerProfileRepository brokerServerProfileRepository,
+        ISubscriptionIntentRepository subscriptionIntentRepository,
+        IWorkspaceContextAccessor workspaceContextAccessor,
         IOptions<BrokerOptions> brokerOptions,
         IBrokerRuntimeRegistry brokerRuntimeRegistry,
         ILogger<BrokerMonitorService> logger)
     {
-        _mqttSession = mqttSession;
+        _brokerSessionManager = brokerSessionManager;
         _brokerServerProfileService = brokerServerProfileService;
+        _brokerServerProfileRepository = brokerServerProfileRepository;
+        _subscriptionIntentRepository = subscriptionIntentRepository;
+        _workspaceContextAccessor = workspaceContextAccessor;
         _fallbackBrokerOptions = brokerOptions.Value;
         _brokerRuntimeRegistry = brokerRuntimeRegistry;
         _logger = logger;
@@ -46,20 +61,24 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
 
     public async Task EnsureConnected(CancellationToken cancellationToken = default)
     {
-        if (_mqttSession.IsConnected)
+        var workspaceId = GetWorkspaceId();
+
+        if (_brokerSessionManager.IsConnected(workspaceId))
         {
             return;
         }
 
-        await RefreshActiveServerSnapshot(cancellationToken);
+        var activeServer = await RefreshActiveServerSnapshot(cancellationToken);
 
         _logger.LogInformation("Attempting to ensure the MQTT session is connected");
 
-        await _mqttSession.ConnectAsync(cancellationToken);
+        await _brokerSessionManager.ConnectAsync(workspaceId, cancellationToken);
+        await ReconcileSubscriptionIntents(activeServer, cancellationToken);
     }
 
     public BrokerStatus GetBrokerStatus()
     {
+        var workspaceId = GetWorkspaceId();
         var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot();
         var activeServerAddress = string.IsNullOrWhiteSpace(runtimeSnapshot.ActiveServerAddress)
             ? $"{_fallbackBrokerOptions.Host}:{_fallbackBrokerOptions.Port}"
@@ -72,9 +91,9 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
             ActiveServerAddress = activeServerAddress,
             Host = activeServerAddress.Split(':', 2)[0],
             Port = TryParsePort(activeServerAddress),
-            IsConnected = _mqttSession.IsConnected,
-            LastStatusMessage = _mqttSession.LastStatusMessage,
-            TopicFilters = NormalizeTopicFiltersForDisplay(_mqttSession.TopicFilters)
+            IsConnected = _brokerSessionManager.IsConnected(workspaceId),
+            LastStatusMessage = _brokerSessionManager.GetLastStatusMessage(workspaceId),
+            TopicFilters = NormalizeTopicFiltersForDisplay(_brokerSessionManager.GetTopicFilters(workspaceId))
         };
     }
 
@@ -82,25 +101,37 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     {
         var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
         UpdateRuntimeSnapshot(activeServer);
-        var topicFilter = NormalizeToServerRootTopicFilter(activeServer.DefaultTopicPattern);
-        await SubscribeToTopic(topicFilter, cancellationToken);
+        await EnsureDefaultSubscriptionIntent(activeServer, cancellationToken);
+        await ReconcileSubscriptionIntents(activeServer, cancellationToken);
     }
 
     public async Task SubscribeToTopic(string topicFilter, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(topicFilter))
-        {
-            throw new BadRequestException("A topic filter is required.");
-        }
+        var normalizedTopicFilter = NormalizeTopicFilterForIntent(topicFilter);
+        await EnsureConnected(cancellationToken);
+        var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        var workspaceId = GetWorkspaceId();
 
-        _logger.LogInformation("Attempting to subscribe to topic filter: {TopicFilter}", topicFilter);
+        _logger.LogInformation("Attempting to persist subscription intent: {TopicFilter}", normalizedTopicFilter);
+
+        await _subscriptionIntentRepository.AddAsync(
+            workspaceId,
+            activeServer.Id,
+            normalizedTopicFilter,
+            cancellationToken);
+
+        await EnsureProfileSubscriptionIntentsInitialized(workspaceId, activeServer.Id, cancellationToken);
+        await ReconcileSubscriptionIntents(activeServer, cancellationToken);
+    }
+
+    public async Task SubscribeToEphemeralTopic(string topicFilter, CancellationToken cancellationToken = default)
+    {
+        var normalizedTopicFilter = NormalizeTopicFilterForIntent(topicFilter);
+
+        _logger.LogInformation("Attempting to subscribe ephemerally to topic filter: {TopicFilter}", normalizedTopicFilter);
 
         await EnsureConnected(cancellationToken);
-
-        foreach (var filter in ExpandWithCompanionFilter(topicFilter.Trim()))
-        {
-            await _mqttSession.SubscribeAsync(filter, cancellationToken);
-        }
+        await ApplyRuntimeSubscription(normalizedTopicFilter, cancellationToken);
     }
 
     public async Task SwitchActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
@@ -113,36 +144,48 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
             activeProfile.Name,
             activeProfile.ServerAddress);
 
-        var previousTopicFilters = _mqttSession.TopicFilters.ToList();
+        var workspaceId = GetWorkspaceId();
+        var previousTopicFilters = _brokerSessionManager.GetTopicFilters(workspaceId).ToList();
 
         foreach (var topicFilter in previousTopicFilters)
         {
-            await _mqttSession.UnsubscribeAsync(topicFilter, cancellationToken);
+            await _brokerSessionManager.UnsubscribeAsync(workspaceId, topicFilter, cancellationToken);
         }
 
-        await _mqttSession.DisconnectAsync(cancellationToken);
-        await _mqttSession.ConnectAsync(cancellationToken);
+        await _brokerSessionManager.DisconnectAsync(workspaceId, cancellationToken);
+        await _brokerSessionManager.ConnectAsync(workspaceId, cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(activeProfile.DefaultTopicPattern))
-        {
-            await SubscribeToTopic(
-                NormalizeToServerRootTopicFilter(activeProfile.DefaultTopicPattern),
-                cancellationToken);
-        }
+        await EnsureDefaultSubscriptionIntent(activeProfile, cancellationToken);
+        await ReconcileSubscriptionIntents(activeProfile, cancellationToken);
     }
 
     public async Task UnsubscribeFromTopic(string topicFilter, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(topicFilter))
-        {
-            throw new BadRequestException("A topic filter is required.");
-        }
+        var normalizedTopicFilter = NormalizeTopicFilterForIntent(topicFilter);
+        var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        var workspaceId = GetWorkspaceId();
 
-        _logger.LogInformation("Attempting to unsubscribe from topic filter: {TopicFilter}", topicFilter);
+        _logger.LogInformation("Attempting to remove subscription intent: {TopicFilter}", normalizedTopicFilter);
 
-        foreach (var filter in ExpandWithCompanionFilter(topicFilter.Trim()))
+        await _subscriptionIntentRepository.DeleteAsync(
+            workspaceId,
+            activeServer.Id,
+            normalizedTopicFilter,
+            cancellationToken);
+
+        await ReconcileSubscriptionIntents(activeServer, cancellationToken);
+    }
+
+    public async Task UnsubscribeFromEphemeralTopic(string topicFilter, CancellationToken cancellationToken = default)
+    {
+        var normalizedTopicFilter = NormalizeTopicFilterForIntent(topicFilter);
+
+        _logger.LogInformation("Attempting to unsubscribe ephemerally from topic filter: {TopicFilter}", normalizedTopicFilter);
+        var workspaceId = GetWorkspaceId();
+
+        foreach (var filter in ExpandWithCompanionFilter(normalizedTopicFilter))
         {
-            await _mqttSession.UnsubscribeAsync(filter, cancellationToken);
+            await _brokerSessionManager.UnsubscribeAsync(workspaceId, filter, cancellationToken);
         }
     }
 
@@ -241,10 +284,11 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
         return string.Join('/', segments[..4]) + "/#";
     }
 
-    private async Task RefreshActiveServerSnapshot(CancellationToken cancellationToken)
+    private async Task<BrokerServerProfile> RefreshActiveServerSnapshot(CancellationToken cancellationToken)
     {
         var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
         UpdateRuntimeSnapshot(activeServer);
+        return activeServer;
     }
 
     private static int TryParsePort(string serverAddress)
@@ -262,5 +306,93 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
                 ActiveServerName = activeServer.Name,
                 ActiveServerAddress = activeServer.ServerAddress
             });
+    }
+
+    private async Task EnsureDefaultSubscriptionIntent(
+        BrokerServerProfile activeServer,
+        CancellationToken cancellationToken)
+    {
+        var workspaceId = GetWorkspaceId();
+
+        if (await _brokerServerProfileRepository.AreSubscriptionIntentsInitializedAsync(
+                workspaceId,
+                activeServer.Id,
+                cancellationToken))
+        {
+            return;
+        }
+
+        var defaultTopicFilter = NormalizeToServerRootTopicFilter(activeServer.DefaultTopicPattern);
+
+        if (!string.IsNullOrWhiteSpace(defaultTopicFilter))
+        {
+            await _subscriptionIntentRepository.AddAsync(
+                workspaceId,
+                activeServer.Id,
+                NormalizeTopicFilterForIntent(defaultTopicFilter),
+                cancellationToken);
+        }
+
+        await EnsureProfileSubscriptionIntentsInitialized(workspaceId, activeServer.Id, cancellationToken);
+    }
+
+    private async Task EnsureProfileSubscriptionIntentsInitialized(
+        string workspaceId,
+        Guid profileId,
+        CancellationToken cancellationToken)
+    {
+        await _brokerServerProfileRepository.MarkSubscriptionIntentsInitializedAsync(
+            workspaceId,
+            profileId,
+            cancellationToken);
+    }
+
+    private async Task ReconcileSubscriptionIntents(
+        BrokerServerProfile activeServer,
+        CancellationToken cancellationToken)
+    {
+        var workspaceId = GetWorkspaceId();
+        var intents = await _subscriptionIntentRepository.GetAllAsync(workspaceId, activeServer.Id, cancellationToken);
+
+        var desiredFilters = intents
+            .SelectMany(intent => ExpandWithCompanionFilter(intent.TopicFilter))
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+        var currentFilters = _brokerSessionManager.GetTopicFilters(workspaceId).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var topicFilter in currentFilters.Except(desiredFilters, StringComparer.Ordinal))
+        {
+            await _brokerSessionManager.UnsubscribeAsync(workspaceId, topicFilter, cancellationToken);
+        }
+
+        foreach (var topicFilter in desiredFilters.Except(currentFilters, StringComparer.Ordinal))
+        {
+            await _brokerSessionManager.SubscribeAsync(workspaceId, topicFilter, cancellationToken);
+        }
+    }
+
+    private async Task ApplyRuntimeSubscription(string topicFilter, CancellationToken cancellationToken)
+    {
+        var workspaceId = GetWorkspaceId();
+
+        foreach (var filter in ExpandWithCompanionFilter(topicFilter))
+        {
+            await _brokerSessionManager.SubscribeAsync(workspaceId, filter, cancellationToken);
+        }
+    }
+
+    private static string NormalizeTopicFilterForIntent(string topicFilter)
+    {
+        if (string.IsNullOrWhiteSpace(topicFilter))
+        {
+            throw new BadRequestException("A topic filter is required.");
+        }
+
+        return NormalizeTopicFilterForDisplay(topicFilter.Trim());
+    }
+
+    private string GetWorkspaceId()
+    {
+        return _workspaceContextAccessor.GetWorkspaceId();
     }
 }

@@ -55,6 +55,7 @@ internal static class SchemaQueries
             default_encryption_key_base64 TEXT NOT NULL,
             downlink_topic TEXT NOT NULL,
             enable_send INTEGER NOT NULL,
+            subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
             is_active INTEGER NOT NULL,
             created_at_utc TEXT NOT NULL
         );
@@ -64,6 +65,14 @@ internal static class SchemaQueries
 
         CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_broker_server_topic_pattern
             ON topic_presets(workspace_id, broker_server, topic_pattern);
+
+        CREATE TABLE IF NOT EXISTS subscription_intents (
+            workspace_id TEXT NOT NULL,
+            broker_server_profile_id TEXT NOT NULL,
+            topic_filter TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, broker_server_profile_id, topic_filter)
+        );
 
         CREATE TABLE IF NOT EXISTS discovered_topics (
             broker_server TEXT NOT NULL,
@@ -238,6 +247,19 @@ internal static class SchemaQueries
         UPDATE broker_server_profiles
         SET workspace_id = @WorkspaceId
         WHERE workspace_id IS NULL OR workspace_id = '';
+        """;
+
+    public static string AddBrokerServerProfilesSubscriptionIntentsInitializedColumn =>
+        """
+        ALTER TABLE broker_server_profiles
+        ADD COLUMN subscription_intents_initialized INTEGER NULL;
+        """;
+
+    public static string BackfillBrokerServerProfilesSubscriptionIntentsInitialized =>
+        """
+        UPDATE broker_server_profiles
+        SET subscription_intents_initialized = COALESCE(subscription_intents_initialized, 0)
+        WHERE subscription_intents_initialized IS NULL;
         """;
 
     public static string DropBrokerServerProfilesLegacyNameIndex =>

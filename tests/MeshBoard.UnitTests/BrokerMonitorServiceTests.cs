@@ -1,4 +1,6 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
@@ -11,27 +13,50 @@ namespace MeshBoard.UnitTests;
 public sealed class BrokerMonitorServiceTests
 {
     [Fact]
-    public async Task SubscribeToTopic_ShouldConnectAndSubscribe_WithTrimmedFilter()
+    public async Task SubscribeToTopic_ShouldPersistIntent_ConnectAndSubscribe_WithTrimmedFilter()
     {
-        var mqttSession = new FakeMqttSession(isConnected: false);
-        var service = CreateService(mqttSession);
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(isConnected: false);
+        var targetProfile = CreateProfile(
+            name: "Default server",
+            host: "mqtt.meshtastic.org",
+            defaultTopicPattern: "msh/US/2/e/LongFast/#");
+        var profileService = new FakeBrokerServerProfileService(targetProfile);
+        var profileRepository = new FakeBrokerServerProfileRepository();
+        var intentRepository = new FakeSubscriptionIntentRepository();
+        var service = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository);
 
         await service.SubscribeToTopic("  msh/US/2/e/LongFast/#  ");
 
-        Assert.Equal(1, mqttSession.ConnectCalls);
+        Assert.Equal(1, brokerSessionManager.ConnectCalls);
         Assert.Equal(
             [
                 "msh/US/2/e/LongFast/#",
                 "msh/US/2/json/LongFast/#"
             ],
-            mqttSession.SubscribedFilters);
+            brokerSessionManager.SubscribedFilters);
+        Assert.Equal(["msh/US/2/e/LongFast/#"], intentRepository.GetStoredTopicFilters(targetProfile.Id));
+        Assert.True(profileRepository.IsInitialized(targetProfile.Id));
     }
 
     [Fact]
-    public async Task UnsubscribeFromTopic_ShouldCallSession_WithTrimmedFilter()
+    public async Task UnsubscribeFromTopic_ShouldRemoveIntent_AndUnsubscribeRuntimeFilters()
     {
-        var mqttSession = new FakeMqttSession(isConnected: true);
-        var service = CreateService(mqttSession);
+        var targetProfile = CreateProfile(
+            name: "Default server",
+            host: "mqtt.meshtastic.org",
+            defaultTopicPattern: "msh/US/2/e/LongFast/#");
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(
+            isConnected: true,
+            [
+                "msh/US/2/e/LongFast/#",
+                "msh/US/2/json/LongFast/#"
+            ]);
+        var profileService = new FakeBrokerServerProfileService(targetProfile);
+        var profileRepository = new FakeBrokerServerProfileRepository();
+        profileRepository.MarkInitialized(targetProfile.Id);
+        var intentRepository = new FakeSubscriptionIntentRepository();
+        intentRepository.AddStoredIntent(targetProfile.Id, "msh/US/2/e/LongFast/#");
+        var service = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository);
 
         await service.UnsubscribeFromTopic("  msh/US/2/e/LongFast/#  ");
 
@@ -40,28 +65,55 @@ public sealed class BrokerMonitorServiceTests
                 "msh/US/2/e/LongFast/#",
                 "msh/US/2/json/LongFast/#"
             ],
-            mqttSession.UnsubscribedFilters);
+            brokerSessionManager.UnsubscribedFilters);
+        Assert.Empty(intentRepository.GetStoredTopicFilters(targetProfile.Id));
     }
 
     [Fact]
     public async Task SubscribeToTopic_ShouldThrowBadRequest_WhenFilterIsMissing()
     {
-        var service = CreateService(new FakeMqttSession(isConnected: true));
+        var service = CreateService(new FakeWorkspaceBrokerSessionManager(isConnected: true));
 
         await Assert.ThrowsAsync<BadRequestException>(() => service.SubscribeToTopic(" "));
     }
 
     [Fact]
+    public async Task SubscribeToEphemeralTopic_ShouldNotPersistIntent()
+    {
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(isConnected: true);
+        var targetProfile = CreateProfile(
+            name: "Default server",
+            host: "mqtt.meshtastic.org",
+            defaultTopicPattern: "msh/US/2/e/LongFast/#");
+        var intentRepository = new FakeSubscriptionIntentRepository();
+        var service = CreateService(
+            brokerSessionManager,
+            new FakeBrokerServerProfileService(targetProfile),
+            new FakeBrokerServerProfileRepository(),
+            intentRepository);
+
+        await service.SubscribeToEphemeralTopic("msh/US/2/e/LongFast/#");
+
+        Assert.Equal(
+            [
+                "msh/US/2/e/LongFast/#",
+                "msh/US/2/json/LongFast/#"
+            ],
+            brokerSessionManager.SubscribedFilters);
+        Assert.Empty(intentRepository.GetStoredTopicFilters(targetProfile.Id));
+    }
+
+    [Fact]
     public void GetBrokerStatus_ShouldNormalizeJsonTopicFilters_ForDisplay()
     {
-        var mqttSession = new FakeMqttSession(
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(
             isConnected: true,
             [
                 "msh/US/2/e/LongFast/#",
                 "msh/US/2/json/LongFast/#",
                 "msh/EU_868/2/json/MediumFast/#"
             ]);
-        var service = CreateService(mqttSession);
+        var service = CreateService(brokerSessionManager);
 
         var status = service.GetBrokerStatus();
 
@@ -74,43 +126,26 @@ public sealed class BrokerMonitorServiceTests
     }
 
     [Fact]
-    public async Task SwitchActiveServerProfile_ShouldResetTopicFilters_AndSubscribeNewDefault()
+    public async Task SwitchActiveServerProfile_ShouldResetTopicFilters_AndSeedDefaultIntent_WhenProfileNotInitialized()
     {
-        var initialProfile = new BrokerServerProfile
-        {
-            Id = Guid.NewGuid(),
-            Name = "EU server",
-            Host = "mqtt.eu",
-            Port = 1883,
-            DefaultTopicPattern = "msh/EU_868/2/e/MediumFast/#",
-            DownlinkTopic = "msh/EU_868/2/json/mqtt/",
-            EnableSend = true,
-            IsActive = true
-        };
-        var targetProfile = new BrokerServerProfile
-        {
-            Id = Guid.NewGuid(),
-            Name = "US server",
-            Host = "mqtt.us",
-            Port = 1883,
-            DefaultTopicPattern = "msh/US/2/e/LongFast/#",
-            DownlinkTopic = "msh/US/2/json/mqtt/",
-            EnableSend = true,
-            IsActive = false
-        };
-        var mqttSession = new FakeMqttSession(
+        var initialProfile = CreateProfile(
+            name: "EU server",
+            host: "mqtt.eu",
+            defaultTopicPattern: "msh/EU_868/2/e/MediumFast/#");
+        var targetProfile = CreateProfile(
+            name: "US server",
+            host: "mqtt.us",
+            defaultTopicPattern: "msh/US/2/e/LongFast/#");
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(
             isConnected: true,
             [
                 "msh/EU_868/2/e/MediumFast/#",
                 "msh/EU_868/2/json/MediumFast/#"
             ]);
         var profileService = new FakeBrokerServerProfileService(initialProfile, targetProfile);
-        var service = new BrokerMonitorService(
-            mqttSession,
-            profileService,
-            Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
-            new FakeBrokerRuntimeRegistry(),
-            NullLogger<BrokerMonitorService>.Instance);
+        var profileRepository = new FakeBrokerServerProfileRepository();
+        var intentRepository = new FakeSubscriptionIntentRepository();
+        var service = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository);
 
         await service.SwitchActiveServerProfile(targetProfile.Id);
 
@@ -119,57 +154,39 @@ public sealed class BrokerMonitorServiceTests
                 "msh/EU_868/2/e/MediumFast/#",
                 "msh/EU_868/2/json/MediumFast/#"
             ],
-            mqttSession.UnsubscribedFilters);
-        Assert.Equal(1, mqttSession.DisconnectCalls);
-        Assert.Equal(1, mqttSession.ConnectCalls);
+            brokerSessionManager.UnsubscribedFilters);
+        Assert.Equal(1, brokerSessionManager.DisconnectCalls);
+        Assert.Equal(1, brokerSessionManager.ConnectCalls);
         Assert.Equal(
             [
                 "msh/US/2/e/#",
                 "msh/US/2/json/#"
             ],
-            mqttSession.SubscribedFilters);
+            brokerSessionManager.SubscribedFilters);
+        Assert.Equal(["msh/US/2/e/#"], intentRepository.GetStoredTopicFilters(targetProfile.Id));
+        Assert.True(profileRepository.IsInitialized(targetProfile.Id));
     }
 
     [Fact]
     public async Task GetBrokerStatus_ShouldReadRuntimeSnapshot_FromSharedRegistryAcrossServiceInstances()
     {
-        var initialProfile = new BrokerServerProfile
-        {
-            Id = Guid.NewGuid(),
-            Name = "EU server",
-            Host = "mqtt.eu",
-            Port = 1883,
-            DefaultTopicPattern = "msh/EU_868/2/e/MediumFast/#",
-            DownlinkTopic = "msh/EU_868/2/json/mqtt/",
-            EnableSend = true,
-            IsActive = true
-        };
-        var targetProfile = new BrokerServerProfile
-        {
-            Id = Guid.NewGuid(),
-            Name = "US server",
-            Host = "mqtt.us",
-            Port = 1883,
-            DefaultTopicPattern = "msh/US/2/e/LongFast/#",
-            DownlinkTopic = "msh/US/2/json/mqtt/",
-            EnableSend = true,
-            IsActive = false
-        };
-        var mqttSession = new FakeMqttSession(isConnected: true);
+        var initialProfile = CreateProfile(
+            name: "EU server",
+            host: "mqtt.eu",
+            defaultTopicPattern: "msh/EU_868/2/e/MediumFast/#");
+        var targetProfile = CreateProfile(
+            name: "US server",
+            host: "mqtt.us",
+            defaultTopicPattern: "msh/US/2/e/LongFast/#");
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(isConnected: true);
         var profileService = new FakeBrokerServerProfileService(initialProfile, targetProfile);
+        var profileRepository = new FakeBrokerServerProfileRepository();
+        profileRepository.MarkInitialized(targetProfile.Id);
+        var intentRepository = new FakeSubscriptionIntentRepository();
+        intentRepository.AddStoredIntent(targetProfile.Id, "msh/US/2/e/LongFast/#");
         var runtimeRegistry = new FakeBrokerRuntimeRegistry();
-        var serviceA = new BrokerMonitorService(
-            mqttSession,
-            profileService,
-            Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
-            runtimeRegistry,
-            NullLogger<BrokerMonitorService>.Instance);
-        var serviceB = new BrokerMonitorService(
-            mqttSession,
-            profileService,
-            Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
-            runtimeRegistry,
-            NullLogger<BrokerMonitorService>.Instance);
+        var serviceA = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository, runtimeRegistry);
+        var serviceB = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository, runtimeRegistry);
 
         await serviceA.SwitchActiveServerProfile(targetProfile.Id);
 
@@ -191,23 +208,16 @@ public sealed class BrokerMonitorServiceTests
                 ActiveServerName = "Already connected runtime",
                 ActiveServerAddress = "mqtt.connected:1883"
             });
-        var activeProfile = new BrokerServerProfile
-        {
-            Id = Guid.NewGuid(),
-            Name = "Different workspace profile",
-            Host = "mqtt.different",
-            Port = 1883,
-            DefaultTopicPattern = "msh/US/2/e/LongFast/#",
-            DownlinkTopic = "msh/US/2/json/mqtt/",
-            EnableSend = true,
-            IsActive = true
-        };
-        var service = new BrokerMonitorService(
-            new FakeMqttSession(isConnected: true),
+        var activeProfile = CreateProfile(
+            name: "Different workspace profile",
+            host: "mqtt.different",
+            defaultTopicPattern: "msh/US/2/e/LongFast/#");
+        var service = CreateService(
+            new FakeWorkspaceBrokerSessionManager(isConnected: true),
             new FakeBrokerServerProfileService(activeProfile),
-            Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
-            runtimeRegistry,
-            NullLogger<BrokerMonitorService>.Instance);
+            new FakeBrokerServerProfileRepository(),
+            new FakeSubscriptionIntentRepository(),
+            runtimeRegistry);
 
         await service.EnsureConnected();
 
@@ -217,25 +227,50 @@ public sealed class BrokerMonitorServiceTests
         Assert.Equal("mqtt.connected:1883", status.ActiveServerAddress);
     }
 
-    private static BrokerMonitorService CreateService(IMqttSession mqttSession)
+    private static BrokerMonitorService CreateService(
+        IWorkspaceBrokerSessionManager brokerSessionManager,
+        FakeBrokerServerProfileService? profileService = null,
+        FakeBrokerServerProfileRepository? profileRepository = null,
+        FakeSubscriptionIntentRepository? intentRepository = null,
+        FakeBrokerRuntimeRegistry? runtimeRegistry = null)
     {
+        var defaultProfile = CreateProfile(
+            name: "Default server",
+            host: "mqtt.meshtastic.org",
+            defaultTopicPattern: "msh/US/2/e/LongFast/#");
+
         return new BrokerMonitorService(
-            mqttSession,
-            new FakeBrokerServerProfileService(
-                new BrokerServerProfile
-                {
-                    Id = Guid.NewGuid(),
-                    Name = "Default server",
-                    Host = "mqtt.meshtastic.org",
-                    Port = 1883,
-                    DefaultTopicPattern = "msh/US/2/e/LongFast/#",
-                    DownlinkTopic = "msh/US/2/json/mqtt/",
-                    EnableSend = true,
-                    IsActive = true
-                }),
+            brokerSessionManager,
+            profileService ?? new FakeBrokerServerProfileService(defaultProfile),
+            profileRepository ?? new FakeBrokerServerProfileRepository(),
+            intentRepository ?? new FakeSubscriptionIntentRepository(),
+            new FakeWorkspaceContextAccessor(),
             Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
-            new FakeBrokerRuntimeRegistry(),
+            runtimeRegistry ?? new FakeBrokerRuntimeRegistry(),
             NullLogger<BrokerMonitorService>.Instance);
+    }
+
+    private static BrokerServerProfile CreateProfile(string name, string host, string defaultTopicPattern)
+    {
+        return new BrokerServerProfile
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Host = host,
+            Port = 1883,
+            DefaultTopicPattern = defaultTopicPattern,
+            DownlinkTopic = "msh/US/2/json/mqtt/",
+            EnableSend = true,
+            IsActive = true
+        };
+    }
+
+    private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
+    {
+        public string GetWorkspaceId()
+        {
+            return "workspace-tests";
+        }
     }
 
     private sealed class FakeBrokerRuntimeRegistry : IBrokerRuntimeRegistry
@@ -267,6 +302,147 @@ public sealed class BrokerMonitorServiceTests
         }
     }
 
+    private sealed class FakeSubscriptionIntentRepository : ISubscriptionIntentRepository
+    {
+        private readonly Dictionary<Guid, HashSet<string>> _topicFiltersByProfile = [];
+
+        public Task<IReadOnlyCollection<SubscriptionIntent>> GetAllAsync(
+            string workspaceId,
+            Guid brokerServerProfileId,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyCollection<SubscriptionIntent> results = GetStoredTopicFilters(brokerServerProfileId)
+                .Select(
+                    topicFilter => new SubscriptionIntent
+                    {
+                        BrokerServerProfileId = brokerServerProfileId,
+                        TopicFilter = topicFilter,
+                        CreatedAtUtc = DateTimeOffset.UtcNow
+                    })
+                .ToList();
+
+            return Task.FromResult(results);
+        }
+
+        public Task<bool> AddAsync(
+            string workspaceId,
+            Guid brokerServerProfileId,
+            string topicFilter,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_topicFiltersByProfile.TryGetValue(brokerServerProfileId, out var topicFilters))
+            {
+                topicFilters = new HashSet<string>(StringComparer.Ordinal);
+                _topicFiltersByProfile[brokerServerProfileId] = topicFilters;
+            }
+
+            return Task.FromResult(topicFilters.Add(topicFilter));
+        }
+
+        public Task<bool> DeleteAsync(
+            string workspaceId,
+            Guid brokerServerProfileId,
+            string topicFilter,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_topicFiltersByProfile.TryGetValue(brokerServerProfileId, out var topicFilters))
+            {
+                return Task.FromResult(false);
+            }
+
+            return Task.FromResult(topicFilters.Remove(topicFilter));
+        }
+
+        public IReadOnlyCollection<string> GetStoredTopicFilters(Guid brokerServerProfileId)
+        {
+            return _topicFiltersByProfile.TryGetValue(brokerServerProfileId, out var topicFilters)
+                ? topicFilters.OrderBy(topicFilter => topicFilter, StringComparer.Ordinal).ToList()
+                : [];
+        }
+
+        public void AddStoredIntent(Guid brokerServerProfileId, string topicFilter)
+        {
+            if (!_topicFiltersByProfile.TryGetValue(brokerServerProfileId, out var topicFilters))
+            {
+                topicFilters = new HashSet<string>(StringComparer.Ordinal);
+                _topicFiltersByProfile[brokerServerProfileId] = topicFilters;
+            }
+
+            topicFilters.Add(topicFilter);
+        }
+    }
+
+    private sealed class FakeBrokerServerProfileRepository : IBrokerServerProfileRepository
+    {
+        private readonly HashSet<Guid> _initializedProfiles = [];
+
+        public Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyCollection<BrokerServerProfile> profiles = [];
+            return Task.FromResult(profiles);
+        }
+
+        public Task<BrokerServerProfile?> GetActiveAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<BrokerServerProfile?>(null);
+        }
+
+        public Task<BrokerServerProfile?> GetByIdAsync(
+            string workspaceId,
+            Guid id,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<BrokerServerProfile?>(null);
+        }
+
+        public Task SetExclusiveActiveAsync(
+            string workspaceId,
+            Guid id,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> AreSubscriptionIntentsInitializedAsync(
+            string workspaceId,
+            Guid id,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_initializedProfiles.Contains(id));
+        }
+
+        public Task MarkSubscriptionIntentsInitializedAsync(
+            string workspaceId,
+            Guid id,
+            CancellationToken cancellationToken = default)
+        {
+            _initializedProfiles.Add(id);
+            return Task.CompletedTask;
+        }
+
+        public Task<BrokerServerProfile> UpsertAsync(
+            string workspaceId,
+            SaveBrokerServerProfileRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public bool IsInitialized(Guid profileId)
+        {
+            return _initializedProfiles.Contains(profileId);
+        }
+
+        public void MarkInitialized(Guid profileId)
+        {
+            _initializedProfiles.Add(profileId);
+        }
+    }
+
     private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
     {
         private BrokerServerProfile _activeProfile;
@@ -292,26 +468,7 @@ public sealed class BrokerMonitorServiceTests
             SaveBrokerServerProfileRequest request,
             CancellationToken cancellationToken = default)
         {
-            _activeProfile = new BrokerServerProfile
-            {
-                Id = request.Id is { } existingId && existingId != Guid.Empty
-                    ? existingId
-                    : Guid.NewGuid(),
-                Name = request.Name,
-                Host = request.Host,
-                Port = request.Port,
-                UseTls = request.UseTls,
-                Username = request.Username,
-                Password = request.Password,
-                DefaultTopicPattern = request.DefaultTopicPattern,
-                DefaultEncryptionKeyBase64 = request.DefaultEncryptionKeyBase64,
-                DownlinkTopic = request.DownlinkTopic,
-                EnableSend = request.EnableSend,
-                IsActive = request.IsActive
-            };
-            _profiles[_activeProfile.Id] = _activeProfile;
-
-            return Task.FromResult(_activeProfile);
+            throw new NotSupportedException();
         }
 
         public Task<BrokerServerProfile> SetActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
@@ -336,61 +493,75 @@ public sealed class BrokerMonitorServiceTests
     }
 
 #pragma warning disable CS0067
-    private sealed class FakeMqttSession : IMqttSession
+    private sealed class FakeWorkspaceBrokerSessionManager : IWorkspaceBrokerSessionManager
     {
         private readonly List<string> _topicFilters;
 
-        public FakeMqttSession(bool isConnected, IEnumerable<string>? topicFilters = null)
+        public FakeWorkspaceBrokerSessionManager(bool isConnected, IEnumerable<string>? topicFilters = null)
         {
-            IsConnected = isConnected;
+            _isConnected = isConnected;
             _topicFilters = topicFilters?.ToList() ?? [];
         }
+
+        private bool _isConnected;
 
         public int ConnectCalls { get; private set; }
 
         public int DisconnectCalls { get; private set; }
 
-        public bool IsConnected { get; private set; }
-
-        public string? LastStatusMessage => null;
-
         public List<string> SubscribedFilters { get; } = [];
 
         public List<string> UnsubscribedFilters { get; } = [];
 
-        public IReadOnlyCollection<string> TopicFilters => _topicFilters.ToList();
-
-        public event Func<bool, Task>? ConnectionStateChanged;
-
         public event Func<MqttInboundMessage, Task>? MessageReceived;
 
-        public Task ConnectAsync(CancellationToken cancellationToken = default)
+        public bool IsConnected(string workspaceId)
+        {
+            return _isConnected;
+        }
+
+        public string? GetLastStatusMessage(string workspaceId)
+        {
+            return null;
+        }
+
+        public IReadOnlyCollection<string> GetTopicFilters(string workspaceId)
+        {
+            return _topicFilters.ToList();
+        }
+
+        public Task ConnectAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             ConnectCalls++;
-            IsConnected = true;
+            _isConnected = true;
             return Task.CompletedTask;
         }
 
-        public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        public Task DisconnectAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             DisconnectCalls++;
-            IsConnected = false;
+            _isConnected = false;
             return Task.CompletedTask;
         }
 
-        public Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)
+        public Task PublishAsync(string workspaceId, string topic, string payload, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task SubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
         {
             SubscribedFilters.Add(topicFilter);
-            _topicFilters.Add(topicFilter);
+
+            if (!_topicFilters.Contains(topicFilter, StringComparer.Ordinal))
+            {
+                _topicFilters.Add(topicFilter);
+            }
+
             return Task.CompletedTask;
         }
 
-        public Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task UnsubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
         {
             UnsubscribedFilters.Add(topicFilter);
             _topicFilters.RemoveAll(filter => string.Equals(filter, topicFilter, StringComparison.Ordinal));

@@ -242,6 +242,13 @@ internal sealed class SqliteDatabaseInitializer
             SchemaQueries.AddBrokerServerProfilesWorkspaceIdColumn,
             cancellationToken);
 
+        await EnsureColumnAsync(
+            connection,
+            columns,
+            "subscription_intents_initialized",
+            SchemaQueries.AddBrokerServerProfilesSubscriptionIntentsInitializedColumn,
+            cancellationToken);
+
         await connection.ExecuteAsync(
             new CommandDefinition(
                 SchemaQueries.BackfillBrokerServerProfilesWorkspaceId,
@@ -249,6 +256,11 @@ internal sealed class SqliteDatabaseInitializer
                 {
                     WorkspaceId = WorkspaceConstants.DefaultWorkspaceId
                 },
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.BackfillBrokerServerProfilesSubscriptionIntentsInitialized,
                 cancellationToken: cancellationToken));
 
         await connection.ExecuteAsync(
