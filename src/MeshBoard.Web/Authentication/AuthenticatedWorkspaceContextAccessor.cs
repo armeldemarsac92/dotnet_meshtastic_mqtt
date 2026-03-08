@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Authentication;
-using MeshBoard.Contracts.Workspaces;
 using Microsoft.AspNetCore.Components.Authorization;
 
 namespace MeshBoard.Web.Authentication;
@@ -21,9 +20,9 @@ internal sealed class AuthenticatedWorkspaceContextAccessor : IWorkspaceContextA
 
     public string GetWorkspaceId()
     {
-        return ResolveWorkspaceId(_httpContextAccessor.HttpContext?.User) ??
-            ResolveWorkspaceId(TryGetAuthenticationStateUser()) ??
-            WorkspaceConstants.DefaultWorkspaceId;
+        return WorkspacePrincipalResolver.ResolveWorkspaceId(_httpContextAccessor.HttpContext?.User) ??
+            WorkspacePrincipalResolver.ResolveWorkspaceId(TryGetAuthenticationStateUser()) ??
+            throw new InvalidOperationException("No authenticated workspace context is available for the current request.");
     }
 
     private ClaimsPrincipal? TryGetAuthenticationStateUser()
@@ -43,14 +42,4 @@ internal sealed class AuthenticatedWorkspaceContextAccessor : IWorkspaceContextA
         }
     }
 
-    private static string? ResolveWorkspaceId(ClaimsPrincipal? user)
-    {
-        if (user?.Identity?.IsAuthenticated != true)
-        {
-            return null;
-        }
-
-        return user.FindFirstValue(MeshBoardClaimTypes.WorkspaceId) ??
-            user.FindFirstValue(ClaimTypes.NameIdentifier);
-    }
 }

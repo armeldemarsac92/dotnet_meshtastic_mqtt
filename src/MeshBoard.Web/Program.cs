@@ -6,7 +6,9 @@ using MeshBoard.Web.Authentication;
 using MeshBoard.Web.Components;
 using MeshBoard.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Components.Server.Circuits;
+using MeshBoard.Contracts.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +24,19 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.AccessDeniedPath = "/login";
         options.ExpireTimeSpan = TimeSpan.FromDays(14);
         options.SlidingExpiration = true;
+        options.Events = new CookieAuthenticationEvents
+        {
+            OnValidatePrincipal = async context =>
+            {
+                if (WorkspacePrincipalResolver.ResolveWorkspaceId(context.Principal) is not null)
+                {
+                    return;
+                }
+
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            }
+        };
     });
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<IWorkspaceContextAccessor, AuthenticatedWorkspaceContextAccessor>();
