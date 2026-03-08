@@ -10,7 +10,7 @@ const DEFAULT_CAMERA = {
     height: 22000000
 };
 const HOVER_LINK_LIMIT = 18;
-const HOVER_CLEAR_DELAY_MS = 45;
+const HOVER_CLEAR_DELAY_MS = 0;
 const MAX_RENDER_RESOLUTION_SCALE = 2;
 const NODE_ENTITY_PREFIX = "node:";
 const LIGHT_BASEMAP_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer";
