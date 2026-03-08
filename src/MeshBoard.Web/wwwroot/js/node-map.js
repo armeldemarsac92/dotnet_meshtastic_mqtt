@@ -136,7 +136,12 @@ async function createViewer(container) {
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#f2f5f9");
     viewer.scene.globe.enableLighting = false;
     viewer.scene.globe.showGroundAtmosphere = false;
+    if (viewer.scene.skyBox) {
+        viewer.scene.skyBox.show = false;
+    }
     viewer.scene.skyAtmosphere.show = false;
+    viewer.scene.sun.show = false;
+    viewer.scene.moon.show = false;
     viewer.scene.fog.enabled = false;
     viewer.scene.requestRenderMode = true;
     viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
