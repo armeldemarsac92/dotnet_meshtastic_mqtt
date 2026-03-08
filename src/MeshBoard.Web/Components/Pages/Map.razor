@@ -14,7 +14,7 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
         </div>
         <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
-            Browse all observed nodes with coordinates. Click a marker to open node details.
+            Browse all observed nodes on a 3D globe. Click a node to open details, hover to reveal its shared-channel cohort, and watch for echo rings when traffic is heard.
         </p>
     </header>
 
@@ -71,6 +71,9 @@
     private bool _isMapRenderPending;
     private IJSObjectReference? _mapModule;
     private int _locatedNodeCount;
+    private readonly HashSet<string> _pendingActivityNodeIds = new(StringComparer.Ordinal);
+    private IReadOnlyCollection<string> _activityNodeIds = [];
+    private bool _shouldFitMapToNodes = true;
     private int _refreshRequestVersion;
     private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private CancellationTokenSource? _searchDebounceCancellationTokenSource;
@@ -146,6 +149,11 @@
             return Task.CompletedTask;
         }
 
+        if (!string.IsNullOrWhiteSpace(change.EntityKey))
+        {
+            _pendingActivityNodeIds.Add(change.EntityKey);
+        }
+
         return ScheduleRealtimeRefreshAsync();
     }
 
@@ -166,7 +174,7 @@
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await RefreshNodesAsync();
+            await RefreshNodesAsync(fitMapToNodes: false);
         }
         catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
         {
@@ -242,6 +250,11 @@
 
     private async Task RefreshNodesAsync()
     {
+        await RefreshNodesAsync(fitMapToNodes: true);
+    }
+
+    private async Task RefreshNodesAsync(bool fitMapToNodes)
+    {
         var requestVersion = ++_refreshRequestVersion;
         var normalizedSearchText = _searchText.Trim();
         _isLoading = true;
@@ -261,6 +274,9 @@
             _nodesWithLocation = nodes;
             _locatedNodeCount = _nodesWithLocation.Count;
             ApplyMapPoints();
+            _shouldFitMapToNodes = fitMapToNodes;
+            _activityNodeIds = _pendingActivityNodeIds.Count == 0 ? [] : _pendingActivityNodeIds.ToArray();
+            _pendingActivityNodeIds.Clear();
             _statusMessage = string.IsNullOrWhiteSpace(normalizedSearchText)
                 ? $"Loaded {_locatedNodeCount} nodes with coordinates."
                 : $"Loaded {_locatedNodeCount} matching nodes with coordinates.";
@@ -278,6 +294,7 @@
             _nodesWithLocation = [];
             _visibleMapNodes = [];
             _locatedNodeCount = 0;
+            _activityNodeIds = [];
             _statusMessage = $"Map load failed: {exception.Message}";
             _isMapRenderPending = true;
         }
@@ -318,7 +335,12 @@
             "renderNodeMap",
             MapElementId,
             _visibleMapNodes,
+            _activityNodeIds,
+            _shouldFitMapToNodes,
             _mapCallbackReference);
+
+        _activityNodeIds = [];
+        _shouldFitMapToNodes = false;
     }
 
     private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)
