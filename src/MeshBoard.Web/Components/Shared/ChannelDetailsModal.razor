@@ -1,6 +1,6 @@
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IBrokerServerProfileService BrokerServerProfileService
-@inject IChannelReadService ChannelReadService
+@inject ICachedChannelDetailService CachedChannelDetailService
 @inject ITopicPresetService TopicPresetService
 
 @if (IsOpen)
@@ -279,8 +279,8 @@
 
         try
         {
-            var channelSummaryTask = ChannelReadService.GetChannelSummary(Region, Channel);
-            var topNodesTask = ChannelReadService.GetTopNodesByChannel(Region, Channel, 12);
+            var channelSummaryTask = CachedChannelDetailService.GetChannelSummary(Region, Channel);
+            var topNodesTask = CachedChannelDetailService.GetTopNodesByChannel(Region, Channel, 12);
             var messagesTask = LoadMessagesPageAsync();
             var presetsTask = TopicPresetService.GetTopicPresets();
             var activeServerTask = BrokerServerProfileService.GetActiveServerProfile();
@@ -323,7 +323,7 @@
 
         try
         {
-            var page = await ChannelReadService.GetMessagesPageByChannel(
+            var page = await CachedChannelDetailService.GetMessagesPageByChannel(
                 Region,
                 Channel,
                 offset: (_currentMessagesPage - 1) * MessagesPageSize,
@@ -332,7 +332,7 @@
             if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
             {
                 _currentMessagesPage = GetLastMessagesPageNumber(page.TotalCount);
-                page = await ChannelReadService.GetMessagesPageByChannel(
+                page = await CachedChannelDetailService.GetMessagesPageByChannel(
                     Region,
                     Channel,
                     offset: (_currentMessagesPage - 1) * MessagesPageSize,

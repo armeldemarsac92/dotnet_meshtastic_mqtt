@@ -1,6 +1,5 @@
 @page "/nodes/details/{NodeId}"
-@inject IMessageService MessageService
-@inject INodeService NodeService
+@inject ICachedNodeDetailService CachedNodeDetailService
 
 <PageTitle>Node Details</PageTitle>
 
@@ -163,7 +162,7 @@
     protected override async Task OnParametersSetAsync()
     {
         _currentMessagesPage = 1;
-        _node = await NodeService.GetNodeById(NodeId);
+        _node = await CachedNodeDetailService.GetNodeById(NodeId);
 
         if (_node is null)
         {
@@ -188,7 +187,7 @@
 
         try
         {
-            var page = await MessageService.GetMessagesPageBySender(
+            var page = await CachedNodeDetailService.GetMessagesPageBySender(
                 _node.NodeId,
                 offset: (_currentMessagesPage - 1) * MessagesPageSize,
                 take: MessagesPageSize);
@@ -196,7 +195,7 @@
             if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
             {
                 _currentMessagesPage = GetLastMessagesPageNumber(page.TotalCount);
-                page = await MessageService.GetMessagesPageBySender(
+                page = await CachedNodeDetailService.GetMessagesPageBySender(
                     _node.NodeId,
                     offset: (_currentMessagesPage - 1) * MessagesPageSize,
                     take: MessagesPageSize);

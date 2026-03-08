@@ -101,9 +101,21 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
                 _readModelCacheInvalidator.Invalidate(
                     change.WorkspaceId,
                     ReadModelCacheRegion.Dashboard,
-                    ReadModelCacheRegion.MessagePages);
+                    ReadModelCacheRegion.MessagePages,
+                    ReadModelCacheRegion.NodeDetails,
+                    ReadModelCacheRegion.ChannelDetails);
                 break;
             case ProjectionChangeKind.NodeUpdated:
+                _readModelCacheInvalidator.Invalidate(
+                    change.WorkspaceId,
+                    ReadModelCacheRegion.Dashboard,
+                    ReadModelCacheRegion.NodeDetails);
+                break;
+            case ProjectionChangeKind.ChannelSummaryUpdated:
+                _readModelCacheInvalidator.Invalidate(
+                    change.WorkspaceId,
+                    ReadModelCacheRegion.ChannelDetails);
+                break;
             case ProjectionChangeKind.RuntimeStatusChanged:
                 _readModelCacheInvalidator.Invalidate(
                     change.WorkspaceId,

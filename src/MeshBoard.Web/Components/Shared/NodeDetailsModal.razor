@@ -1,5 +1,4 @@
-@inject IMessageService MessageService
-@inject INodeService NodeService
+@inject ICachedNodeDetailService CachedNodeDetailService
 @inject IFavoriteNodeService FavoriteNodeService
 
 @if (IsOpen)
@@ -252,7 +251,7 @@
 
         try
         {
-            var nodeTask = NodeService.GetNodeById(NodeId);
+            var nodeTask = CachedNodeDetailService.GetNodeById(NodeId);
             var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes();
 
             await Task.WhenAll(nodeTask, favoriteNodesTask);
@@ -300,7 +299,7 @@
 
         try
         {
-            var page = await MessageService.GetMessagesPageBySender(
+            var page = await CachedNodeDetailService.GetMessagesPageBySender(
                 _node.NodeId,
                 offset: (_currentMessagesPage - 1) * MessagesPageSize,
                 take: MessagesPageSize);
@@ -308,7 +307,7 @@
             if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
             {
                 _currentMessagesPage = GetLastMessagesPageNumber(page.TotalCount);
-                page = await MessageService.GetMessagesPageBySender(
+                page = await CachedNodeDetailService.GetMessagesPageBySender(
                     _node.NodeId,
                     offset: (_currentMessagesPage - 1) * MessagesPageSize,
                     take: MessagesPageSize);

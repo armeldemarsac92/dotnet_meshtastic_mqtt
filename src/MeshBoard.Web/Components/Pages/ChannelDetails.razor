@@ -1,6 +1,6 @@
 @page "/channels/{Region}/{Channel}"
 @inject IBrokerMonitorService BrokerMonitorService
-@inject IChannelReadService ChannelReadService
+@inject ICachedChannelDetailService CachedChannelDetailService
 
 <PageTitle>Channel Details</PageTitle>
 
@@ -191,8 +191,8 @@
 
     private async Task LoadAsync()
     {
-        var summaryTask = ChannelReadService.GetChannelSummary(Region, Channel);
-        var topNodesTask = ChannelReadService.GetTopNodesByChannel(Region, Channel, 12);
+        var summaryTask = CachedChannelDetailService.GetChannelSummary(Region, Channel);
+        var topNodesTask = CachedChannelDetailService.GetTopNodesByChannel(Region, Channel, 12);
         var messagesTask = LoadMessagesPageAsync();
 
         await Task.WhenAll(summaryTask, topNodesTask, messagesTask);
@@ -208,7 +208,7 @@
 
         try
         {
-            var page = await ChannelReadService.GetMessagesPageByChannel(
+            var page = await CachedChannelDetailService.GetMessagesPageByChannel(
                 Region,
                 Channel,
                 offset: (_currentMessagesPage - 1) * MessagesPageSize,
@@ -217,7 +217,7 @@
             if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
             {
                 _currentMessagesPage = GetLastMessagesPageNumber(page.TotalCount);
-                page = await ChannelReadService.GetMessagesPageByChannel(
+                page = await CachedChannelDetailService.GetMessagesPageByChannel(
                     Region,
                     Channel,
                     offset: (_currentMessagesPage - 1) * MessagesPageSize,

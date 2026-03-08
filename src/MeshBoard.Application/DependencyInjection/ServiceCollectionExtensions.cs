@@ -22,7 +22,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();
         services.AddScoped<IBrokerRuntimeCommandQueryService, BrokerRuntimeCommandQueryService>();
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
+        services.AddScoped<ICachedChannelDetailService, CachedChannelDetailService>();
         services.AddScoped<ICachedMessagePageService, CachedMessagePageService>();
+        services.AddScoped<ICachedNodeDetailService, CachedNodeDetailService>();
         services.AddScoped<IChannelReadService, ChannelReadService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
         services.AddScoped<IHomeDashboardService, HomeDashboardService>();
