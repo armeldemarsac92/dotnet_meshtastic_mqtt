@@ -77,6 +77,60 @@
             <p class="text-[0.72rem] text-cinder-800/64">
                 Hover links show shared-channel cohorts, not proven radio paths.
             </p>
+
+            <div class="liquid-subpanel space-y-3 rounded-2xl p-3">
+                <div class="space-y-1">
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Focused node</p>
+
+                    @if (_hoveredMapNode is null)
+                    {
+                        <p class="text-xs text-cinder-800/70">Hover a node on the globe to inspect its active channel cohort.</p>
+                    }
+                    else
+                    {
+                        <div class="space-y-1">
+                            <p class="text-sm font-semibold text-cinder-950">@_hoveredMapNode.DisplayName</p>
+                            <p class="break-words text-[0.72rem] text-cinder-800/72">@_hoveredMapNode.NodeId</p>
+                        </div>
+
+                        <dl class="grid gap-2 text-[0.72rem] text-cinder-800/78 sm:grid-cols-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Channel</dt>
+                                <dd class="mt-1 break-words text-cinder-950">@(_hoveredMapNode.Channel ?? "Unknown")</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Visible peers</dt>
+                                <dd class="mt-1 text-cinder-950">@_hoveredNodePeerCount</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Battery</dt>
+                                <dd class="mt-1 text-cinder-950">@(_hoveredMapNode.BatteryLevelPercent?.ToString() ?? "Unknown")</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Coordinates</dt>
+                                <dd class="mt-1 text-cinder-950">@GetCoordinateText(_hoveredMapNode)</dd>
+                            </div>
+                        </dl>
+
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button"
+                                    class="liquid-inline-action liquid-inline-action-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                    @onclick="() => OpenNodeDetailsAsync(_hoveredMapNode.NodeId)">
+                                Open node
+                            </button>
+
+                            @if (!string.IsNullOrWhiteSpace(_hoveredMapNode.Channel))
+                            {
+                                <button type="button"
+                                        class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="() => OpenChannelDetailsAsync(_hoveredMapNode.Channel!)">
+                                    Open channel
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
         </div>
     </section>
 
@@ -115,6 +169,9 @@
     private CancellationTokenSource? _searchDebounceCancellationTokenSource;
     private string _searchText = string.Empty;
     private string? _selectedChannel;
+    private string? _hoveredMapNodeId;
+    private MapNodePoint? _hoveredMapNode;
+    private int _hoveredNodePeerCount;
     private string? _selectedNodeId;
     private string? _selectedRegion;
     private string? _statusMessage;
@@ -175,6 +232,14 @@
     public async Task OnNodeSelectedFromMap(string nodeId)
     {
         _selectedNodeId = nodeId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnNodeHoveredFromMap(string? nodeId)
+    {
+        _hoveredMapNodeId = string.IsNullOrWhiteSpace(nodeId) ? null : nodeId;
+        RefreshHoveredMapNode();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -342,6 +407,9 @@
             _activityPulses = [];
             _channelLegendEntries = [];
             _hiddenChannelLegendCount = 0;
+            _hoveredMapNode = null;
+            _hoveredMapNodeId = null;
+            _hoveredNodePeerCount = 0;
             _statusMessage = $"Map load failed: {exception.Message}";
             _isMapRenderPending = true;
         }
@@ -371,6 +439,7 @@
             .ToList();
 
         ApplyChannelLegend();
+        RefreshHoveredMapNode();
         _isMapRenderPending = true;
     }
 
@@ -438,6 +507,34 @@
         return string.IsNullOrWhiteSpace(_searchText)
             ? $"Showing {_visibleMapNodes.Count} located nodes."
             : $"Showing {_visibleMapNodes.Count} matching located nodes.";
+    }
+
+    private void RefreshHoveredMapNode()
+    {
+        if (string.IsNullOrWhiteSpace(_hoveredMapNodeId))
+        {
+            _hoveredMapNode = null;
+            _hoveredNodePeerCount = 0;
+            return;
+        }
+
+        _hoveredMapNode = _visibleMapNodes.FirstOrDefault(node =>
+            string.Equals(node.NodeId, _hoveredMapNodeId, StringComparison.Ordinal));
+
+        if (_hoveredMapNode is null || string.IsNullOrWhiteSpace(_hoveredMapNode.Channel))
+        {
+            _hoveredNodePeerCount = 0;
+            return;
+        }
+
+        _hoveredNodePeerCount = _visibleMapNodes.Count(node =>
+            !string.Equals(node.NodeId, _hoveredMapNode.NodeId, StringComparison.Ordinal) &&
+            string.Equals(node.Channel, _hoveredMapNode.Channel, StringComparison.Ordinal));
+    }
+
+    private static string GetCoordinateText(MapNodePoint node)
+    {
+        return $"{node.Latitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}, {node.Longitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}";
     }
 
     private static string GetChannelColorCss(string channel)

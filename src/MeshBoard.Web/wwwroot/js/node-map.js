@@ -174,6 +174,7 @@ function wireInteractions(mapState) {
 
         mapState.hoveredNodeId = nodeId;
         syncHoverState(mapState);
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", nodeId);
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
     handler.setInputAction((movement) => {
