@@ -6,7 +6,9 @@ internal static class MessageQueries
         """
         SELECT COUNT(1)
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
         """;
 
     public static string SelectMessagesPage =>
@@ -24,7 +26,9 @@ internal static class MessageQueries
             mh.is_private AS IsPrivate,
             mh.received_at_utc AS ReceivedAtUtc
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
         """;
 
     public static string DeleteMessagesOlderThan =>
@@ -48,8 +52,11 @@ internal static class MessageQueries
             mh.is_private AS IsPrivate,
             mh.received_at_utc AS ReceivedAtUtc
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
-        ORDER BY mh.rowid DESC
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
+        WHERE mh.workspace_id = @WorkspaceId
+        ORDER BY mh.received_at_utc DESC, mh.id DESC
         LIMIT @Take;
         """;
 
@@ -68,9 +75,12 @@ internal static class MessageQueries
             mh.is_private AS IsPrivate,
             mh.received_at_utc AS ReceivedAtUtc
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
-        WHERE COALESCE(mh.broker_server, 'unknown') = @BrokerServer
-        ORDER BY mh.rowid DESC
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
+        WHERE mh.workspace_id = @WorkspaceId
+          AND COALESCE(mh.broker_server, 'unknown') = @BrokerServer
+        ORDER BY mh.received_at_utc DESC, mh.id DESC
         LIMIT @Take;
         """;
 
@@ -87,16 +97,22 @@ internal static class MessageQueries
             MAX(mh.received_at_utc) AS LastSeenAtUtc,
             GROUP_CONCAT(DISTINCT COALESCE(mh.broker_server, 'unknown')) AS BrokerServersCsv
         FROM message_history mh
-        WHERE mh.topic LIKE @EncryptedTopicPattern
-           OR mh.topic LIKE @JsonTopicPattern;
+        WHERE mh.workspace_id = @WorkspaceId
+          AND (
+              mh.topic LIKE @EncryptedTopicPattern
+              OR mh.topic LIKE @JsonTopicPattern
+          );
         """;
 
     public static string CountMessagesByChannel =>
         """
         SELECT COUNT(1)
         FROM message_history mh
-        WHERE mh.topic LIKE @EncryptedTopicPattern
-           OR mh.topic LIKE @JsonTopicPattern;
+        WHERE mh.workspace_id = @WorkspaceId
+          AND (
+              mh.topic LIKE @EncryptedTopicPattern
+              OR mh.topic LIKE @JsonTopicPattern
+          );
         """;
 
     public static string GetTopNodesByChannel =>
@@ -106,9 +122,14 @@ internal static class MessageQueries
             COALESCE(NULLIF(n.short_name, ''), NULLIF(n.long_name, ''), mh.from_node_id) AS DisplayName,
             COUNT(1) AS PacketCount
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
-        WHERE mh.topic LIKE @EncryptedTopicPattern
-           OR mh.topic LIKE @JsonTopicPattern
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
+        WHERE mh.workspace_id = @WorkspaceId
+          AND (
+              mh.topic LIKE @EncryptedTopicPattern
+              OR mh.topic LIKE @JsonTopicPattern
+          )
         GROUP BY
             mh.from_node_id,
             COALESCE(NULLIF(n.short_name, ''), NULLIF(n.long_name, ''), mh.from_node_id)
@@ -133,9 +154,14 @@ internal static class MessageQueries
             mh.is_private AS IsPrivate,
             mh.received_at_utc AS ReceivedAtUtc
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
-        WHERE mh.topic LIKE @EncryptedTopicPattern
-           OR mh.topic LIKE @JsonTopicPattern
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
+        WHERE mh.workspace_id = @WorkspaceId
+          AND (
+              mh.topic LIKE @EncryptedTopicPattern
+              OR mh.topic LIKE @JsonTopicPattern
+          )
         ORDER BY mh.received_at_utc DESC, mh.id DESC
         LIMIT @Take OFFSET @Offset;
         """;
@@ -155,9 +181,14 @@ internal static class MessageQueries
             mh.is_private AS IsPrivate,
             mh.received_at_utc AS ReceivedAtUtc
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
-        WHERE mh.topic LIKE @EncryptedTopicPattern
-           OR mh.topic LIKE @JsonTopicPattern
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
+        WHERE mh.workspace_id = @WorkspaceId
+          AND (
+              mh.topic LIKE @EncryptedTopicPattern
+              OR mh.topic LIKE @JsonTopicPattern
+          )
         ORDER BY mh.received_at_utc DESC
         LIMIT @Take;
         """;
@@ -177,9 +208,12 @@ internal static class MessageQueries
             mh.is_private AS IsPrivate,
             mh.received_at_utc AS ReceivedAtUtc
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
-        WHERE mh.from_node_id = @SenderNodeId
-        ORDER BY mh.rowid DESC
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
+        WHERE mh.workspace_id = @WorkspaceId
+          AND mh.from_node_id = @SenderNodeId
+        ORDER BY mh.received_at_utc DESC, mh.id DESC
         LIMIT @Take;
         """;
 
@@ -187,7 +221,8 @@ internal static class MessageQueries
         """
         SELECT COUNT(1)
         FROM message_history mh
-        WHERE mh.from_node_id = @SenderNodeId;
+        WHERE mh.workspace_id = @WorkspaceId
+          AND mh.from_node_id = @SenderNodeId;
         """;
 
     public static string GetMessagesPageBySender =>
@@ -205,8 +240,11 @@ internal static class MessageQueries
             mh.is_private AS IsPrivate,
             mh.received_at_utc AS ReceivedAtUtc
         FROM message_history mh
-        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
-        WHERE mh.from_node_id = @SenderNodeId
+        LEFT JOIN nodes n
+            ON n.workspace_id = mh.workspace_id
+           AND n.node_id = mh.from_node_id
+        WHERE mh.workspace_id = @WorkspaceId
+          AND mh.from_node_id = @SenderNodeId
         ORDER BY mh.received_at_utc DESC, mh.id DESC
         LIMIT @Take OFFSET @Offset;
         """;
@@ -215,6 +253,7 @@ internal static class MessageQueries
         """
         INSERT INTO message_history (
             id,
+            workspace_id,
             broker_server,
             topic,
             packet_type,
@@ -226,6 +265,7 @@ internal static class MessageQueries
             received_at_utc)
         VALUES (
             @Id,
+            @WorkspaceId,
             COALESCE(NULLIF(@BrokerServer, ''), 'unknown'),
             @Topic,
             @PacketType,
@@ -235,7 +275,7 @@ internal static class MessageQueries
             @PayloadPreview,
             @IsPrivate,
             @ReceivedAtUtc)
-        ON CONFLICT(message_key) DO UPDATE SET
+        ON CONFLICT(workspace_id, message_key) DO UPDATE SET
             broker_server = excluded.broker_server,
             topic = excluded.topic,
             packet_type = excluded.packet_type,

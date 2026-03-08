@@ -13,6 +13,7 @@ public interface ITopicDiscoveryService
         string topicValue,
         DateTimeOffset observedAtUtc,
         string? brokerServer = null,
+        string? workspaceId = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -52,6 +53,7 @@ public sealed class TopicDiscoveryService : ITopicDiscoveryService
         string topicValue,
         DateTimeOffset observedAtUtc,
         string? brokerServer = null,
+        string? workspaceId = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(topicValue))
@@ -70,13 +72,15 @@ public sealed class TopicDiscoveryService : ITopicDiscoveryService
 
         _logger.LogDebug("Recording discovered topic {TopicPattern}", discoveredTopic.TopicPattern);
 
-        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
+        var resolvedWorkspaceId = string.IsNullOrWhiteSpace(workspaceId)
+            ? _workspaceContextAccessor.GetWorkspaceId()
+            : workspaceId.Trim();
         var resolvedBrokerServer = string.IsNullOrWhiteSpace(brokerServer)
             ? await ResolveActiveServerAddress(cancellationToken)
             : brokerServer.Trim();
 
         await _discoveredTopicRepository.UpsertAsync(
-            workspaceId,
+            resolvedWorkspaceId,
             resolvedBrokerServer,
             discoveredTopic.TopicPattern,
             discoveredTopic.Region,

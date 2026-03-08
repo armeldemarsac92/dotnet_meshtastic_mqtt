@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Persistence.Context;
@@ -15,16 +16,22 @@ internal sealed class MessageRepository : IMessageRepository
 
     private readonly IDbContext _dbContext;
     private readonly ILogger<MessageRepository> _logger;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
-    public MessageRepository(IDbContext dbContext, ILogger<MessageRepository> logger)
+    public MessageRepository(
+        IDbContext dbContext,
+        IWorkspaceContextAccessor workspaceContextAccessor,
+        ILogger<MessageRepository> logger)
     {
         _dbContext = dbContext;
+        _workspaceContextAccessor = workspaceContextAccessor;
         _logger = logger;
     }
 
     public async Task<bool> AddAsync(SaveObservedMessageRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Attempting to add observed message from node: {NodeId}", request.FromNodeId);
+        request.WorkspaceId = ResolveWorkspaceId(request.WorkspaceId);
 
         var rowsAffected = await _dbContext.ExecuteAsync(
             MessageQueries.InsertMessage,
@@ -64,7 +71,11 @@ internal sealed class MessageRepository : IMessageRepository
 
         return _dbContext.QueryFirstOrDefaultAsync<int>(
             MessageQueries.CountMessagesBySender,
-            new { SenderNodeId = senderNodeId },
+            new
+            {
+                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
+                SenderNodeId = senderNodeId
+            },
             cancellationToken);
     }
 
@@ -101,7 +112,11 @@ internal sealed class MessageRepository : IMessageRepository
 
         var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             MessageQueries.GetRecentMessages,
-            new { Take = take },
+            new
+            {
+                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
+                Take = take
+            },
             cancellationToken);
 
         return sqlResponses.MapToMessages();
@@ -121,6 +136,7 @@ internal sealed class MessageRepository : IMessageRepository
             MessageQueries.GetRecentMessagesByBroker,
             new
             {
+                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 BrokerServer = brokerServer,
                 Take = take
             },
@@ -240,6 +256,7 @@ internal sealed class MessageRepository : IMessageRepository
             MessageQueries.GetRecentMessagesByChannel,
             new
             {
+                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 EncryptedTopicPattern = CreateChannelTopicPattern(region, channel, "e"),
                 JsonTopicPattern = CreateChannelTopicPattern(region, channel, "json"),
                 Take = take
@@ -263,6 +280,7 @@ internal sealed class MessageRepository : IMessageRepository
             MessageQueries.GetRecentMessagesBySender,
             new
             {
+                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 SenderNodeId = senderNodeId,
                 Take = take
             },
@@ -287,6 +305,7 @@ internal sealed class MessageRepository : IMessageRepository
             MessageQueries.GetMessagesPageBySender,
             new
             {
+                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 SenderNodeId = senderNodeId,
                 Offset = offset,
                 Take = take
@@ -301,17 +320,18 @@ internal sealed class MessageRepository : IMessageRepository
         return $"msh/{region}/%/{transport}/{channel}/%";
     }
 
-    private static object CreateChannelQueryParameters(string region, string channel, int? take = null)
+    private object CreateChannelQueryParameters(string region, string channel, int? take = null)
     {
         return new
         {
+            WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
             EncryptedTopicPattern = CreateChannelTopicPattern(region, channel, "e"),
             JsonTopicPattern = CreateChannelTopicPattern(region, channel, "json"),
             Take = take
         };
     }
 
-    private static object CreateChannelQueryParameters(
+    private object CreateChannelQueryParameters(
         string region,
         string channel,
         int? take,
@@ -319,6 +339,7 @@ internal sealed class MessageRepository : IMessageRepository
     {
         return new
         {
+            WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
             EncryptedTopicPattern = CreateChannelTopicPattern(region, channel, "e"),
             JsonTopicPattern = CreateChannelTopicPattern(region, channel, "json"),
             Take = take,
@@ -360,7 +381,7 @@ internal sealed class MessageRepository : IMessageRepository
     {
         var sqlBuilder = new System.Text.StringBuilder(baseSql)
             .AppendLine()
-            .AppendLine("WHERE 1 = 1");
+            .AppendLine("WHERE mh.workspace_id = @WorkspaceId");
 
         if (!string.IsNullOrWhiteSpace(query.BrokerServer))
         {
@@ -413,18 +434,26 @@ internal sealed class MessageRepository : IMessageRepository
         return sqlBuilder.ToString();
     }
 
-    private static Dapper.DynamicParameters CreateQueryParameters(MessageQuery query)
+    private Dapper.DynamicParameters CreateQueryParameters(MessageQuery query)
     {
         var parameters = new Dapper.DynamicParameters();
         var normalizedBrokerServer = query.BrokerServer.Trim();
         var normalizedPacketType = query.PacketType.Trim();
         var normalizedSearchText = query.SearchText.Trim();
 
+        parameters.Add("WorkspaceId", _workspaceContextAccessor.GetWorkspaceId());
         parameters.Add("BrokerServer", normalizedBrokerServer);
         parameters.Add("PacketType", normalizedPacketType);
         parameters.Add("SearchPattern", $"%{normalizedSearchText}%");
         parameters.Add("OpaquePacketTypes", OpaquePacketTypes);
 
         return parameters;
+    }
+
+    private string ResolveWorkspaceId(string? workspaceId)
+    {
+        return string.IsNullOrWhiteSpace(workspaceId)
+            ? _workspaceContextAccessor.GetWorkspaceId()
+            : workspaceId.Trim();
     }
 }

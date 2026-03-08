@@ -47,6 +47,26 @@ public sealed class TopicDiscoveryServiceTests
         Assert.Equal(0, repository.UpsertCount);
     }
 
+    [Fact]
+    public async Task RecordObservedTopic_ShouldUseExplicitWorkspaceIdWhenProvided()
+    {
+        var repository = new FakeDiscoveredTopicRepository();
+        var service = new TopicDiscoveryService(
+            new FakeBrokerServerProfileService(),
+            repository,
+            new TopicExplorerService(),
+            new FakeWorkspaceContextAccessor(),
+            NullLogger<TopicDiscoveryService>.Instance);
+
+        await service.RecordObservedTopic(
+            "msh/EU_868/2/json/MediumFast/!12345678",
+            DateTimeOffset.UtcNow,
+            "mqtt.eu:1883",
+            "workspace-explicit");
+
+        Assert.Equal("workspace-explicit", repository.LastWorkspaceId);
+    }
+
     private sealed class FakeDiscoveredTopicRepository : IDiscoveredTopicRepository
     {
         public string? LastWorkspaceId { get; private set; }

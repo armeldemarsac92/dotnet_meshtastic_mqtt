@@ -1317,6 +1317,119 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task MessageAndNodeReadModels_ShouldBeScopedPerWorkspace()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                await using var scopeA = providerA.CreateAsyncScope();
+                var messageRepositoryA = scopeA.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var nodeRepositoryA = scopeA.ServiceProvider.GetRequiredService<INodeRepository>();
+                var messageServiceA = scopeA.ServiceProvider.GetRequiredService<IMessageService>();
+                var nodeServiceA = scopeA.ServiceProvider.GetRequiredService<INodeService>();
+
+                await nodeRepositoryA.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!shared-node",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        ShortName = "WA",
+                        LongName = "Workspace A Node",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 6, 10, 0, 0, TimeSpan.Zero),
+                        LastHeardChannel = "EU_433/Fr_Balise"
+                    });
+
+                var insertedA = await messageRepositoryA.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        MessageKey = "shared-message-key",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        Topic = "msh/EU_433/2/e/Fr_Balise/!shared-node",
+                        PacketType = "Text Message",
+                        FromNodeId = "!shared-node",
+                        PayloadPreview = "Workspace A payload",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 6, 10, 0, 0, TimeSpan.Zero)
+                    });
+
+                await using var scopeB = providerB.CreateAsyncScope();
+                var messageRepositoryB = scopeB.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var nodeRepositoryB = scopeB.ServiceProvider.GetRequiredService<INodeRepository>();
+                var messageServiceB = scopeB.ServiceProvider.GetRequiredService<IMessageService>();
+                var nodeServiceB = scopeB.ServiceProvider.GetRequiredService<INodeService>();
+
+                await nodeRepositoryB.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!shared-node",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        ShortName = "WB",
+                        LongName = "Workspace B Node",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 6, 11, 0, 0, TimeSpan.Zero),
+                        LastHeardChannel = "EU_433/Fr_Balise"
+                    });
+
+                var insertedB = await messageRepositoryB.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        MessageKey = "shared-message-key",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        Topic = "msh/EU_433/2/e/Fr_Balise/!shared-node",
+                        PacketType = "Text Message",
+                        FromNodeId = "!shared-node",
+                        PayloadPreview = "Workspace B payload",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 6, 11, 0, 0, TimeSpan.Zero)
+                    });
+
+                Assert.True(insertedA);
+                Assert.True(insertedB);
+
+                var workspaceANode = await nodeServiceA.GetNodeById("!shared-node");
+                var workspaceBNode = await nodeServiceB.GetNodeById("!shared-node");
+                var workspaceAMessages = await messageServiceA.GetRecentMessages(take: 10);
+                var workspaceBMessages = await messageServiceB.GetRecentMessages(take: 10);
+
+                Assert.NotNull(workspaceANode);
+                Assert.NotNull(workspaceBNode);
+                Assert.Equal("WA", workspaceANode!.ShortName);
+                Assert.Equal("WB", workspaceBNode!.ShortName);
+
+                var messageA = Assert.Single(workspaceAMessages);
+                var messageB = Assert.Single(workspaceBMessages);
+                Assert.Equal("Workspace A payload", messageA.PayloadPreview);
+                Assert.Equal("Workspace B payload", messageB.PayloadPreview);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task SubscriptionIntents_ShouldBeScopedByWorkspaceAndProfile()
     {
         var databasePath = CreateTemporaryDatabasePath();

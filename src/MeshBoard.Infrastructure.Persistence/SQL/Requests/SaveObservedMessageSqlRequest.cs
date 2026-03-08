@@ -4,6 +4,8 @@ internal sealed class SaveObservedMessageSqlRequest
 {
     public required string Id { get; set; }
 
+    public required string WorkspaceId { get; set; }
+
     public required string BrokerServer { get; set; }
 
     public required string Topic { get; set; }

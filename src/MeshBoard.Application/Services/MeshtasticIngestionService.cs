@@ -52,6 +52,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             var messageInserted = await _messageRepository.AddAsync(
                 new SaveObservedMessageRequest
                 {
+                    WorkspaceId = workspaceId,
                     BrokerServer = envelope.BrokerServer,
                     Topic = envelope.Topic,
                     PacketType = envelope.PacketType,
@@ -79,6 +80,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 envelope.Topic,
                 envelope.ReceivedAtUtc,
                 envelope.BrokerServer,
+                workspaceId,
                 cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
@@ -86,6 +88,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 await _nodeRepository.UpsertAsync(
                     new UpsertObservedNodeRequest
                     {
+                        WorkspaceId = workspaceId,
                         NodeId = envelope.FromNodeId,
                         BrokerServer = envelope.BrokerServer,
                         ShortName = envelope.ShortName,

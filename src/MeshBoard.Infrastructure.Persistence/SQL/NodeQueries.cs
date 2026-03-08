@@ -52,7 +52,8 @@ internal static class NodeQueries
             n.relative_humidity AS RelativeHumidity,
             n.barometric_pressure AS BarometricPressure
         FROM nodes n
-        WHERE n.node_id = @NodeId
+        WHERE n.workspace_id = @WorkspaceId
+          AND n.node_id = @NodeId
         LIMIT 1;
         """;
 
@@ -77,7 +78,8 @@ internal static class NodeQueries
             n.relative_humidity AS RelativeHumidity,
             n.barometric_pressure AS BarometricPressure
         FROM nodes n
-        WHERE n.last_known_latitude IS NOT NULL
+        WHERE n.workspace_id = @WorkspaceId
+          AND n.last_known_latitude IS NOT NULL
           AND n.last_known_longitude IS NOT NULL
           AND (
               @SearchText = '' OR
@@ -94,6 +96,7 @@ internal static class NodeQueries
     public static string UpsertNode =>
         """
         INSERT INTO nodes (
+            workspace_id,
             node_id,
             broker_server,
             short_name,
@@ -112,6 +115,7 @@ internal static class NodeQueries
             relative_humidity,
             barometric_pressure)
         VALUES (
+            @WorkspaceId,
             @NodeId,
             COALESCE(NULLIF(@BrokerServer, ''), 'unknown'),
             @ShortName,
@@ -129,7 +133,7 @@ internal static class NodeQueries
             @TemperatureCelsius,
             @RelativeHumidity,
             @BarometricPressure)
-        ON CONFLICT(node_id) DO UPDATE SET
+        ON CONFLICT(workspace_id, node_id) DO UPDATE SET
             broker_server = COALESCE(NULLIF(excluded.broker_server, ''), nodes.broker_server),
             short_name = COALESCE(excluded.short_name, nodes.short_name),
             long_name = COALESCE(excluded.long_name, nodes.long_name),
@@ -154,7 +158,8 @@ internal static class NodeQueries
         LEFT JOIN favorite_nodes f
             ON f.workspace_id = @WorkspaceId
            AND f.node_id = n.node_id
-        WHERE (
+        WHERE n.workspace_id = @WorkspaceId
+        AND (
             @SearchText = '' OR
             n.node_id LIKE @SearchPattern OR
             COALESCE(n.short_name, '') LIKE @SearchPattern OR
