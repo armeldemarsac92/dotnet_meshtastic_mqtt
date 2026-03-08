@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ITopicEncryptionKeyResolver, TopicPresetEncryptionKeyResolver>();
         services.AddSingleton<IMeshtasticEnvelopeReader, MeshtasticEnvelopeReader>();
+        services.AddSingleton<MeshtasticInboundMessageQueue>();
         services.AddSingleton<IMqttSessionFactory, MqttSessionFactory>();
         services.AddSingleton<IWorkspaceBrokerSessionManager, WorkspaceBrokerSessionManager>();
         services.AddSingleton<IBrokerRuntimeCommandExecutor, LocalBrokerRuntimeCommandService>();
@@ -37,6 +38,7 @@ public static class ServiceCollectionExtensions
         if (runtimeOptions.EnableHostedService)
         {
             services.AddHostedService<MeshtasticMqttHostedService>();
+            services.AddHostedService<MeshtasticInboundProcessingHostedService>();
             services.AddHostedService<BrokerRuntimeCommandProcessorHostedService>();
         }
 

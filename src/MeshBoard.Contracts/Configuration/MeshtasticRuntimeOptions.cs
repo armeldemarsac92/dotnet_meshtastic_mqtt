@@ -6,6 +6,10 @@ public sealed class MeshtasticRuntimeOptions
 
     public bool EnableHostedService { get; set; } = true;
 
+    public int InboundQueueCapacity { get; set; } = 2048;
+
+    public int InboundWorkerCount { get; set; } = 2;
+
     public int CommandProcessorPollIntervalMilliseconds { get; set; } = 250;
 
     public int CommandProcessorBatchSize { get; set; } = 32;
