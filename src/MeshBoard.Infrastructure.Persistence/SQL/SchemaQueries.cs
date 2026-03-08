@@ -245,6 +245,12 @@ internal static class SchemaQueries
             ON message_history(message_key);
         """;
 
+    public static string CreateMessageHistoryBrokerServerReceivedAtIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_message_history_broker_server_received_at_utc
+            ON message_history(broker_server, received_at_utc DESC);
+        """;
+
     public static string GetNodeColumns =>
         """
         PRAGMA table_info(nodes);

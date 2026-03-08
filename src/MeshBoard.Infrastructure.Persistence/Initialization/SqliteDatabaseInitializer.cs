@@ -148,6 +148,11 @@ internal sealed class SqliteDatabaseInitializer
             new CommandDefinition(
                 SchemaQueries.CreateMessageHistoryMessageKeyIndex,
                 cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateMessageHistoryBrokerServerReceivedAtIndex,
+                cancellationToken: cancellationToken));
     }
 
     private static async Task MigrateNodesAsync(

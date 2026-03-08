@@ -11,6 +11,8 @@ namespace MeshBoard.Infrastructure.Persistence.Repositories;
 
 internal sealed class MessageRepository : IMessageRepository
 {
+    private static readonly IReadOnlyCollection<string> OpaquePacketTypes = ["Encrypted Packet", "Unknown Packet", "Legacy Packet"];
+
     private readonly IDbContext _dbContext;
     private readonly ILogger<MessageRepository> _logger;
 
@@ -32,6 +34,18 @@ internal sealed class MessageRepository : IMessageRepository
         return rowsAffected > 0;
     }
 
+    public Task<int> CountAsync(MessageQuery query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        _logger.LogDebug("Attempting to count messages");
+
+        var parameters = CreateQueryParameters(query);
+        var sql = BuildMessagesPageSql(MessageQueries.CountMessagesPage, query, includeOrderAndPaging: false);
+
+        return _dbContext.QueryFirstOrDefaultAsync<int>(sql, parameters, cancellationToken);
+    }
+
     public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Attempting to delete messages older than {CutoffUtc}", cutoffUtc);
@@ -40,6 +54,31 @@ internal sealed class MessageRepository : IMessageRepository
             MessageQueries.DeleteMessagesOlderThan,
             new { CutoffUtc = cutoffUtc.ToString("O") },
             cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<MessageSummary>> GetPageAsync(
+        MessageQuery query,
+        int offset,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        _logger.LogDebug(
+            "Attempting to fetch messages page with offset {Offset} and take {Take}",
+            offset,
+            take);
+
+        var parameters = CreateQueryParameters(query);
+        parameters.Add("Offset", offset);
+        parameters.Add("Take", take);
+
+        var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
+            BuildMessagesPageSql(MessageQueries.SelectMessagesPage, query, includeOrderAndPaging: true),
+            parameters,
+            cancellationToken);
+
+        return sqlResponses.MapToMessages();
     }
 
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(
@@ -225,5 +264,77 @@ internal sealed class MessageRepository : IMessageRepository
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(server => server, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static string BuildMessagesPageSql(string baseSql, MessageQuery query, bool includeOrderAndPaging)
+    {
+        var sqlBuilder = new System.Text.StringBuilder(baseSql)
+            .AppendLine()
+            .AppendLine("WHERE 1 = 1");
+
+        if (!string.IsNullOrWhiteSpace(query.BrokerServer))
+        {
+            sqlBuilder.AppendLine("  AND COALESCE(mh.broker_server, 'unknown') = @BrokerServer");
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.PacketType))
+        {
+            sqlBuilder.AppendLine("  AND mh.packet_type = @PacketType");
+        }
+
+        switch (query.Visibility)
+        {
+            case MessageVisibilityFilter.DecodedOnly:
+                sqlBuilder.AppendLine("  AND mh.packet_type NOT IN @OpaquePacketTypes");
+                break;
+            case MessageVisibilityFilter.OpaqueOnly:
+                sqlBuilder.AppendLine("  AND mh.packet_type IN @OpaquePacketTypes");
+                break;
+            case MessageVisibilityFilter.PrivateOnly:
+                sqlBuilder.AppendLine("  AND mh.is_private = 1");
+                break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.SearchText))
+        {
+            sqlBuilder.AppendLine(
+                """
+                  AND (
+                        mh.from_node_id LIKE @SearchPattern
+                     OR COALESCE(n.short_name, '') LIKE @SearchPattern
+                     OR COALESCE(n.long_name, '') LIKE @SearchPattern
+                     OR COALESCE(mh.to_node_id, '') LIKE @SearchPattern
+                     OR mh.packet_type LIKE @SearchPattern
+                     OR mh.payload_preview LIKE @SearchPattern
+                  )
+                """);
+        }
+
+        if (includeOrderAndPaging)
+        {
+            sqlBuilder.AppendLine("ORDER BY mh.received_at_utc DESC, mh.id DESC");
+            sqlBuilder.AppendLine("LIMIT @Take OFFSET @Offset;");
+        }
+        else
+        {
+            sqlBuilder.Append(';');
+        }
+
+        return sqlBuilder.ToString();
+    }
+
+    private static Dapper.DynamicParameters CreateQueryParameters(MessageQuery query)
+    {
+        var parameters = new Dapper.DynamicParameters();
+        var normalizedBrokerServer = query.BrokerServer.Trim();
+        var normalizedPacketType = query.PacketType.Trim();
+        var normalizedSearchText = query.SearchText.Trim();
+
+        parameters.Add("BrokerServer", normalizedBrokerServer);
+        parameters.Add("PacketType", normalizedPacketType);
+        parameters.Add("SearchPattern", $"%{normalizedSearchText}%");
+        parameters.Add("OpaquePacketTypes", OpaquePacketTypes);
+
+        return parameters;
     }
 }

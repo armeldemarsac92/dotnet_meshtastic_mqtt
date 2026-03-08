@@ -65,11 +65,25 @@ public sealed class MessageRetentionServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<int> CountAsync(MessageQuery query, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default)
         {
             LastCutoffUtc = cutoffUtc;
             LastCancellationToken = cancellationToken;
             return Task.FromResult(_rowsDeleted);
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageAsync(
+            MessageQuery query,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
 
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(

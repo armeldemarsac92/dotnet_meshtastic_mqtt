@@ -2,6 +2,31 @@ namespace MeshBoard.Infrastructure.Persistence.SQL;
 
 internal static class MessageQueries
 {
+    public static string CountMessagesPage =>
+        """
+        SELECT COUNT(1)
+        FROM message_history mh
+        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
+        """;
+
+    public static string SelectMessagesPage =>
+        """
+        SELECT
+            mh.id AS Id,
+            COALESCE(mh.broker_server, 'unknown') AS BrokerServer,
+            mh.topic AS Topic,
+            mh.packet_type AS PacketType,
+            mh.from_node_id AS FromNodeId,
+            n.short_name AS FromNodeShortName,
+            n.long_name AS FromNodeLongName,
+            mh.to_node_id AS ToNodeId,
+            mh.payload_preview AS PayloadPreview,
+            mh.is_private AS IsPrivate,
+            mh.received_at_utc AS ReceivedAtUtc
+        FROM message_history mh
+        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
+        """;
+
     public static string DeleteMessagesOlderThan =>
         """
         DELETE FROM message_history

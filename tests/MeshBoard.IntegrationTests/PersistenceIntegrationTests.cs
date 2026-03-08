@@ -439,6 +439,117 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task MessageService_ShouldReturnPagedFilteredMessages()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var messageRepository = scope.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        BrokerServer = "mqtt.alpha:1883",
+                        Topic = "msh/US/2/e/LongFast/!alpha001",
+                        PacketType = "Text Message",
+                        MessageKey = "!alpha001:00000001",
+                        FromNodeId = "!alpha001",
+                        PayloadPreview = "alpha one",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 0, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        BrokerServer = "mqtt.alpha:1883",
+                        Topic = "msh/US/2/e/LongFast/!alpha002",
+                        PacketType = "Encrypted Packet",
+                        MessageKey = "!alpha002:00000001",
+                        FromNodeId = "!alpha002",
+                        PayloadPreview = "opaque alpha",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 1, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        BrokerServer = "mqtt.alpha:1883",
+                        Topic = "msh/US/2/e/LongFast/!alpha003",
+                        PacketType = "Text Message",
+                        MessageKey = "!alpha003:00000001",
+                        FromNodeId = "!alpha003",
+                        PayloadPreview = "alpha three",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 2, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        BrokerServer = "mqtt.alpha:1883",
+                        Topic = "msh/US/2/e/LongFast/!beta0010",
+                        PacketType = "Text Message",
+                        MessageKey = "!beta0010:00000001",
+                        FromNodeId = "!beta0010",
+                        PayloadPreview = "beta only",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 3, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        BrokerServer = "mqtt.other:1883",
+                        Topic = "msh/US/2/e/LongFast/!alpha099",
+                        PacketType = "Text Message",
+                        MessageKey = "!alpha099:00000001",
+                        FromNodeId = "!alpha099",
+                        PayloadPreview = "alpha other broker",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 4, TimeSpan.Zero)
+                    });
+
+                var query = new MessageQuery
+                {
+                    BrokerServer = "mqtt.alpha:1883",
+                    SearchText = "alpha",
+                    Visibility = MessageVisibilityFilter.DecodedOnly
+                };
+
+                var firstPage = await messageService.GetMessagesPage(query, offset: 0, take: 1);
+                var secondPage = await messageService.GetMessagesPage(query, offset: 1, take: 1);
+
+                Assert.Equal(2, firstPage.TotalCount);
+                Assert.Single(firstPage.Items);
+                Assert.Equal("alpha three", firstPage.Items.Single().PayloadPreview);
+
+                Assert.Equal(2, secondPage.TotalCount);
+                Assert.Single(secondPage.Items);
+                Assert.Equal("alpha one", secondPage.Items.Single().PayloadPreview);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task ChannelReadService_ShouldReturnSummaryAndTopNodes()
     {
         var databasePath = CreateTemporaryDatabasePath();

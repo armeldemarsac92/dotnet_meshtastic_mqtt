@@ -48,6 +48,7 @@
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search</span>
             <input @bind="_filters.SearchText"
                    @bind:event="oninput"
+                   @bind:after="ScheduleFilterRefreshAsync"
                    class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                    placeholder="Node id, packet type, or preview text" />
         </label>
@@ -55,17 +56,19 @@
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Visibility</span>
             <select @bind="_filters.Visibility"
+                    @bind:after="HandleFilterChangedAsync"
                     class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950">
-                <option value="@MessageVisibility.All">All packets</option>
-                <option value="@MessageVisibility.DecodedOnly">Decoded only</option>
-                <option value="@MessageVisibility.OpaqueOnly">Opaque only</option>
-                <option value="@MessageVisibility.PrivateOnly">Private only</option>
+                <option value="@MessageVisibilityFilter.All">All packets</option>
+                <option value="@MessageVisibilityFilter.DecodedOnly">Decoded only</option>
+                <option value="@MessageVisibilityFilter.OpaqueOnly">Opaque only</option>
+                <option value="@MessageVisibilityFilter.PrivateOnly">Private only</option>
             </select>
         </label>
 
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Packet type</span>
             <select @bind="_filters.PacketType"
+                    @bind:after="HandleFilterChangedAsync"
                     class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950">
                 <option value="">Any packet type</option>
                 @foreach (var packetType in PacketTypes)
@@ -88,10 +91,10 @@
     </section>
 
     <section class="liquid-panel overflow-hidden rounded-[1.6rem]">
-        @if (FilteredMessages.Count == 0)
+        @if (_messagePage.Items.Count == 0)
         {
             <div class="p-6 text-cinder-800/78">
-                No packets match the current filters.
+                @(_isLoading ? "Loading packets..." : "No packets match the current filters.")
             </div>
         }
         else
@@ -116,7 +119,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var message in FilteredMessages)
+                    @foreach (var message in _messagePage.Items)
                     {
                         <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
                             <td class="px-5 py-4 align-top whitespace-nowrap">@message.ReceivedAtUtc.ToString("u")</td>
@@ -162,6 +165,44 @@
                 </tbody>
             </table>
         }
+
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-sand-100/80 px-5 py-4">
+            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
+                @GetPagingSummaryText()
+            </p>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">
+                    <span>Page size</span>
+                    <select @bind="_pageSize"
+                            @bind:after="HandlePageSizeChangedAsync"
+                            class="liquid-input rounded-full px-3 py-2 text-xs text-cinder-950">
+                        @foreach (var pageSizeOption in PageSizeOptions)
+                        {
+                            <option value="@pageSizeOption">@pageSizeOption</option>
+                        }
+                    </select>
+                </label>
+
+                <button type="button"
+                        class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                        @onclick="GoToPreviousPageAsync"
+                        disabled="@(!CanGoPrevious)">
+                    Previous
+                </button>
+
+                <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">
+                    Page @_currentPage of @GetTotalPages()
+                </span>
+
+                <button type="button"
+                        class="liquid-button liquid-button-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                        @onclick="GoToNextPageAsync"
+                        disabled="@(!CanGoNext)">
+                    Next
+                </button>
+            </div>
+        </div>
     </section>
 </div>
 
@@ -222,11 +263,28 @@
 
 @code {
     private const int PreviewLength = 140;
-    private const int RecentMessageTake = 180;
+    private static readonly IReadOnlyCollection<int> PageSizeOptions = [50, 100, 250];
+    private static readonly IReadOnlyCollection<string> PacketTypes =
+    [
+        "Text Message",
+        "Compressed Text Message",
+        "Node Info",
+        "Position Update",
+        "Telemetry",
+        "Encrypted Packet",
+        "Unknown Packet",
+        "Legacy Packet"
+    ];
+
     private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private CancellationTokenSource? _filterDebounceCancellationTokenSource;
     private BrokerStatus _brokerStatus = new();
     private readonly MessageFilters _filters = new();
-    private IReadOnlyCollection<MessageSummary> _messages = [];
+    private MessagePageResult _messagePage = new();
+    private bool _isLoading;
+    private int _currentPage = 1;
+    private int _loadRequestVersion;
+    private int _pageSize = 50;
     private MessageSummary? _previewMessage;
     private int _refreshDelaySeconds = 3;
     private Task? _refreshTask;
@@ -252,18 +310,9 @@
         .OrderBy(entry => entry.Label, StringComparer.OrdinalIgnoreCase)
         .ToList();
 
-    private IReadOnlyCollection<MessageSummary> FilteredMessages => _messages
-        .Where(ApplyVisibilityFilter)
-        .Where(ApplyPacketTypeFilter)
-        .Where(ApplySearchFilter)
-        .ToList();
+    private bool CanGoNext => !_isLoading && (_currentPage * _pageSize) < _messagePage.TotalCount;
 
-    private IReadOnlyCollection<string> PacketTypes => _messages
-        .Select(message => message.PacketType)
-        .Where(packetType => !string.IsNullOrWhiteSpace(packetType))
-        .Distinct(StringComparer.Ordinal)
-        .OrderBy(packetType => packetType)
-        .ToList();
+    private bool CanGoPrevious => !_isLoading && _currentPage > 1;
 
     protected override async Task OnInitializedAsync()
     {
@@ -276,12 +325,15 @@
     {
         ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
         _cancellationTokenSource.Cancel();
+        _filterDebounceCancellationTokenSource?.Cancel();
+        _filterDebounceCancellationTokenSource?.Dispose();
         _cancellationTokenSource.Dispose();
         return ValueTask.CompletedTask;
     }
 
     private async Task HandleServerSelectionChangedAsync()
     {
+        _currentPage = 1;
         await LoadAsync(_cancellationTokenSource.Token);
         await InvokeAsync(StateHasChanged);
     }
@@ -291,15 +343,98 @@
         return _brokerStatus.TopicFilters.Contains(topicPattern, StringComparer.Ordinal);
     }
 
+    private async Task ScheduleFilterRefreshAsync()
+    {
+        _filterDebounceCancellationTokenSource?.Cancel();
+        _filterDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _filterDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250), debounceCancellationTokenSource.Token);
+            await LoadFirstPageAsync();
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_filterDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _filterDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task HandleFilterChangedAsync()
+    {
+        await LoadFirstPageAsync();
+    }
+
+    private async Task HandlePageSizeChangedAsync()
+    {
+        await LoadFirstPageAsync();
+    }
+
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
-        _messages = string.IsNullOrWhiteSpace(_brokerStatus.ActiveServerAddress)
-            ? await MessageService.GetRecentMessages(RecentMessageTake, cancellationToken)
-            : await MessageService.GetRecentMessagesByBroker(
-                _brokerStatus.ActiveServerAddress,
-                RecentMessageTake,
-                cancellationToken);
+        var requestVersion = ++_loadRequestVersion;
+
+        _isLoading = true;
+
+        try
+        {
+            var query = new MessageQuery
+            {
+                BrokerServer = _brokerStatus.ActiveServerAddress ?? string.Empty,
+                PacketType = _filters.PacketType,
+                SearchText = _filters.SearchText,
+                Visibility = _filters.Visibility
+            };
+
+            var page = await MessageService.GetMessagesPage(
+                query,
+                offset: (_currentPage - 1) * _pageSize,
+                take: _pageSize,
+                cancellationToken: cancellationToken);
+
+            if (requestVersion != _loadRequestVersion)
+            {
+                return;
+            }
+
+            if (page.TotalCount > 0 && page.Items.Count == 0 && _currentPage > 1)
+            {
+                _currentPage = GetLastPageNumber(page.TotalCount);
+                page = await MessageService.GetMessagesPage(
+                    query,
+                    offset: (_currentPage - 1) * _pageSize,
+                    take: _pageSize,
+                    cancellationToken: cancellationToken);
+
+                if (requestVersion != _loadRequestVersion)
+                {
+                    return;
+                }
+            }
+
+            _messagePage = page;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (requestVersion == _loadRequestVersion)
+            {
+                _isLoading = false;
+            }
+        }
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -326,36 +461,63 @@
         }
     }
 
-    private bool ApplyPacketTypeFilter(MessageSummary message)
+    private async Task LoadFirstPageAsync()
     {
-        return string.IsNullOrWhiteSpace(_filters.PacketType) ||
-            string.Equals(message.PacketType, _filters.PacketType, StringComparison.Ordinal);
+        _currentPage = 1;
+        await LoadAsync(_cancellationTokenSource.Token);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private bool ApplySearchFilter(MessageSummary message)
+    private async Task GoToPreviousPageAsync()
     {
-        if (string.IsNullOrWhiteSpace(_filters.SearchText))
+        if (!CanGoPrevious)
         {
-            return true;
+            return;
         }
 
-        return message.FromNodeId.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ||
-            (message.FromNodeShortName?.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-            (message.FromNodeLongName?.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-            (message.ToNodeId?.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-            message.PacketType.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase) ||
-            message.PayloadPreview.Contains(_filters.SearchText, StringComparison.OrdinalIgnoreCase);
+        _currentPage--;
+        await LoadAsync(_cancellationTokenSource.Token);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private bool ApplyVisibilityFilter(MessageSummary message)
+    private async Task GoToNextPageAsync()
     {
-        return _filters.Visibility switch
+        if (!CanGoNext)
         {
-            MessageVisibility.DecodedOnly => IsDecodedMessage(message),
-            MessageVisibility.OpaqueOnly => !IsDecodedMessage(message),
-            MessageVisibility.PrivateOnly => message.IsPrivate,
-            _ => true
-        };
+            return;
+        }
+
+        _currentPage++;
+        await LoadAsync(_cancellationTokenSource.Token);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetPagingSummaryText()
+    {
+        if (_isLoading && _messagePage.TotalCount == 0)
+        {
+            return "Loading packets";
+        }
+
+        if (_messagePage.TotalCount == 0)
+        {
+            return "No packets found";
+        }
+
+        var start = ((_currentPage - 1) * _pageSize) + 1;
+        var end = Math.Min(_currentPage * _pageSize, _messagePage.TotalCount);
+
+        return $"Showing {start}-{end} of {_messagePage.TotalCount} packets";
+    }
+
+    private int GetLastPageNumber(int totalCount)
+    {
+        return Math.Max(1, (int)Math.Ceiling(totalCount / (double)_pageSize));
+    }
+
+    private int GetTotalPages()
+    {
+        return _messagePage.TotalCount == 0 ? 1 : GetLastPageNumber(_messagePage.TotalCount);
     }
 
     private static string GetPacketTypeBadgeClass(string packetType)
@@ -368,11 +530,6 @@
             "Encrypted Packet" => "rounded-full bg-cinder-900 px-3 py-1 text-xs font-semibold text-white",
             _ => "rounded-full bg-sand-100 px-3 py-1 text-xs font-semibold text-cinder-900"
         };
-    }
-
-    private static bool IsDecodedMessage(MessageSummary message)
-    {
-        return message.PacketType is not ("Encrypted Packet" or "Unknown Packet" or "Legacy Packet");
     }
 
     private async Task ToggleSubscriptionAsync(string topicPattern)
@@ -599,15 +756,7 @@
 
         public string SearchText { get; set; } = string.Empty;
 
-        public MessageVisibility Visibility { get; set; } = MessageVisibility.All;
-    }
-
-    private enum MessageVisibility
-    {
-        All,
-        DecodedOnly,
-        OpaqueOnly,
-        PrivateOnly
+        public MessageVisibilityFilter Visibility { get; set; } = MessageVisibilityFilter.All;
     }
 
     private sealed class ListeningChannelEntry

@@ -6,6 +6,12 @@ namespace MeshBoard.Application.Services;
 
 public interface IMessageService
 {
+    Task<MessagePageResult> GetMessagesPage(
+        MessageQuery? query = null,
+        int offset = 0,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(int take = 250, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<MessageSummary>> GetRecentMessagesByBroker(
@@ -27,6 +33,8 @@ public interface IMessageService
 
 public sealed class MessageService : IMessageService
 {
+    private const int MaxTake = 250;
+
     private readonly ILogger<MessageService> _logger;
     private readonly IMessageRepository _messageRepository;
 
@@ -34,6 +42,37 @@ public sealed class MessageService : IMessageService
     {
         _messageRepository = messageRepository;
         _logger = logger;
+    }
+
+    public async Task<MessagePageResult> GetMessagesPage(
+        MessageQuery? query = null,
+        int offset = 0,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var sanitizedQuery = query ?? new MessageQuery();
+        var sanitizedOffset = Math.Max(0, offset);
+        var sanitizedTake = SanitizeTake(take);
+
+        _logger.LogDebug(
+            "Attempting to get messages page with offset: {Offset}, take: {Take}",
+            sanitizedOffset,
+            sanitizedTake);
+
+        var totalCountTask = _messageRepository.CountAsync(sanitizedQuery, cancellationToken);
+        var itemsTask = _messageRepository.GetPageAsync(
+            sanitizedQuery,
+            sanitizedOffset,
+            sanitizedTake,
+            cancellationToken);
+
+        await Task.WhenAll(totalCountTask, itemsTask);
+
+        return new MessagePageResult
+        {
+            TotalCount = await totalCountTask,
+            Items = await itemsTask
+        };
     }
 
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(
@@ -135,5 +174,15 @@ public sealed class MessageService : IMessageService
             senderNodeId);
 
         return messages;
+    }
+
+    private static int SanitizeTake(int take)
+    {
+        if (take <= 0)
+        {
+            return 1;
+        }
+
+        return Math.Min(take, MaxTake);
     }
 }

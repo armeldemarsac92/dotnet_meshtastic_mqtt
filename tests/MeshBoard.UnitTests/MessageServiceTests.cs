@@ -9,6 +9,28 @@ namespace MeshBoard.UnitTests;
 public sealed class MessageServiceTests
 {
     [Fact]
+    public async Task GetMessagesPage_ShouldForwardQueryAndPaginationToRepository()
+    {
+        var repository = new FakeMessageRepository();
+        var service = new MessageService(repository, NullLogger<MessageService>.Instance);
+        var query = new MessageQuery
+        {
+            BrokerServer = "mqtt.meshtastic.org:1883",
+            SearchText = "alpha",
+            PacketType = "Text Message",
+            Visibility = MessageVisibilityFilter.DecodedOnly
+        };
+
+        var page = await service.GetMessagesPage(query, offset: 25, take: 50);
+
+        Assert.Equal(query, repository.LastQuery);
+        Assert.Equal(25, repository.LastOffset);
+        Assert.Equal(50, repository.LastTake);
+        Assert.Equal(3, page.TotalCount);
+        Assert.Single(page.Items);
+    }
+
+    [Fact]
     public async Task GetRecentMessagesBySender_ShouldForwardSenderToRepository()
     {
         var repository = new FakeMessageRepository();
@@ -70,6 +92,10 @@ public sealed class MessageServiceTests
 
         public string? LastSenderNodeId { get; private set; }
 
+        public MessageQuery? LastQuery { get; private set; }
+
+        public int LastOffset { get; private set; }
+
         public int LastTake { get; private set; }
 
         public Task<bool> AddAsync(SaveObservedMessageRequest request, CancellationToken cancellationToken = default)
@@ -77,9 +103,43 @@ public sealed class MessageServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<int> CountAsync(MessageQuery query, CancellationToken cancellationToken = default)
+        {
+            LastQuery = query;
+            return Task.FromResult(3);
+        }
+
         public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageAsync(
+            MessageQuery query,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            LastQuery = query;
+            LastOffset = offset;
+            LastTake = take;
+
+            IReadOnlyCollection<MessageSummary> messages =
+            [
+                new MessageSummary
+                {
+                    Id = Guid.NewGuid(),
+                    BrokerServer = query.BrokerServer,
+                    Topic = "msh/US/2/e/LongFast/!abc12345",
+                    PacketType = query.PacketType,
+                    FromNodeId = "!abc12345",
+                    PayloadPreview = "hello",
+                    IsPrivate = false,
+                    ReceivedAtUtc = DateTimeOffset.UtcNow
+                }
+            ];
+
+            return Task.FromResult(messages);
         }
 
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(
