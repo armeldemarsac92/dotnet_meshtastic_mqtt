@@ -178,7 +178,8 @@ async function getOrCreateMapState(containerId, dotNetCallbackRef) {
         hoverClearTimeoutId: null,
         nodeDataById: new Map(),
         nodeEntities: new Map(),
-        linkEntities: [],
+        hoverLinkSourceNodeId: null,
+        linkEntities: new Map(),
         hoveredNodeId: null,
         pinnedNodeId: null,
         didAutoFrame: false
@@ -443,7 +444,6 @@ function applyNodeAppearance(entity, node, isHovered) {
 }
 
 function syncHoverState(mapState) {
-    clearHoverLinks(mapState);
     clearPendingHoverClear(mapState);
 
     const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
@@ -464,6 +464,7 @@ function syncHoverState(mapState) {
     mapState.viewer.container.style.cursor = hoveredNode ? "pointer" : "grab";
 
     if (!hoveredNode?.channel) {
+        clearHoverLinks(mapState);
         mapState.viewer.scene.requestRender();
         return;
     }
@@ -474,51 +475,77 @@ function syncHoverState(mapState) {
         .slice(0, HOVER_LINK_LIMIT);
 
     if (peers.length === 0) {
+        clearHoverLinks(mapState);
         mapState.viewer.scene.requestRender();
         return;
     }
 
     const Cesium = window.Cesium;
     const linkColor = resolveChannelColor(hoveredNode.channel, 0.92);
+    const peerNodeIds = peers.map((peer) => peer.nodeId);
+    const shouldRebuildLinks =
+        mapState.hoverLinkSourceNodeId !== hoveredNode.nodeId ||
+        mapState.linkEntities.size !== peerNodeIds.length ||
+        peerNodeIds.some((peerNodeId) => !mapState.linkEntities.has(peerNodeId));
+
+    if (shouldRebuildLinks) {
+        clearHoverLinks(mapState);
+        mapState.hoverLinkSourceNodeId = hoveredNode.nodeId;
+
+        for (const peer of peers) {
+            const linkMaterial = new Cesium.PolylineOutlineMaterialProperty({
+                color: linkColor,
+                outlineColor: Cesium.Color.fromCssColorString("#10202f").withAlpha(0.52),
+                outlineWidth: 2
+            });
+
+            const linkEntity = mapState.viewer.entities.add({
+                polyline: {
+                    positions: [
+                        Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 0),
+                        Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 0)
+                    ],
+                    width: 8,
+                    arcType: Cesium.ArcType.GEODESIC,
+                    material: linkMaterial,
+                    clampToGround: true,
+                    zIndex: 8
+                }
+            });
+
+            linkEntity.meshboardHoverNodeId = hoveredNode.nodeId;
+            mapState.linkEntities.set(peer.nodeId, linkEntity);
+        }
+    }
 
     for (const peer of peers) {
-        const linkMaterial = new Cesium.PolylineOutlineMaterialProperty({
-            color: linkColor,
-            outlineColor: Cesium.Color.fromCssColorString("#10202f").withAlpha(0.52),
-            outlineWidth: 2
-        });
-
-        const linkEntity = mapState.viewer.entities.add({
-            polyline: {
-                positions: [
-                    Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 0),
-                    Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 0)
-                ],
-                width: 8,
-                arcType: Cesium.ArcType.GEODESIC,
-                material: linkMaterial,
-                clampToGround: true,
-                zIndex: 8
-            }
-        });
+        const linkEntity = mapState.linkEntities.get(peer.nodeId);
+        if (!linkEntity) {
+            continue;
+        }
 
         linkEntity.meshboardHoverNodeId = hoveredNode.nodeId;
-        mapState.linkEntities.push(linkEntity);
+        linkEntity.polyline.positions = [
+            Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 0),
+            Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 0)
+        ];
     }
 
     mapState.viewer.scene.requestRender();
 }
 
 function clearHoverLinks(mapState) {
-    if (mapState.linkEntities.length === 0) {
+    if (mapState.linkEntities.size === 0) {
+        mapState.hoverLinkSourceNodeId = null;
         return;
     }
 
-    for (const entity of mapState.linkEntities) {
+    for (const entity of mapState.linkEntities.values()) {
         mapState.viewer.entities.remove(entity);
     }
 
-    mapState.linkEntities = [];
+    mapState.linkEntities.clear();
+    mapState.hoverLinkSourceNodeId = null;
 }
 
 function distanceBetweenNodes(source, target) {

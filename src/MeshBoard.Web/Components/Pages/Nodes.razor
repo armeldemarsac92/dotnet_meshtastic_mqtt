@@ -169,6 +169,7 @@
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private string? _favoriteActionNodeId;
     private readonly HashSet<string> _favoriteNodeIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pendingNodeRefreshIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<NodeSummary> _nodes = [];
     private string? _favoriteStatusMessage;
     private bool _isLoadingNodes;
@@ -227,13 +228,15 @@
             return Task.CompletedTask;
         }
 
+        _pendingNodeRefreshIds.Add(change.EntityKey!);
         return ScheduleRealtimeRefreshAsync();
     }
 
     private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
     {
         return string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal) &&
-            change.Kind == ProjectionChangeKind.NodeUpdated;
+            change.Kind == ProjectionChangeKind.NodeUpdated &&
+            !string.IsNullOrWhiteSpace(change.EntityKey);
     }
 
     private async Task ScheduleRealtimeRefreshAsync()
@@ -247,7 +250,7 @@
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await RefreshNodesAsync(debounceCancellationTokenSource.Token);
+            await ApplyPendingNodeUpdatesAsync(debounceCancellationTokenSource.Token);
         }
         catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
         {
@@ -261,6 +264,56 @@
 
             debounceCancellationTokenSource.Dispose();
         }
+    }
+
+    private async Task ApplyPendingNodeUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingNodeRefreshIds.Count == 0)
+        {
+            return;
+        }
+
+        var nodeIds = _pendingNodeRefreshIds.ToArray();
+        _pendingNodeRefreshIds.Clear();
+
+        var updatedNodes = await Task.WhenAll(nodeIds.Select(nodeId => NodeService.GetNodeById(nodeId, cancellationToken)));
+        var visibleNodesById = _nodes
+            .Select((node, index) => (node, index))
+            .ToDictionary(entry => entry.node.NodeId, entry => entry.index, StringComparer.OrdinalIgnoreCase);
+        var didChange = false;
+
+        foreach (var updatedNode in updatedNodes)
+        {
+            if (updatedNode is null)
+            {
+                continue;
+            }
+
+            if (!visibleNodesById.TryGetValue(updatedNode.NodeId, out var existingIndex))
+            {
+                continue;
+            }
+
+            if (!MatchesCurrentQuery(updatedNode))
+            {
+                _nodes.RemoveAt(existingIndex);
+                _totalMatchedNodeCount = Math.Max(0, _totalMatchedNodeCount - 1);
+                didChange = true;
+                RebuildVisibleNodeIndex(visibleNodesById);
+                continue;
+            }
+
+            _nodes[existingIndex] = updatedNode;
+            didChange = true;
+        }
+
+        if (!didChange)
+        {
+            return;
+        }
+
+        _nodes.Sort(CompareNodes);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task RefreshNodesAsync(CancellationToken cancellationToken = default)
@@ -296,6 +349,100 @@
                 _isLoadingNodes = false;
                 await InvokeAsync(StateHasChanged);
             }
+        }
+    }
+
+    private bool MatchesCurrentQuery(NodeSummary node)
+    {
+        if (_query.OnlyFavorites && !_favoriteNodeIds.Contains(node.NodeId))
+        {
+            return false;
+        }
+
+        if (_query.OnlyWithLocation && (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue))
+        {
+            return false;
+        }
+
+        if (_query.OnlyWithTelemetry &&
+            node.BatteryLevelPercent is null &&
+            node.Voltage is null &&
+            node.ChannelUtilization is null &&
+            node.AirUtilTx is null &&
+            node.UptimeSeconds is null &&
+            node.TemperatureCelsius is null &&
+            node.RelativeHumidity is null &&
+            node.BarometricPressure is null)
+        {
+            return false;
+        }
+
+        var searchText = _query.SearchText.Trim();
+
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return true;
+        }
+
+        return ContainsIgnoreCase(node.NodeId, searchText) ||
+            ContainsIgnoreCase(node.ShortName, searchText) ||
+            ContainsIgnoreCase(node.LongName, searchText) ||
+            ContainsIgnoreCase(node.LastHeardChannel, searchText);
+    }
+
+    private int CompareNodes(NodeSummary left, NodeSummary right)
+    {
+        return _query.SortBy switch
+        {
+            NodeSortOption.NameAsc => CompareByName(left, right),
+            NodeSortOption.BatteryDesc => CompareByBattery(left, right),
+            _ => CompareByLastHeard(left, right)
+        };
+    }
+
+    private static int CompareByName(NodeSummary left, NodeSummary right)
+    {
+        var nameComparison = string.Compare(
+            left.LongName ?? left.ShortName ?? left.NodeId,
+            right.LongName ?? right.ShortName ?? right.NodeId,
+            StringComparison.OrdinalIgnoreCase);
+
+        return nameComparison != 0
+            ? nameComparison
+            : string.Compare(left.NodeId, right.NodeId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CompareByBattery(NodeSummary left, NodeSummary right)
+    {
+        var batteryComparison = Nullable.Compare(right.BatteryLevelPercent, left.BatteryLevelPercent);
+
+        return batteryComparison != 0
+            ? batteryComparison
+            : CompareByName(left, right);
+    }
+
+    private static int CompareByLastHeard(NodeSummary left, NodeSummary right)
+    {
+        var heardComparison = Nullable.Compare(right.LastHeardAtUtc, left.LastHeardAtUtc);
+
+        return heardComparison != 0
+            ? heardComparison
+            : CompareByName(left, right);
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string searchText)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RebuildVisibleNodeIndex(Dictionary<string, int> visibleNodesById)
+    {
+        visibleNodesById.Clear();
+
+        for (var index = 0; index < _nodes.Count; index += 1)
+        {
+            visibleNodesById[_nodes[index].NodeId] = index;
         }
     }
 
