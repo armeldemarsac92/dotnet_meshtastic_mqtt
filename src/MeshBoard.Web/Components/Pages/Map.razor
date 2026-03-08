@@ -325,7 +325,22 @@
         _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
         _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
 
-        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_componentCancellationTokenSource.Token);
+        CancellationTokenSource debounceCancellationTokenSource;
+
+        try
+        {
+            if (_componentCancellationTokenSource.IsCancellationRequested)
+            {
+                return;
+            }
+
+            debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_componentCancellationTokenSource.Token);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
         _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
 
         try
