@@ -2,6 +2,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 @inject INodeService NodeService
+@inject IOptions<MapOptions> MapConfiguration
 @inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject ProjectionChangeNotifier ProjectionChangeNotifier
 
@@ -22,6 +23,7 @@
         <div class="flex flex-wrap items-start justify-between gap-3 text-sm text-cinder-800/82">
             <div class="space-y-1">
                 <p>@GetMapSummaryText()</p>
+                <p class="text-[0.72rem] text-cinder-800/68">@GetMapProviderSummary()</p>
                 <p class="text-[0.72rem] text-cinder-800/64">
                     Hover links show shared-channel cohorts, not proven radio paths.
                 </p>
@@ -196,6 +198,7 @@
     private const string MapElementId = "meshboard-node-map";
     private readonly CancellationTokenSource _componentCancellationTokenSource = new();
     private DotNetObjectReference<Map>? _mapCallbackReference;
+    private MapClientOptions? _mapClientOptions;
     private bool _isLoading;
     private bool _isMapRenderPending;
     private IJSObjectReference? _mapModule;
@@ -223,6 +226,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _mapClientOptions = BuildMapClientOptions();
         ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
         await RefreshNodesAsync();
     }
@@ -557,6 +561,7 @@
             MapElementId,
             _visibleMapNodes,
             _activityPulses,
+            _mapClientOptions,
             _shouldFitMapToNodes,
             _mapCallbackReference);
 
@@ -600,6 +605,23 @@
         return $"{summary} Focused on {_focusedChannel}.";
     }
 
+    private string GetMapProviderSummary()
+    {
+        if (_mapClientOptions is null)
+        {
+            return "Loading map provider configuration.";
+        }
+
+        if (!string.Equals(_mapClientOptions.Provider, "Mapbox", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Basemap provider: {_mapClientOptions.Provider}.";
+        }
+
+        return _mapClientOptions.IsMapboxConfigured
+            ? $"Basemap provider: Mapbox ({_mapClientOptions.MapboxStyleId})."
+            : "Basemap provider: OpenStreetMap fallback. Configure a Mapbox access token to enable Mapbox tiles.";
+    }
+
     private void RefreshHoveredMapNode()
     {
         if (string.IsNullOrWhiteSpace(_hoveredMapNodeId))
@@ -633,6 +655,56 @@
         return isFocused
             ? "liquid-inline-action liquid-inline-action-active inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-1 text-[0.72rem] font-medium text-cinder-950"
             : "inline-flex cursor-pointer items-center gap-2 rounded-full border border-sand-300/80 bg-sand-100/70 px-3 py-1 text-[0.72rem] font-medium text-cinder-900";
+    }
+
+    private MapClientOptions BuildMapClientOptions()
+    {
+        var mapOptions = MapConfiguration.Value;
+        var provider = string.IsNullOrWhiteSpace(mapOptions.Provider)
+            ? "OpenStreetMap"
+            : mapOptions.Provider.Trim();
+        var fallbackProvider = string.IsNullOrWhiteSpace(mapOptions.FallbackProvider)
+            ? "OpenStreetMap"
+            : mapOptions.FallbackProvider.Trim();
+        var mapboxAccessToken = mapOptions.MapboxAccessToken?.Trim() ?? string.Empty;
+        var mapboxStyleId = string.IsNullOrWhiteSpace(mapOptions.MapboxStyleId)
+            ? "satellite-streets-v12"
+            : mapOptions.MapboxStyleId.Trim();
+        var mapboxUsername = string.IsNullOrWhiteSpace(mapOptions.MapboxUsername)
+            ? "mapbox"
+            : mapOptions.MapboxUsername.Trim();
+
+        return new MapClientOptions
+        {
+            FallbackProvider = fallbackProvider,
+            IsMapboxConfigured = string.Equals(provider, "Mapbox", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(mapboxAccessToken),
+            MapboxAccessToken = mapboxAccessToken,
+            MapboxStyleId = mapboxStyleId,
+            MapboxUsername = mapboxUsername,
+            Provider = provider
+        };
+    }
+
+    private sealed class MapClientOptions
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("fallbackProvider")]
+        public required string FallbackProvider { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("isMapboxConfigured")]
+        public required bool IsMapboxConfigured { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("mapboxAccessToken")]
+        public required string MapboxAccessToken { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("mapboxStyleId")]
+        public required string MapboxStyleId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("mapboxUsername")]
+        public required string MapboxUsername { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("provider")]
+        public required string Provider { get; set; }
     }
 
     private static string GetChannelColorCss(string channel)
