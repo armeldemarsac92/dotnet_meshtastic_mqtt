@@ -49,6 +49,42 @@ internal static class MessageQueries
         LIMIT @Take;
         """;
 
+    public static string GetChannelSummary =>
+        """
+        SELECT
+            COUNT(1) AS PacketCount,
+            COUNT(DISTINCT mh.from_node_id) AS UniqueSenderCount,
+            COALESCE(SUM(
+                CASE
+                    WHEN mh.packet_type IN ('Encrypted Packet', 'Unknown Packet', 'Legacy Packet') THEN 0
+                    ELSE 1
+                END), 0) AS DecodedPacketCount,
+            MAX(mh.received_at_utc) AS LastSeenAtUtc,
+            GROUP_CONCAT(DISTINCT COALESCE(mh.broker_server, 'unknown')) AS BrokerServersCsv
+        FROM message_history mh
+        WHERE mh.topic LIKE @EncryptedTopicPattern
+           OR mh.topic LIKE @JsonTopicPattern;
+        """;
+
+    public static string GetTopNodesByChannel =>
+        """
+        SELECT
+            mh.from_node_id AS NodeId,
+            COALESCE(NULLIF(n.short_name, ''), NULLIF(n.long_name, ''), mh.from_node_id) AS DisplayName,
+            COUNT(1) AS PacketCount
+        FROM message_history mh
+        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
+        WHERE mh.topic LIKE @EncryptedTopicPattern
+           OR mh.topic LIKE @JsonTopicPattern
+        GROUP BY
+            mh.from_node_id,
+            COALESCE(NULLIF(n.short_name, ''), NULLIF(n.long_name, ''), mh.from_node_id)
+        ORDER BY COUNT(1) DESC,
+                 DisplayName COLLATE NOCASE ASC,
+                 mh.from_node_id COLLATE NOCASE ASC
+        LIMIT @Take;
+        """;
+
     public static string GetRecentMessagesByChannel =>
         """
         SELECT

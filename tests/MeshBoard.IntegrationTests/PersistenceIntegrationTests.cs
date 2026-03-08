@@ -439,6 +439,114 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task ChannelReadService_ShouldReturnSummaryAndTopNodes()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var channelReadService = scope.ServiceProvider.GetRequiredService<IChannelReadService>();
+                var messageRepository = scope.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var nodeRepository = scope.ServiceProvider.GetRequiredService<INodeRepository>();
+
+                await nodeRepository.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!node0001",
+                        ShortName = "Alpha",
+                        LastHeardChannel = "US/LongFast"
+                    });
+
+                await nodeRepository.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!node0002",
+                        LongName = "Bravo",
+                        LastHeardChannel = "US/LongFast"
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/LongFast/!node0001",
+                        BrokerServer = "mqtt-a:1883",
+                        PacketType = "Encrypted Packet",
+                        MessageKey = "!node0001:00000001",
+                        FromNodeId = "!node0001",
+                        PayloadPreview = "encrypted",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 0, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/json/LongFast/!node0001",
+                        BrokerServer = "mqtt-b:1883",
+                        PacketType = "Text Message",
+                        MessageKey = "!node0001:00000002",
+                        FromNodeId = "!node0001",
+                        PayloadPreview = "decoded",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 1, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/LongFast/!node0002",
+                        BrokerServer = "mqtt-a:1883",
+                        PacketType = "Position Update",
+                        MessageKey = "!node0002:00000001",
+                        FromNodeId = "!node0002",
+                        PayloadPreview = "position",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 2, 0, 2, TimeSpan.Zero)
+                    });
+
+                var summary = await channelReadService.GetChannelSummary("US", "LongFast");
+                var topNodes = await channelReadService.GetTopNodesByChannel("US", "LongFast", 10);
+
+                Assert.Equal(3, summary.PacketCount);
+                Assert.Equal(2, summary.UniqueSenderCount);
+                Assert.Equal(2, summary.DecodedPacketCount);
+                Assert.Equal(new DateTimeOffset(2026, 3, 5, 2, 0, 2, TimeSpan.Zero), summary.LastSeenAtUtc);
+                Assert.Equal(["mqtt-a:1883", "mqtt-b:1883"], summary.ObservedBrokerServers);
+
+                Assert.Collection(
+                    topNodes,
+                    node =>
+                    {
+                        Assert.Equal("!node0001", node.NodeId);
+                        Assert.Equal("Alpha", node.DisplayName);
+                        Assert.Equal(2, node.PacketCount);
+                    },
+                    node =>
+                    {
+                        Assert.Equal("!node0002", node.NodeId);
+                        Assert.Equal("Bravo", node.DisplayName);
+                        Assert.Equal(1, node.PacketCount);
+                    });
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task NodePaging_ShouldSupportFavoritesAndChannelField()
     {
         var databasePath = CreateTemporaryDatabasePath();

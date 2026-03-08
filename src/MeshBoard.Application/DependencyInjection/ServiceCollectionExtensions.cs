@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();
         services.AddScoped<IBrokerRuntimeCommandQueryService, BrokerRuntimeCommandQueryService>();
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
+        services.AddScoped<IChannelReadService, ChannelReadService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
         services.AddScoped<IMessageComposerService, MessageComposerService>();
         services.AddScoped<IMessageRetentionService, MessageRetentionService>();

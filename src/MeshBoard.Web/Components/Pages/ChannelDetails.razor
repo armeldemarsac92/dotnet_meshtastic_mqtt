@@ -1,5 +1,6 @@
 @page "/channels/{Region}/{Channel}"
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IChannelReadService ChannelReadService
 @inject IMessageService MessageService
 
 <PageTitle>Channel Details</PageTitle>
@@ -45,19 +46,19 @@
     <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <article class="liquid-subpanel rounded-[1.4rem] p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Packets</p>
-            <strong class="mt-2 block text-3xl text-cinder-950">@_channelMessages.Count</strong>
+            <strong class="mt-2 block text-3xl text-cinder-950">@_channelSummary.PacketCount</strong>
         </article>
         <article class="liquid-subpanel rounded-[1.4rem] p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Unique senders</p>
-            <strong class="mt-2 block text-3xl text-cinder-950">@_uniqueSenderCount</strong>
+            <strong class="mt-2 block text-3xl text-cinder-950">@_channelSummary.UniqueSenderCount</strong>
         </article>
         <article class="liquid-subpanel rounded-[1.4rem] p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Decoded ratio</p>
-            <strong class="mt-2 block text-3xl text-cinder-950">@_decodedRatio%</strong>
+            <strong class="mt-2 block text-3xl text-cinder-950">@DecodedRatio%</strong>
         </article>
         <article class="liquid-subpanel rounded-[1.4rem] p-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last seen</p>
-            <strong class="mt-2 block text-sm text-cinder-950">@(_lastSeenAtUtc?.ToString("u") ?? "Unknown")</strong>
+            <strong class="mt-2 block text-sm text-cinder-950">@(_channelSummary.LastSeenAtUtc?.ToString("u") ?? "Unknown")</strong>
         </article>
     </section>
 
@@ -84,7 +85,7 @@
                         {
                             <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
                                 <td class="px-5 py-4">
-                                    <a href="@GetNodeDetailsHref(topNode.NodeId)" class="liquid-inline-action rounded-full px-3 py-1 text-xs font-semibold">@topNode.NodeId</a>
+                                    <a href="@GetNodeDetailsHref(topNode.NodeId)" class="liquid-inline-action rounded-full px-3 py-1 text-xs font-semibold">@topNode.DisplayName</a>
                                 </td>
                                 <td class="px-5 py-4">@topNode.PacketCount</td>
                             </tr>
@@ -129,15 +130,21 @@
     [Parameter]
     public string Region { get; set; } = string.Empty;
 
+    private ChannelSummary _channelSummary = new();
     private IReadOnlyCollection<MessageSummary> _channelMessages = [];
-    private int _decodedRatio;
-    private DateTimeOffset? _lastSeenAtUtc;
     private string? _statusMessage;
-    private IReadOnlyCollection<TopNodeEntry> _topNodes = [];
-    private int _uniqueSenderCount;
-    private IReadOnlyCollection<string> _observedBrokerServers = [];
+    private IReadOnlyCollection<ChannelTopNode> _topNodes = [];
 
     private string TopicFilter => $"msh/{Region}/2/e/{Channel}/#";
+
+    private int DecodedRatio =>
+        _channelSummary.PacketCount == 0
+            ? 0
+            : (int)Math.Round(
+                _channelSummary.DecodedPacketCount * 100d / _channelSummary.PacketCount,
+                MidpointRounding.AwayFromZero);
+
+    private IReadOnlyCollection<string> _observedBrokerServers => _channelSummary.ObservedBrokerServers;
 
     private bool IsSubscribed => BrokerMonitorService.GetBrokerStatus().TopicFilters.Contains(TopicFilter, StringComparer.Ordinal);
 
@@ -148,33 +155,15 @@
 
     private async Task LoadAsync()
     {
-        _channelMessages = await MessageService.GetRecentMessagesByChannel(Region, Channel, 5_000);
+        var summaryTask = ChannelReadService.GetChannelSummary(Region, Channel);
+        var topNodesTask = ChannelReadService.GetTopNodesByChannel(Region, Channel, 12);
+        var messagesTask = MessageService.GetRecentMessagesByChannel(Region, Channel, 5_000);
 
-        _observedBrokerServers = _channelMessages
-            .Select(message => message.BrokerServer)
-            .Where(server => !string.IsNullOrWhiteSpace(server))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(server => server, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        await Task.WhenAll(summaryTask, topNodesTask, messagesTask);
 
-        _uniqueSenderCount = _channelMessages
-            .Select(message => message.FromNodeId)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count();
-
-        _lastSeenAtUtc = _channelMessages.FirstOrDefault()?.ReceivedAtUtc;
-        _decodedRatio = _channelMessages.Count == 0
-            ? 0
-            : (int)Math.Round(
-                _channelMessages.Count(IsDecodedMessage) * 100d / _channelMessages.Count,
-                MidpointRounding.AwayFromZero);
-
-        _topNodes = _channelMessages
-            .GroupBy(message => message.FromNodeId, StringComparer.OrdinalIgnoreCase)
-            .Select(group => new TopNodeEntry { NodeId = group.Key, PacketCount = group.Count() })
-            .OrderByDescending(entry => entry.PacketCount)
-            .Take(12)
-            .ToList();
+        _channelSummary = await summaryTask;
+        _topNodes = await topNodesTask;
+        _channelMessages = await messagesTask;
     }
 
     private async Task ToggleSubscriptionAsync()
@@ -200,20 +189,8 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private static bool IsDecodedMessage(MessageSummary message)
-    {
-        return message.PacketType is not ("Encrypted Packet" or "Unknown Packet" or "Legacy Packet");
-    }
-
     private static string GetNodeDetailsHref(string nodeId)
     {
         return $"/nodes/details/{Uri.EscapeDataString(nodeId)}";
-    }
-
-    private sealed class TopNodeEntry
-    {
-        public required string NodeId { get; set; }
-
-        public int PacketCount { get; set; }
     }
 }

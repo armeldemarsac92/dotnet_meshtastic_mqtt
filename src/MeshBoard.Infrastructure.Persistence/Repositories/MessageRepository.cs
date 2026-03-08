@@ -1,5 +1,6 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Messages;
+using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Persistence.Context;
 using MeshBoard.Infrastructure.Persistence.Mapping;
 using MeshBoard.Infrastructure.Persistence.SQL;
@@ -77,6 +78,63 @@ internal sealed class MessageRepository : IMessageRepository
         return sqlResponses.MapToMessages();
     }
 
+    public async Task<ChannelSummary> GetChannelSummaryAsync(
+        string region,
+        string channel,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch channel summary for region {Region}, channel {Channel}",
+            region,
+            channel);
+
+        var response = await _dbContext.QueryFirstOrDefaultAsync<ChannelSummarySqlResponse>(
+            MessageQueries.GetChannelSummary,
+            CreateChannelQueryParameters(region, channel),
+            cancellationToken);
+
+        if (response is null)
+        {
+            return new ChannelSummary();
+        }
+
+        return new ChannelSummary
+        {
+            PacketCount = response.PacketCount,
+            UniqueSenderCount = response.UniqueSenderCount,
+            DecodedPacketCount = response.DecodedPacketCount,
+            LastSeenAtUtc = ParseNullableDateTimeOffset(response.LastSeenAtUtc),
+            ObservedBrokerServers = ParseBrokerServers(response.BrokerServersCsv)
+        };
+    }
+
+    public async Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
+        string region,
+        string channel,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch top nodes for region {Region}, channel {Channel} with take: {Take}",
+            region,
+            channel,
+            take);
+
+        var sqlResponses = await _dbContext.QueryAsync<ChannelTopNodeSqlResponse>(
+            MessageQueries.GetTopNodesByChannel,
+            CreateChannelQueryParameters(region, channel, take),
+            cancellationToken);
+
+        return sqlResponses
+            .Select(response => new ChannelTopNode
+            {
+                NodeId = response.NodeId,
+                DisplayName = response.DisplayName,
+                PacketCount = response.PacketCount
+            })
+            .ToList();
+    }
+
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(
         string region,
         string channel,
@@ -127,5 +185,45 @@ internal sealed class MessageRepository : IMessageRepository
     private static string CreateChannelTopicPattern(string region, string channel, string transport)
     {
         return $"msh/{region}/%/{transport}/{channel}/%";
+    }
+
+    private static object CreateChannelQueryParameters(string region, string channel, int? take = null)
+    {
+        return new
+        {
+            EncryptedTopicPattern = CreateChannelTopicPattern(region, channel, "e"),
+            JsonTopicPattern = CreateChannelTopicPattern(region, channel, "json"),
+            Take = take
+        };
+    }
+
+    private static DateTimeOffset? ParseNullableDateTimeOffset(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(
+            value,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var parsedValue)
+            ? parsedValue
+            : null;
+    }
+
+    private static IReadOnlyCollection<string> ParseBrokerServers(string? brokerServersCsv)
+    {
+        if (string.IsNullOrWhiteSpace(brokerServersCsv))
+        {
+            return [];
+        }
+
+        return brokerServersCsv
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(server => server, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

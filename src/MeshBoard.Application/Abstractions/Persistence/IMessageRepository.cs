@@ -1,4 +1,5 @@
 using MeshBoard.Contracts.Messages;
+using MeshBoard.Contracts.Topics;
 
 namespace MeshBoard.Application.Abstractions.Persistence;
 
@@ -12,6 +13,17 @@ public interface IMessageRepository
 
     Task<IReadOnlyCollection<MessageSummary>> GetRecentByBrokerAsync(
         string brokerServer,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task<ChannelSummary> GetChannelSummaryAsync(
+        string region,
+        string channel,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
+        string region,
+        string channel,
         int take,
         CancellationToken cancellationToken = default);
 

@@ -1,6 +1,7 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Messages;
+using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeshBoard.UnitTests;
@@ -113,6 +114,23 @@ public sealed class MessageServiceTests
             ];
 
             return Task.FromResult(messages);
+        }
+
+        public Task<ChannelSummary> GetChannelSummaryAsync(
+            string region,
+            string channel,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
+            string region,
+            string channel,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
 
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(

@@ -2,6 +2,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Messages;
+using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -80,6 +81,23 @@ public sealed class MessageRetentionServiceTests
 
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentByBrokerAsync(
             string brokerServer,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ChannelSummary> GetChannelSummaryAsync(
+            string region,
+            string channel,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
+            string region,
+            string channel,
             int take,
             CancellationToken cancellationToken = default)
         {
