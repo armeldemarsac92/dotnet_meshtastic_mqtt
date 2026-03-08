@@ -1737,6 +1737,74 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task RuntimeCommandRepository_ShouldPersistProjectionChanges()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var repository = scope.ServiceProvider.GetRequiredService<IBrokerRuntimeCommandRepository>();
+                var projectionChangeRepository = scope.ServiceProvider.GetRequiredService<IProjectionChangeRepository>();
+                var baselineId = await projectionChangeRepository.GetLatestIdAsync();
+                var queuedAtUtc = new DateTimeOffset(2026, 3, 8, 14, 0, 0, TimeSpan.Zero);
+                var commandId = Guid.NewGuid();
+
+                await repository.EnqueueAsync(
+                    new BrokerRuntimeCommand
+                    {
+                        Id = commandId,
+                        WorkspaceId = "workspace-a",
+                        CommandType = BrokerRuntimeCommandType.Publish,
+                        Topic = "msh/US/2/json/mqtt/",
+                        Payload = """{"type":"sendtext","payload":"projection"}""",
+                        AttemptCount = 0,
+                        CreatedAtUtc = queuedAtUtc,
+                        AvailableAtUtc = queuedAtUtc
+                    });
+
+                var leasedCommand = Assert.Single(
+                    await repository.LeasePendingAsync(
+                        "processor-a",
+                        batchSize: 10,
+                        leaseDuration: TimeSpan.FromSeconds(30)));
+
+                await repository.MarkCompletedAsync(leasedCommand.Id);
+
+                var changes = await projectionChangeRepository.GetChangesAfterAsync(baselineId, 10);
+
+                Assert.Equal(3, changes.Count);
+                Assert.All(
+                    changes,
+                    change =>
+                    {
+                        Assert.Equal("workspace-a", change.WorkspaceId);
+                        Assert.Equal(ProjectionChangeKind.RuntimeCommandChanged, change.Kind);
+                        Assert.Null(change.EntityKey);
+                    });
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task RuntimeStatusRegistry_ShouldPersistProjectionChanges()
     {
         var databasePath = CreateTemporaryDatabasePath();

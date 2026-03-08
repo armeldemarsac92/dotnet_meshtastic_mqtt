@@ -2,10 +2,12 @@ using Dapper;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Meshtastic;
+using MeshBoard.Contracts.Realtime;
 using MeshBoard.Infrastructure.Persistence.SQL;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
+using System.Data.Common;
 
 namespace MeshBoard.Infrastructure.Persistence.Runtime;
 
@@ -36,6 +38,7 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
 
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         await connection.ExecuteAsync(
             new CommandDefinition(
@@ -53,7 +56,11 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
                     CreatedAtUtc = command.CreatedAtUtc.ToString("O"),
                     AvailableAtUtc = command.AvailableAtUtc.ToString("O")
                 },
+                transaction,
                 cancellationToken: cancellationToken));
+
+        await AppendProjectionChangeAsync(connection, transaction, command.WorkspaceId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<BrokerRuntimeCommand>> GetRecentAsync(
@@ -144,6 +151,12 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
                 transaction,
                 cancellationToken: cancellationToken))).ToList();
 
+        await AppendProjectionChangesAsync(
+            connection,
+            transaction,
+            responses.Select(response => response.WorkspaceId),
+            cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
         return responses.Select(Map).ToList();
@@ -201,7 +214,30 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
-        await connection.ExecuteAsync(new CommandDefinition(sql, parameters, cancellationToken: cancellationToken));
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var commandId = ExtractCommandId(parameters);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                parameters,
+                transaction,
+                cancellationToken: cancellationToken));
+
+        var workspaceId = await connection.QueryFirstOrDefaultAsync<string?>(
+            new CommandDefinition(
+                BrokerRuntimeCommandQueries.GetWorkspaceIdById,
+                new { Id = commandId },
+                transaction,
+                cancellationToken: cancellationToken));
+
+        if (!string.IsNullOrWhiteSpace(workspaceId))
+        {
+            await AppendProjectionChangeAsync(connection, transaction, workspaceId, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private SqliteConnection CreateConnection()
@@ -253,5 +289,58 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
             BrokerRuntimeCommandStatus.Failed => StatusFailed,
             _ => throw new InvalidOperationException($"Unsupported broker runtime command status '{status}'.")
         };
+    }
+
+    private static string ExtractCommandId(object parameters)
+    {
+        var commandId = parameters.GetType().GetProperty("Id")?.GetValue(parameters)?.ToString();
+
+        if (string.IsNullOrWhiteSpace(commandId))
+        {
+            throw new InvalidOperationException("Broker runtime command status updates require an Id parameter.");
+        }
+
+        return commandId;
+    }
+
+    private static Task AppendProjectionChangesAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        IEnumerable<string> workspaceIds,
+        CancellationToken cancellationToken)
+    {
+        var rows = workspaceIds
+            .Where(workspaceId => !string.IsNullOrWhiteSpace(workspaceId))
+            .Distinct(StringComparer.Ordinal)
+            .Select(
+                workspaceId => new
+                {
+                    WorkspaceId = workspaceId,
+                    ChangeKind = ProjectionChangeKind.RuntimeCommandChanged.ToString(),
+                    EntityKey = (string?)null,
+                    OccurredAtUtc = DateTimeOffset.UtcNow.ToString("O")
+                })
+            .ToArray();
+
+        if (rows.Length == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        return connection.ExecuteAsync(
+            new CommandDefinition(
+                ProjectionChangeQueries.Insert,
+                rows,
+                transaction,
+                cancellationToken: cancellationToken));
+    }
+
+    private static Task AppendProjectionChangeAsync(
+        SqliteConnection connection,
+        DbTransaction transaction,
+        string workspaceId,
+        CancellationToken cancellationToken)
+    {
+        return AppendProjectionChangesAsync(connection, transaction, [workspaceId], cancellationToken);
     }
 }

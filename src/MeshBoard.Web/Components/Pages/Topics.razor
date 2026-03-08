@@ -1,4 +1,5 @@
 @page "/topics"
+@implements IAsyncDisposable
 @using MeshBoard.Contracts.Configuration
 @using MeshBoard.Contracts.Topics
 @using MeshBoard.Web.State
@@ -8,6 +9,8 @@
 @inject ITopicExplorerService TopicExplorerService
 @inject ITopicProbeService TopicProbeService
 @inject ITopicPresetService TopicPresetService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
 @inject ServerSelectionNotifier ServerSelectionNotifier
 
 <PageTitle>Topics</PageTitle>
@@ -393,6 +396,7 @@
                   OnOpenChannel="OpenChannelDetailsFromKeyAsync" />
 
 @code {
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
     private BrokerStatus _brokerStatus = new();
     private IReadOnlyCollection<TopicCatalogEntry> _discoveredTopics = [];
     private string _explorerSearchText = string.Empty;
@@ -410,6 +414,7 @@
     private string? _statusMessage;
     private TopicRequest _topicRequest = new();
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
 
     private IReadOnlyCollection<TopicCatalogEntry> FilteredExplorerEntries => _recommendedTopics
         .Concat(_discoveredTopics)
@@ -422,12 +427,78 @@
 
     protected override async Task OnInitializedAsync()
     {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
         await LoadAsync();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     private bool IsActiveSubscription(string topicFilter)
     {
         return _brokerStatus.TopicFilters.Contains(topicFilter, StringComparer.Ordinal);
+    }
+
+    private Task HandleServerSelectionChangedAsync()
+    {
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return change.Kind is ProjectionChangeKind.ChannelSummaryUpdated or ProjectionChangeKind.RuntimeStatusChanged;
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
     }
 
     private async Task LoadAsync()

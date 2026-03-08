@@ -114,6 +114,13 @@ internal static class BrokerRuntimeCommandQueries
         LIMIT @Take;
         """;
 
+    public static string GetWorkspaceIdById =>
+        """
+        SELECT workspace_id
+        FROM broker_runtime_commands
+        WHERE id = @Id;
+        """;
+
     public static string MarkCompleted =>
         """
         UPDATE broker_runtime_commands

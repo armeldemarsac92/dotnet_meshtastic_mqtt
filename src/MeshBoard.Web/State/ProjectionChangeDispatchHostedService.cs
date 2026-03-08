@@ -121,6 +121,8 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
                     change.WorkspaceId,
                     ReadModelCacheRegion.Dashboard);
                 break;
+            case ProjectionChangeKind.RuntimeCommandChanged:
+                break;
         }
     }
 }
