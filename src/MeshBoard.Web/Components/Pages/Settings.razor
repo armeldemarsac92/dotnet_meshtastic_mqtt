@@ -1,4 +1,5 @@
 @page "/settings"
+@inject MeshBoard.Application.Observability.IActiveCircuitMetricsService ActiveCircuitMetricsService
 @inject MeshBoard.Application.Observability.IReadModelMetricsService ReadModelMetricsService
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IBrokerRuntimeCommandQueryService BrokerRuntimeCommandQueryService
@@ -45,6 +46,24 @@
             @if (_brokerStatus.RuntimeMetricsUpdatedAtUtc.HasValue)
             {
                 <p class="mt-2 text-xs text-cinder-800/68">Metrics updated @_brokerStatus.RuntimeMetricsUpdatedAtUtc.Value.ToString("u")</p>
+            }
+        </article>
+
+        <article class="liquid-panel rounded-[1.6rem] p-6">
+            <h2 class="font-display text-3xl text-cinder-950">Web app</h2>
+            <dl class="mt-5 grid gap-3 sm:grid-cols-[11rem_1fr]">
+                <dt class="text-cinder-800/70">Active circuits</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.ActiveCircuitCount</dd>
+                <dt class="text-cinder-800/70">Peak circuits</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.PeakActiveCircuitCount</dd>
+                <dt class="text-cinder-800/70">Opened</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.OpenedCircuitCount</dd>
+                <dt class="text-cinder-800/70">Closed</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.ClosedCircuitCount</dd>
+            </dl>
+            @if (_activeCircuitMetrics.LastChangedAtUtc.HasValue)
+            {
+                <p class="mt-2 text-xs text-cinder-800/68">Circuit metrics updated @_activeCircuitMetrics.LastChangedAtUtc.Value.ToString("u")</p>
             }
         </article>
 
@@ -170,6 +189,7 @@
 </div>
 
 @code {
+    private ActiveCircuitMetricSnapshot _activeCircuitMetrics = new();
     private BrokerStatus _brokerStatus = new();
     private bool _isRefreshingRuntime;
     private bool _isPruningMessages;
@@ -226,6 +246,7 @@
 
         try
         {
+            _activeCircuitMetrics = ActiveCircuitMetricsService.GetSnapshot();
             _brokerStatus = BrokerMonitorService.GetBrokerStatus();
             _recentCommands = await BrokerRuntimeCommandQueryService.GetRecentCommands(12);
             _readModelMetrics = ReadModelMetricsService.GetSnapshots()

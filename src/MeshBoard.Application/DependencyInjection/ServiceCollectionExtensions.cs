@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
         services.AddMemoryCache(options => options.SizeLimit = 1_024);
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
         services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
+        services.TryAddSingleton<IActiveCircuitMetricsService, InMemoryActiveCircuitMetricsService>();
         services.TryAddSingleton<IReadModelCacheInvalidator, InMemoryReadModelCacheInvalidator>();
         services.TryAddSingleton<IReadModelMetricsService, InMemoryReadModelMetricsService>();
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
