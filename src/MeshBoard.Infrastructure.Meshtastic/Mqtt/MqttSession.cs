@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Meshtastic;
@@ -28,7 +30,7 @@ internal sealed class MqttSession : IMqttSession
     {
         _connectionSettings = connectionSettings;
         _fallbackBrokerOptions = brokerOptions.Value;
-        _currentClientId = CreateClientId(_fallbackBrokerOptions.ClientId);
+        _currentClientId = CreateClientId(_fallbackBrokerOptions.ClientId, _connectionSettings);
         _logger = logger;
 
         var factory = new MqttClientFactory();
@@ -59,7 +61,7 @@ internal sealed class MqttSession : IMqttSession
                 return;
             }
 
-            _currentClientId = CreateClientId(_fallbackBrokerOptions.ClientId);
+            _currentClientId = CreateClientId(_fallbackBrokerOptions.ClientId, _connectionSettings);
 
             _logger.LogInformation(
                 "Attempting to connect to MQTT broker: {Host}:{Port}",
@@ -288,14 +290,42 @@ internal sealed class MqttSession : IMqttSession
         await _mqttClient.SubscribeAsync(options, cancellationToken);
     }
 
-    private static string CreateClientId(string configuredClientId)
+    internal static string CreateClientId(
+        string configuredClientId,
+        MqttSessionConnectionSettings connectionSettings)
     {
-        if (!string.IsNullOrWhiteSpace(configuredClientId) && configuredClientId != "meshboard-local")
+        ArgumentNullException.ThrowIfNull(connectionSettings);
+
+        var clientIdBase = NormalizeClientIdBase(configuredClientId);
+        var identity = $"{connectionSettings.WorkspaceId}|{connectionSettings.BrokerServerProfileId:N}|{connectionSettings.Host}:{connectionSettings.Port}";
+
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
+        var suffix = Convert.ToHexString(hashBytes[..8]).ToLowerInvariant();
+        var maxBaseLength = Math.Max(1, 64 - suffix.Length - 1);
+
+        if (clientIdBase.Length > maxBaseLength)
         {
-            return configuredClientId;
+            clientIdBase = clientIdBase[..maxBaseLength];
         }
 
-        return $"meshboard-{Environment.MachineName.ToLowerInvariant()}-{Guid.NewGuid():N}";
+        return $"{clientIdBase}-{suffix}";
+    }
+
+    private static string NormalizeClientIdBase(string configuredClientId)
+    {
+        var rawValue = string.IsNullOrWhiteSpace(configuredClientId)
+            ? "meshboard"
+            : configuredClientId.Trim();
+
+        var normalizedCharacters = rawValue
+            .ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '-')
+            .ToArray();
+        var normalizedValue = new string(normalizedCharacters).Trim('-');
+
+        return string.IsNullOrWhiteSpace(normalizedValue)
+            ? "meshboard"
+            : normalizedValue;
     }
 
     private static string CreateConnectFailureMessage(string resultCode, string? reasonString)
