@@ -1,7 +1,6 @@
 @page "/channels/{Region}/{Channel}"
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IChannelReadService ChannelReadService
-@inject IMessageService MessageService
 
 <PageTitle>Channel Details</PageTitle>
 
@@ -99,14 +98,18 @@
             <div class="border-b border-sand-100/80 px-5 py-4">
                 <h2 class="font-display text-3xl text-cinder-950">Recent messages</h2>
             </div>
-            @if (_channelMessages.Count == 0)
+            @if (_isMessagesLoading && _channelMessagesPage.TotalCount == 0)
+            {
+                <div class="p-6 text-cinder-800/78">Loading channel messages...</div>
+            }
+            else if (_channelMessagesPage.Items.Count == 0)
             {
                 <div class="p-6 text-cinder-800/78">No recent messages for this channel.</div>
             }
             else
             {
                 <ul class="space-y-3 p-5 text-sm text-cinder-900">
-                    @foreach (var message in _channelMessages.Take(25))
+                    @foreach (var message in _channelMessagesPage.Items)
                     {
                         <li class="liquid-subpanel rounded-2xl p-3">
                             <div class="flex flex-wrap items-center gap-2">
@@ -119,11 +122,35 @@
                     }
                 </ul>
             }
+            <div class="flex flex-wrap items-center justify-between gap-3 border-t border-sand-100/80 px-5 py-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
+                    @GetMessagePagingSummaryText()
+                </p>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button"
+                            class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                            @onclick="GoToPreviousMessagesPageAsync"
+                            disabled="@(!CanGoToPreviousMessagesPage)">
+                        Previous
+                    </button>
+                    <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">
+                        Page @_currentMessagesPage of @GetMessagesTotalPages()
+                    </span>
+                    <button type="button"
+                            class="liquid-button liquid-button-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                            @onclick="GoToNextMessagesPageAsync"
+                            disabled="@(!CanGoToNextMessagesPage)">
+                        Next
+                    </button>
+                </div>
+            </div>
         </article>
     </section>
 </div>
 
 @code {
+    private const int MessagesPageSize = 25;
+
     [Parameter]
     public string Channel { get; set; } = string.Empty;
 
@@ -131,7 +158,9 @@
     public string Region { get; set; } = string.Empty;
 
     private ChannelSummary _channelSummary = new();
-    private IReadOnlyCollection<MessageSummary> _channelMessages = [];
+    private MessagePageResult _channelMessagesPage = new();
+    private int _currentMessagesPage = 1;
+    private bool _isMessagesLoading;
     private string? _statusMessage;
     private IReadOnlyCollection<ChannelTopNode> _topNodes = [];
 
@@ -148,8 +177,15 @@
 
     private bool IsSubscribed => BrokerMonitorService.GetBrokerStatus().TopicFilters.Contains(TopicFilter, StringComparer.Ordinal);
 
+    private bool CanGoToNextMessagesPage =>
+        !_isMessagesLoading && (_currentMessagesPage * MessagesPageSize) < _channelMessagesPage.TotalCount;
+
+    private bool CanGoToPreviousMessagesPage =>
+        !_isMessagesLoading && _currentMessagesPage > 1;
+
     protected override async Task OnParametersSetAsync()
     {
+        _currentMessagesPage = 1;
         await LoadAsync();
     }
 
@@ -157,13 +193,93 @@
     {
         var summaryTask = ChannelReadService.GetChannelSummary(Region, Channel);
         var topNodesTask = ChannelReadService.GetTopNodesByChannel(Region, Channel, 12);
-        var messagesTask = MessageService.GetRecentMessagesByChannel(Region, Channel, 5_000);
+        var messagesTask = LoadMessagesPageAsync();
 
         await Task.WhenAll(summaryTask, topNodesTask, messagesTask);
 
         _channelSummary = await summaryTask;
         _topNodes = await topNodesTask;
-        _channelMessages = await messagesTask;
+        await messagesTask;
+    }
+
+    private async Task LoadMessagesPageAsync()
+    {
+        _isMessagesLoading = true;
+
+        try
+        {
+            var page = await ChannelReadService.GetMessagesPageByChannel(
+                Region,
+                Channel,
+                offset: (_currentMessagesPage - 1) * MessagesPageSize,
+                take: MessagesPageSize);
+
+            if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
+            {
+                _currentMessagesPage = GetLastMessagesPageNumber(page.TotalCount);
+                page = await ChannelReadService.GetMessagesPageByChannel(
+                    Region,
+                    Channel,
+                    offset: (_currentMessagesPage - 1) * MessagesPageSize,
+                    take: MessagesPageSize);
+            }
+
+            _channelMessagesPage = page;
+        }
+        finally
+        {
+            _isMessagesLoading = false;
+        }
+    }
+
+    private async Task GoToPreviousMessagesPageAsync()
+    {
+        if (!CanGoToPreviousMessagesPage)
+        {
+            return;
+        }
+
+        _currentMessagesPage--;
+        await LoadMessagesPageAsync();
+    }
+
+    private async Task GoToNextMessagesPageAsync()
+    {
+        if (!CanGoToNextMessagesPage)
+        {
+            return;
+        }
+
+        _currentMessagesPage++;
+        await LoadMessagesPageAsync();
+    }
+
+    private string GetMessagePagingSummaryText()
+    {
+        if (_isMessagesLoading && _channelMessagesPage.TotalCount == 0)
+        {
+            return "Loading packets";
+        }
+
+        if (_channelMessagesPage.TotalCount == 0)
+        {
+            return "No packets found";
+        }
+
+        var start = ((_currentMessagesPage - 1) * MessagesPageSize) + 1;
+        var end = Math.Min(_currentMessagesPage * MessagesPageSize, _channelMessagesPage.TotalCount);
+
+        return $"Showing {start}-{end} of {_channelMessagesPage.TotalCount} packets";
+    }
+
+    private int GetLastMessagesPageNumber(int totalCount)
+    {
+        return Math.Max(1, (int)Math.Ceiling(totalCount / (double)MessagesPageSize));
+    }
+
+    private int GetMessagesTotalPages()
+    {
+        return _channelMessagesPage.TotalCount == 0 ? 1 : GetLastMessagesPageNumber(_channelMessagesPage.TotalCount);
     }
 
     private async Task ToggleSubscriptionAsync()

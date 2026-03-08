@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
 
@@ -6,6 +7,13 @@ namespace MeshBoard.Application.Services;
 
 public interface IChannelReadService
 {
+    Task<MessagePageResult> GetMessagesPageByChannel(
+        string region,
+        string channel,
+        int offset = 0,
+        int take = 25,
+        CancellationToken cancellationToken = default);
+
     Task<ChannelSummary> GetChannelSummary(
         string region,
         string channel,
@@ -20,6 +28,7 @@ public interface IChannelReadService
 
 public sealed class ChannelReadService : IChannelReadService
 {
+    private const int MaxMessagesTake = 100;
     private const int MaxTopNodesTake = 100;
 
     private readonly ILogger<ChannelReadService> _logger;
@@ -31,6 +40,50 @@ public sealed class ChannelReadService : IChannelReadService
     {
         _messageRepository = messageRepository;
         _logger = logger;
+    }
+
+    public async Task<MessagePageResult> GetMessagesPageByChannel(
+        string region,
+        string channel,
+        int offset = 0,
+        int take = 25,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(channel))
+        {
+            return new MessagePageResult();
+        }
+
+        var normalizedRegion = region.Trim();
+        var normalizedChannel = channel.Trim();
+        var normalizedOffset = Math.Max(0, offset);
+        var normalizedTake = Math.Clamp(take, 1, MaxMessagesTake);
+
+        _logger.LogDebug(
+            "Attempting to get channel messages page for region {Region}, channel {Channel} with offset {Offset} and take {Take}",
+            normalizedRegion,
+            normalizedChannel,
+            normalizedOffset,
+            normalizedTake);
+
+        var totalCountTask = _messageRepository.CountByChannelAsync(
+            normalizedRegion,
+            normalizedChannel,
+            cancellationToken);
+        var itemsTask = _messageRepository.GetPageByChannelAsync(
+            normalizedRegion,
+            normalizedChannel,
+            normalizedOffset,
+            normalizedTake,
+            cancellationToken);
+
+        await Task.WhenAll(totalCountTask, itemsTask);
+
+        return new MessagePageResult
+        {
+            TotalCount = await totalCountTask,
+            Items = await itemsTask
+        };
     }
 
     public async Task<ChannelSummary> GetChannelSummary(

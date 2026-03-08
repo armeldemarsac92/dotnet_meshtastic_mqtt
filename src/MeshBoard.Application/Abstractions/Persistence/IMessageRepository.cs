@@ -29,9 +29,21 @@ public interface IMessageRepository
         string channel,
         CancellationToken cancellationToken = default);
 
+    Task<int> CountByChannelAsync(
+        string region,
+        string channel,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
         string region,
         string channel,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<MessageSummary>> GetPageByChannelAsync(
+        string region,
+        string channel,
+        int offset,
         int take,
         CancellationToken cancellationToken = default);
 

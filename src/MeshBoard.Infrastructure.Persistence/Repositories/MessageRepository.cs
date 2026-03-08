@@ -147,6 +147,22 @@ internal sealed class MessageRepository : IMessageRepository
         };
     }
 
+    public Task<int> CountByChannelAsync(
+        string region,
+        string channel,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to count messages for region {Region}, channel {Channel}",
+            region,
+            channel);
+
+        return _dbContext.QueryFirstOrDefaultAsync<int>(
+            MessageQueries.CountMessagesByChannel,
+            CreateChannelQueryParameters(region, channel),
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
         string region,
         string channel,
@@ -172,6 +188,28 @@ internal sealed class MessageRepository : IMessageRepository
                 PacketCount = response.PacketCount
             })
             .ToList();
+    }
+
+    public async Task<IReadOnlyCollection<MessageSummary>> GetPageByChannelAsync(
+        string region,
+        string channel,
+        int offset,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch paged messages for region {Region}, channel {Channel} with offset {Offset} and take {Take}",
+            region,
+            channel,
+            offset,
+            take);
+
+        var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
+            MessageQueries.GetMessagesPageByChannel,
+            CreateChannelQueryParameters(region, channel, take, offset),
+            cancellationToken);
+
+        return sqlResponses.MapToMessages();
     }
 
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(
@@ -233,6 +271,21 @@ internal sealed class MessageRepository : IMessageRepository
             EncryptedTopicPattern = CreateChannelTopicPattern(region, channel, "e"),
             JsonTopicPattern = CreateChannelTopicPattern(region, channel, "json"),
             Take = take
+        };
+    }
+
+    private static object CreateChannelQueryParameters(
+        string region,
+        string channel,
+        int? take,
+        int offset)
+    {
+        return new
+        {
+            EncryptedTopicPattern = CreateChannelTopicPattern(region, channel, "e"),
+            JsonTopicPattern = CreateChannelTopicPattern(region, channel, "json"),
+            Take = take,
+            Offset = offset
         };
     }
 

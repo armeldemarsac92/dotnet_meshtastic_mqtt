@@ -36,6 +36,22 @@ public sealed class ChannelReadServiceTests
         Assert.Single(topNodes);
     }
 
+    [Fact]
+    public async Task GetMessagesPageByChannel_ShouldForwardPagingAndReturnPagedResult()
+    {
+        var repository = new FakeMessageRepository();
+        var service = new ChannelReadService(repository, NullLogger<ChannelReadService>.Instance);
+
+        var page = await service.GetMessagesPageByChannel("US", "LongFast", offset: 25, take: 40);
+
+        Assert.Equal("US", repository.LastRegion);
+        Assert.Equal("LongFast", repository.LastChannel);
+        Assert.Equal(25, repository.LastOffset);
+        Assert.Equal(40, repository.LastTake);
+        Assert.Equal(3, page.TotalCount);
+        Assert.Single(page.Items);
+    }
+
     private sealed class FakeMessageRepository : IMessageRepository
     {
         public string? LastChannel { get; private set; }
@@ -43,6 +59,8 @@ public sealed class ChannelReadServiceTests
         public string? LastRegion { get; private set; }
 
         public int LastTake { get; private set; }
+
+        public int LastOffset { get; private set; }
 
         public Task<bool> AddAsync(SaveObservedMessageRequest request, CancellationToken cancellationToken = default)
         {
@@ -86,6 +104,17 @@ public sealed class ChannelReadServiceTests
                 });
         }
 
+        public Task<int> CountByChannelAsync(
+            string region,
+            string channel,
+            CancellationToken cancellationToken = default)
+        {
+            LastRegion = region;
+            LastChannel = channel;
+
+            return Task.FromResult(3);
+        }
+
         public Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
             string region,
             string channel,
@@ -107,6 +136,35 @@ public sealed class ChannelReadServiceTests
             ];
 
             return Task.FromResult(nodes);
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageByChannelAsync(
+            string region,
+            string channel,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            LastRegion = region;
+            LastChannel = channel;
+            LastOffset = offset;
+            LastTake = take;
+
+            IReadOnlyCollection<MessageSummary> messages =
+            [
+                new()
+                {
+                    Id = Guid.NewGuid(),
+                    Topic = $"msh/{region}/2/e/{channel}/!abc12345",
+                    PacketType = "Text Message",
+                    FromNodeId = "!abc12345",
+                    PayloadPreview = "hello",
+                    IsPrivate = false,
+                    ReceivedAtUtc = DateTimeOffset.UtcNow
+                }
+            ];
+
+            return Task.FromResult(messages);
         }
 
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(

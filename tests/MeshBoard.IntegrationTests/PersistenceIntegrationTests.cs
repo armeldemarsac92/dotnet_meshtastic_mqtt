@@ -439,6 +439,94 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task ChannelReadService_ShouldReturnPagedMessagesByChannel()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var channelReadService = scope.ServiceProvider.GetRequiredService<IChannelReadService>();
+                var messageRepository = scope.ServiceProvider.GetRequiredService<IMessageRepository>();
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/LongFast/!node0001",
+                        PacketType = "Text Message",
+                        MessageKey = "!node0001:00000001",
+                        FromNodeId = "!node0001",
+                        PayloadPreview = "first longfast",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 1, 5, 0, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/json/LongFast/!node0002",
+                        PacketType = "Text Message",
+                        MessageKey = "!node0002:00000001",
+                        FromNodeId = "!node0002",
+                        PayloadPreview = "second longfast",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 1, 5, 1, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/LongFast/!node0003",
+                        PacketType = "Text Message",
+                        MessageKey = "!node0003:00000001",
+                        FromNodeId = "!node0003",
+                        PayloadPreview = "third longfast",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 1, 5, 2, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/MediumFast/!node9999",
+                        PacketType = "Text Message",
+                        MessageKey = "!node9999:00000001",
+                        FromNodeId = "!node9999",
+                        PayloadPreview = "other channel",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 1, 5, 3, TimeSpan.Zero)
+                    });
+
+                var firstPage = await channelReadService.GetMessagesPageByChannel("US", "LongFast", offset: 0, take: 2);
+                var secondPage = await channelReadService.GetMessagesPageByChannel("US", "LongFast", offset: 2, take: 2);
+
+                Assert.Equal(3, firstPage.TotalCount);
+                Assert.Equal(
+                    ["third longfast", "second longfast"],
+                    firstPage.Items.Select(message => message.PayloadPreview).ToArray());
+
+                Assert.Equal(3, secondPage.TotalCount);
+                Assert.Single(secondPage.Items);
+                Assert.Equal("first longfast", secondPage.Items.Single().PayloadPreview);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task MessageService_ShouldReturnPagedFilteredMessages()
     {
         var databasePath = CreateTemporaryDatabasePath();
