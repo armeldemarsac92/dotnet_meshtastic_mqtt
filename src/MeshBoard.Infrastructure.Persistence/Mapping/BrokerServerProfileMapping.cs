@@ -7,11 +7,14 @@ namespace MeshBoard.Infrastructure.Persistence.Mapping;
 
 internal static class BrokerServerProfileMapping
 {
-    public static UpsertBrokerServerProfileSqlRequest ToSqlRequest(this SaveBrokerServerProfileRequest request)
+    public static UpsertBrokerServerProfileSqlRequest ToSqlRequest(
+        this SaveBrokerServerProfileRequest request,
+        string workspaceId)
     {
         return new UpsertBrokerServerProfileSqlRequest
         {
             Id = (request.Id ?? Guid.NewGuid()).ToString(),
+            WorkspaceId = workspaceId,
             Name = request.Name,
             Host = request.Host,
             Port = request.Port,

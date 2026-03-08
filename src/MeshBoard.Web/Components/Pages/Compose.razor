@@ -100,11 +100,10 @@
     private string? _composeStatusMessage;
     private Task? _refreshTask;
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        RefreshStatus();
+        await RefreshStatusAsync();
         _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
-        return Task.CompletedTask;
     }
 
     public ValueTask DisposeAsync()
@@ -122,7 +121,7 @@
 
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                RefreshStatus();
+                await RefreshStatusAsync();
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -131,9 +130,22 @@
         }
     }
 
-    private void RefreshStatus()
+    private async Task RefreshStatusAsync()
     {
-        _capabilityStatus = SendCapabilityService.GetStatus();
+        try
+        {
+            _capabilityStatus = await SendCapabilityService.GetStatus(_cancellationTokenSource.Token);
+        }
+        catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            _capabilityStatus = new SendCapabilityStatus
+            {
+                BlockingReasons = [$"Failed to load send capability: {exception.Message}"]
+            };
+        }
     }
 
     private string GetCapabilityBadgeClass()
@@ -161,7 +173,7 @@
         finally
         {
             _isSending = false;
-            RefreshStatus();
+            await RefreshStatusAsync();
         }
     }
 }

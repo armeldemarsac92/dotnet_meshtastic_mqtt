@@ -1,5 +1,6 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Contracts.Configuration;
+using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Meshtastic;
 using Microsoft.Extensions.Options;
 
@@ -7,7 +8,7 @@ namespace MeshBoard.Application.Services;
 
 public interface ISendCapabilityService
 {
-    SendCapabilityStatus GetStatus();
+    Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default);
 }
 
 public sealed class SendCapabilityService : ISendCapabilityService
@@ -26,9 +27,9 @@ public sealed class SendCapabilityService : ISendCapabilityService
         _brokerServerProfileService = brokerServerProfileService;
     }
 
-    public SendCapabilityStatus GetStatus()
+    public async Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default)
     {
-        var activeServer = TryGetActiveServerProfile();
+        var activeServer = await TryGetActiveServerProfile(cancellationToken);
         var host = activeServer?.Host ?? _brokerOptions.Host;
         var port = activeServer?.Port ?? _brokerOptions.Port;
         var downlinkTopic = activeServer?.DownlinkTopic ?? _brokerOptions.DownlinkTopic;
@@ -77,13 +78,13 @@ public sealed class SendCapabilityService : ISendCapabilityService
         return status;
     }
 
-    private Contracts.Configuration.BrokerServerProfile? TryGetActiveServerProfile()
+    private async Task<BrokerServerProfile?> TryGetActiveServerProfile(CancellationToken cancellationToken)
     {
         try
         {
-            return _brokerServerProfileService.GetActiveServerProfile().GetAwaiter().GetResult();
+            return await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
         }
-        catch
+        catch (NotFoundException)
         {
             return null;
         }

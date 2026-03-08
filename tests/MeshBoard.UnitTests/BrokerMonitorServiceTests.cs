@@ -109,6 +109,7 @@ public sealed class BrokerMonitorServiceTests
             mqttSession,
             profileService,
             Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
+            new FakeBrokerRuntimeRegistry(),
             NullLogger<BrokerMonitorService>.Instance);
 
         await service.SwitchActiveServerProfile(targetProfile.Id);
@@ -129,6 +130,93 @@ public sealed class BrokerMonitorServiceTests
             mqttSession.SubscribedFilters);
     }
 
+    [Fact]
+    public async Task GetBrokerStatus_ShouldReadRuntimeSnapshot_FromSharedRegistryAcrossServiceInstances()
+    {
+        var initialProfile = new BrokerServerProfile
+        {
+            Id = Guid.NewGuid(),
+            Name = "EU server",
+            Host = "mqtt.eu",
+            Port = 1883,
+            DefaultTopicPattern = "msh/EU_868/2/e/MediumFast/#",
+            DownlinkTopic = "msh/EU_868/2/json/mqtt/",
+            EnableSend = true,
+            IsActive = true
+        };
+        var targetProfile = new BrokerServerProfile
+        {
+            Id = Guid.NewGuid(),
+            Name = "US server",
+            Host = "mqtt.us",
+            Port = 1883,
+            DefaultTopicPattern = "msh/US/2/e/LongFast/#",
+            DownlinkTopic = "msh/US/2/json/mqtt/",
+            EnableSend = true,
+            IsActive = false
+        };
+        var mqttSession = new FakeMqttSession(isConnected: true);
+        var profileService = new FakeBrokerServerProfileService(initialProfile, targetProfile);
+        var runtimeRegistry = new FakeBrokerRuntimeRegistry();
+        var serviceA = new BrokerMonitorService(
+            mqttSession,
+            profileService,
+            Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
+            runtimeRegistry,
+            NullLogger<BrokerMonitorService>.Instance);
+        var serviceB = new BrokerMonitorService(
+            mqttSession,
+            profileService,
+            Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
+            runtimeRegistry,
+            NullLogger<BrokerMonitorService>.Instance);
+
+        await serviceA.SwitchActiveServerProfile(targetProfile.Id);
+
+        var status = serviceB.GetBrokerStatus();
+
+        Assert.Equal(targetProfile.Id, status.ActiveServerProfileId);
+        Assert.Equal("US server", status.ActiveServerName);
+        Assert.Equal("mqtt.us:1883", status.ActiveServerAddress);
+    }
+
+    [Fact]
+    public async Task EnsureConnected_ShouldNotOverwriteRuntimeSnapshot_WhenSessionIsAlreadyConnected()
+    {
+        var runtimeRegistry = new FakeBrokerRuntimeRegistry();
+        runtimeRegistry.UpdateSnapshot(
+            new BrokerRuntimeSnapshot
+            {
+                ActiveServerProfileId = Guid.NewGuid(),
+                ActiveServerName = "Already connected runtime",
+                ActiveServerAddress = "mqtt.connected:1883"
+            });
+        var activeProfile = new BrokerServerProfile
+        {
+            Id = Guid.NewGuid(),
+            Name = "Different workspace profile",
+            Host = "mqtt.different",
+            Port = 1883,
+            DefaultTopicPattern = "msh/US/2/e/LongFast/#",
+            DownlinkTopic = "msh/US/2/json/mqtt/",
+            EnableSend = true,
+            IsActive = true
+        };
+        var service = new BrokerMonitorService(
+            new FakeMqttSession(isConnected: true),
+            new FakeBrokerServerProfileService(activeProfile),
+            Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
+            runtimeRegistry,
+            NullLogger<BrokerMonitorService>.Instance);
+
+        await service.EnsureConnected();
+
+        var status = service.GetBrokerStatus();
+
+        Assert.Equal("Already connected runtime", status.ActiveServerName);
+        Assert.Equal("mqtt.connected:1883", status.ActiveServerAddress);
+    }
+
     private static BrokerMonitorService CreateService(IMqttSession mqttSession)
     {
         return new BrokerMonitorService(
@@ -146,7 +234,37 @@ public sealed class BrokerMonitorServiceTests
                     IsActive = true
                 }),
             Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
+            new FakeBrokerRuntimeRegistry(),
             NullLogger<BrokerMonitorService>.Instance);
+    }
+
+    private sealed class FakeBrokerRuntimeRegistry : IBrokerRuntimeRegistry
+    {
+        private BrokerRuntimeSnapshot _snapshot = new()
+        {
+            ActiveServerName = "Default server",
+            ActiveServerAddress = "mqtt.meshtastic.org:1883"
+        };
+
+        public BrokerRuntimeSnapshot GetSnapshot()
+        {
+            return new BrokerRuntimeSnapshot
+            {
+                ActiveServerProfileId = _snapshot.ActiveServerProfileId,
+                ActiveServerName = _snapshot.ActiveServerName,
+                ActiveServerAddress = _snapshot.ActiveServerAddress
+            };
+        }
+
+        public void UpdateSnapshot(BrokerRuntimeSnapshot snapshot)
+        {
+            _snapshot = new BrokerRuntimeSnapshot
+            {
+                ActiveServerProfileId = snapshot.ActiveServerProfileId,
+                ActiveServerName = snapshot.ActiveServerName,
+                ActiveServerAddress = snapshot.ActiveServerAddress
+            };
+        }
     }
 
     private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService

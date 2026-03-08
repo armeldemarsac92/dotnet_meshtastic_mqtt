@@ -20,15 +20,20 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
     }
 
     public async Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(
+        string workspaceId,
         string brokerServer,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to fetch topic presets for broker {BrokerServer}", brokerServer);
+        _logger.LogDebug(
+            "Attempting to fetch topic presets for workspace {WorkspaceId} and broker {BrokerServer}",
+            workspaceId,
+            brokerServer);
 
         var topicPresets = await _dbContext.QueryAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresets,
             new
             {
+                WorkspaceId = workspaceId,
                 BrokerServer = brokerServer
             },
             cancellationToken: cancellationToken);
@@ -37,16 +42,18 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
     }
 
     public async Task<TopicPreset> UpsertAsync(
+        string workspaceId,
         string brokerServer,
         SaveTopicPresetRequest request,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Attempting to upsert topic preset: {TopicPattern} for broker {BrokerServer}",
+            "Attempting to upsert topic preset: {TopicPattern} for workspace {WorkspaceId} and broker {BrokerServer}",
             request.TopicPattern,
+            workspaceId,
             brokerServer);
 
-        var sqlRequest = request.ToSqlRequest(brokerServer);
+        var sqlRequest = request.ToSqlRequest(workspaceId, brokerServer);
 
         if (sqlRequest.IsDefault == 1)
         {
@@ -54,6 +61,7 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
                 TopicPresetQueries.ClearDefaultTopicPresets,
                 new
                 {
+                    WorkspaceId = workspaceId,
                     BrokerServer = brokerServer
                 },
                 cancellationToken: cancellationToken);
@@ -68,6 +76,7 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
             TopicPresetQueries.GetTopicPresetByTopicPattern,
             new
             {
+                WorkspaceId = workspaceId,
                 BrokerServer = brokerServer,
                 sqlRequest.TopicPattern
             },

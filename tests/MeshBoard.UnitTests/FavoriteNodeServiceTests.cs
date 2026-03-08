@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Favorites;
@@ -13,7 +14,11 @@ public sealed class FavoriteNodeServiceTests
     {
         var repository = new FakeFavoriteNodeRepository();
         var unitOfWork = new FakeUnitOfWork();
-        var service = new FavoriteNodeService(repository, unitOfWork, NullLogger<FavoriteNodeService>.Instance);
+        var service = new FavoriteNodeService(
+            repository,
+            unitOfWork,
+            new FakeWorkspaceContextAccessor(),
+            NullLogger<FavoriteNodeService>.Instance);
 
         var favoriteNode = await service.SaveFavoriteNode(
             new SaveFavoriteNodeRequest
@@ -34,7 +39,11 @@ public sealed class FavoriteNodeServiceTests
     {
         var repository = new FakeFavoriteNodeRepository { ThrowOnUpsert = true };
         var unitOfWork = new FakeUnitOfWork();
-        var service = new FavoriteNodeService(repository, unitOfWork, NullLogger<FavoriteNodeService>.Instance);
+        var service = new FavoriteNodeService(
+            repository,
+            unitOfWork,
+            new FakeWorkspaceContextAccessor(),
+            NullLogger<FavoriteNodeService>.Instance);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.SaveFavoriteNode(
@@ -53,7 +62,11 @@ public sealed class FavoriteNodeServiceTests
     {
         var repository = new FakeFavoriteNodeRepository { DeleteResult = true };
         var unitOfWork = new FakeUnitOfWork();
-        var service = new FavoriteNodeService(repository, unitOfWork, NullLogger<FavoriteNodeService>.Instance);
+        var service = new FavoriteNodeService(
+            repository,
+            unitOfWork,
+            new FakeWorkspaceContextAccessor(),
+            NullLogger<FavoriteNodeService>.Instance);
 
         await service.RemoveFavoriteNode("!abcd1234");
 
@@ -67,7 +80,11 @@ public sealed class FavoriteNodeServiceTests
     {
         var repository = new FakeFavoriteNodeRepository { DeleteResult = false };
         var unitOfWork = new FakeUnitOfWork();
-        var service = new FavoriteNodeService(repository, unitOfWork, NullLogger<FavoriteNodeService>.Instance);
+        var service = new FavoriteNodeService(
+            repository,
+            unitOfWork,
+            new FakeWorkspaceContextAccessor(),
+            NullLogger<FavoriteNodeService>.Instance);
 
         await Assert.ThrowsAsync<NotFoundException>(() => service.RemoveFavoriteNode("!missing"));
 
@@ -82,18 +99,26 @@ public sealed class FavoriteNodeServiceTests
 
         public bool ThrowOnUpsert { get; set; }
 
-        public Task<bool> DeleteAsync(string nodeId, CancellationToken cancellationToken = default)
+        public Task<bool> DeleteAsync(
+            string workspaceId,
+            string nodeId,
+            CancellationToken cancellationToken = default)
         {
             return Task.FromResult(DeleteResult);
         }
 
-        public Task<IReadOnlyCollection<FavoriteNode>> GetAllAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<FavoriteNode>> GetAllAsync(
+            string workspaceId,
+            CancellationToken cancellationToken = default)
         {
             IReadOnlyCollection<FavoriteNode> result = [];
             return Task.FromResult(result);
         }
 
-        public Task<FavoriteNode> UpsertAsync(SaveFavoriteNodeRequest request, CancellationToken cancellationToken = default)
+        public Task<FavoriteNode> UpsertAsync(
+            string workspaceId,
+            SaveFavoriteNodeRequest request,
+            CancellationToken cancellationToken = default)
         {
             if (ThrowOnUpsert)
             {
@@ -109,6 +134,14 @@ public sealed class FavoriteNodeServiceTests
                     LongName = request.LongName,
                     CreatedAtUtc = DateTimeOffset.UtcNow
                 });
+        }
+    }
+
+    private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
+    {
+        public string GetWorkspaceId()
+        {
+            return "workspace-tests";
         }
     }
 

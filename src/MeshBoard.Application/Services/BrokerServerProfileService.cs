@@ -1,9 +1,9 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace MeshBoard.Application.Services;
 
@@ -22,60 +22,47 @@ public interface IBrokerServerProfileService
 
 public sealed class BrokerServerProfileService : IBrokerServerProfileService
 {
-    private readonly BrokerOptions _brokerOptions;
     private readonly ILogger<BrokerServerProfileService> _logger;
     private readonly IBrokerServerProfileRepository _repository;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public BrokerServerProfileService(
         IBrokerServerProfileRepository repository,
-        IOptions<BrokerOptions> brokerOptions,
+        IUnitOfWork unitOfWork,
+        IWorkspaceContextAccessor workspaceContextAccessor,
         ILogger<BrokerServerProfileService> logger)
     {
         _repository = repository;
-        _brokerOptions = brokerOptions.Value;
+        _unitOfWork = unitOfWork;
+        _workspaceContextAccessor = workspaceContextAccessor;
         _logger = logger;
     }
 
     public Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default)
     {
-        return _repository.GetAllAsync(cancellationToken);
+        return _repository.GetAllAsync(GetWorkspaceId(), cancellationToken);
     }
 
     public async Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default)
     {
-        var activeProfile = await _repository.GetActiveAsync(cancellationToken);
+        var activeProfile = await _repository.GetActiveAsync(GetWorkspaceId(), cancellationToken);
 
         if (activeProfile is not null)
         {
             return activeProfile;
         }
 
-        _logger.LogInformation("No active broker server profile found. Seeding default profile from app settings.");
-
-        var seededProfile = await SaveServerProfile(
-            new SaveBrokerServerProfileRequest
-            {
-                Name = "Default server",
-                Host = _brokerOptions.Host,
-                Port = _brokerOptions.Port,
-                UseTls = _brokerOptions.UseTls,
-                Username = _brokerOptions.Username,
-                Password = _brokerOptions.Password,
-                DefaultTopicPattern = _brokerOptions.DefaultTopicPattern,
-                DefaultEncryptionKeyBase64 = _brokerOptions.DefaultEncryptionKeyBase64,
-                DownlinkTopic = _brokerOptions.DownlinkTopic,
-                EnableSend = _brokerOptions.EnableSend,
-                IsActive = true
-            },
-            cancellationToken);
-
-        return seededProfile;
+        _logger.LogWarning("No active broker server profile is configured.");
+        throw new NotFoundException("No active broker server profile is configured.");
     }
 
     public async Task<BrokerServerProfile> SaveServerProfile(
         SaveBrokerServerProfileRequest request,
         CancellationToken cancellationToken = default)
     {
+        var workspaceId = GetWorkspaceId();
+
         if (request is null)
         {
             throw new BadRequestException("A server profile request is required.");
@@ -127,36 +114,84 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             IsActive = request.IsActive
         };
 
-        if (normalizedRequest.IsActive)
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        try
         {
-            await _repository.ClearActiveAsync(cancellationToken);
+            var upsertRequest = CloneRequest(normalizedRequest);
+            upsertRequest.IsActive = false;
+
+            var savedProfile = await _repository.UpsertAsync(workspaceId, upsertRequest, cancellationToken);
+            var activeProfile = await _repository.GetActiveAsync(workspaceId, cancellationToken);
+
+            if (normalizedRequest.IsActive || activeProfile is null)
+            {
+                await _repository.SetExclusiveActiveAsync(workspaceId, savedProfile.Id, cancellationToken);
+                savedProfile.IsActive = true;
+            }
+            else
+            {
+                savedProfile.IsActive = activeProfile.Id == savedProfile.Id;
+            }
+
+            await _unitOfWork.CommitAsync(cancellationToken);
+            return savedProfile;
         }
-
-        var savedProfile = await _repository.UpsertAsync(normalizedRequest, cancellationToken);
-
-        var activeProfile = await _repository.GetActiveAsync(cancellationToken);
-
-        if (activeProfile is null)
+        catch
         {
-            await _repository.SetActiveAsync(savedProfile.Id, cancellationToken);
-            savedProfile.IsActive = true;
+            await _unitOfWork.RollbackAsync(cancellationToken);
+            throw;
         }
-
-        return savedProfile;
     }
 
     public async Task<BrokerServerProfile> SetActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
     {
-        await _repository.ClearActiveAsync(cancellationToken);
-        await _repository.SetActiveAsync(profileId, cancellationToken);
+        var workspaceId = GetWorkspaceId();
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-        var activatedProfile = await _repository.GetByIdAsync(profileId, cancellationToken);
-
-        if (activatedProfile is null)
+        try
         {
-            throw new NotFoundException($"Broker server profile '{profileId}' was not found.");
-        }
+            var activatedProfile = await _repository.GetByIdAsync(workspaceId, profileId, cancellationToken);
 
-        return activatedProfile;
+            if (activatedProfile is null)
+            {
+                throw new NotFoundException($"Broker server profile '{profileId}' was not found.");
+            }
+
+            await _repository.SetExclusiveActiveAsync(workspaceId, profileId, cancellationToken);
+            activatedProfile.IsActive = true;
+
+            await _unitOfWork.CommitAsync(cancellationToken);
+            return activatedProfile;
+        }
+        catch
+        {
+            await _unitOfWork.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    private static SaveBrokerServerProfileRequest CloneRequest(SaveBrokerServerProfileRequest request)
+    {
+        return new SaveBrokerServerProfileRequest
+        {
+            Id = request.Id,
+            Name = request.Name,
+            Host = request.Host,
+            Port = request.Port,
+            UseTls = request.UseTls,
+            Username = request.Username,
+            Password = request.Password,
+            DefaultTopicPattern = request.DefaultTopicPattern,
+            DefaultEncryptionKeyBase64 = request.DefaultEncryptionKeyBase64,
+            DownlinkTopic = request.DownlinkTopic,
+            EnableSend = request.EnableSend,
+            IsActive = request.IsActive
+        };
+    }
+
+    private string GetWorkspaceId()
+    {
+        return _workspaceContextAccessor.GetWorkspaceId();
     }
 }

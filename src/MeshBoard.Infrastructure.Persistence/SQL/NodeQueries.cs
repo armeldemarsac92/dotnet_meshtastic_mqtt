@@ -92,7 +92,8 @@ internal static class NodeQueries
         """
         FROM nodes n
         LEFT JOIN favorite_nodes f
-            ON f.node_id = n.node_id
+            ON f.workspace_id = @WorkspaceId
+           AND f.node_id = n.node_id
         WHERE (
             @SearchText = '' OR
             n.node_id LIKE @SearchPattern OR

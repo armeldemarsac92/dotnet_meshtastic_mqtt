@@ -28,32 +28,30 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     private readonly IBrokerServerProfileService _brokerServerProfileService;
     private readonly ILogger<BrokerMonitorService> _logger;
     private readonly IMqttSession _mqttSession;
-    private Guid? _activeServerProfileId;
-    private string _activeServerAddress;
-    private string _activeServerName;
+    private readonly IBrokerRuntimeRegistry _brokerRuntimeRegistry;
 
     public BrokerMonitorService(
         IMqttSession mqttSession,
         IBrokerServerProfileService brokerServerProfileService,
         IOptions<BrokerOptions> brokerOptions,
+        IBrokerRuntimeRegistry brokerRuntimeRegistry,
         ILogger<BrokerMonitorService> logger)
     {
         _mqttSession = mqttSession;
         _brokerServerProfileService = brokerServerProfileService;
         _fallbackBrokerOptions = brokerOptions.Value;
+        _brokerRuntimeRegistry = brokerRuntimeRegistry;
         _logger = logger;
-        _activeServerName = "Default server";
-        _activeServerAddress = $"{_fallbackBrokerOptions.Host}:{_fallbackBrokerOptions.Port}";
     }
 
     public async Task EnsureConnected(CancellationToken cancellationToken = default)
     {
-        await RefreshActiveServerSnapshot(cancellationToken);
-
         if (_mqttSession.IsConnected)
         {
             return;
         }
+
+        await RefreshActiveServerSnapshot(cancellationToken);
 
         _logger.LogInformation("Attempting to ensure the MQTT session is connected");
 
@@ -62,13 +60,18 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
 
     public BrokerStatus GetBrokerStatus()
     {
+        var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot();
+        var activeServerAddress = string.IsNullOrWhiteSpace(runtimeSnapshot.ActiveServerAddress)
+            ? $"{_fallbackBrokerOptions.Host}:{_fallbackBrokerOptions.Port}"
+            : runtimeSnapshot.ActiveServerAddress;
+
         return new BrokerStatus
         {
-            ActiveServerProfileId = _activeServerProfileId,
-            ActiveServerName = _activeServerName,
-            ActiveServerAddress = _activeServerAddress,
-            Host = _activeServerAddress.Split(':', 2)[0],
-            Port = TryParsePort(_activeServerAddress),
+            ActiveServerProfileId = runtimeSnapshot.ActiveServerProfileId,
+            ActiveServerName = runtimeSnapshot.ActiveServerName,
+            ActiveServerAddress = activeServerAddress,
+            Host = activeServerAddress.Split(':', 2)[0],
+            Port = TryParsePort(activeServerAddress),
             IsConnected = _mqttSession.IsConnected,
             LastStatusMessage = _mqttSession.LastStatusMessage,
             TopicFilters = NormalizeTopicFiltersForDisplay(_mqttSession.TopicFilters)
@@ -78,6 +81,7 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     public async Task SubscribeToDefaultTopic(CancellationToken cancellationToken = default)
     {
         var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        UpdateRuntimeSnapshot(activeServer);
         var topicFilter = NormalizeToServerRootTopicFilter(activeServer.DefaultTopicPattern);
         await SubscribeToTopic(topicFilter, cancellationToken);
     }
@@ -102,14 +106,12 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     public async Task SwitchActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
     {
         var activeProfile = await _brokerServerProfileService.SetActiveServerProfile(profileId, cancellationToken);
-        _activeServerProfileId = activeProfile.Id;
-        _activeServerName = activeProfile.Name;
-        _activeServerAddress = activeProfile.ServerAddress;
+        UpdateRuntimeSnapshot(activeProfile);
 
         _logger.LogInformation(
             "Attempting to switch active MQTT server to {ServerName} ({ServerAddress})",
-            _activeServerName,
-            _activeServerAddress);
+            activeProfile.Name,
+            activeProfile.ServerAddress);
 
         var previousTopicFilters = _mqttSession.TopicFilters.ToList();
 
@@ -242,14 +244,23 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     private async Task RefreshActiveServerSnapshot(CancellationToken cancellationToken)
     {
         var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
-        _activeServerProfileId = activeServer.Id;
-        _activeServerName = activeServer.Name;
-        _activeServerAddress = activeServer.ServerAddress;
+        UpdateRuntimeSnapshot(activeServer);
     }
 
     private static int TryParsePort(string serverAddress)
     {
         var split = serverAddress.Split(':', 2, StringSplitOptions.TrimEntries);
         return split.Length == 2 && int.TryParse(split[1], out var port) ? port : 0;
+    }
+
+    private void UpdateRuntimeSnapshot(BrokerServerProfile activeServer)
+    {
+        _brokerRuntimeRegistry.UpdateSnapshot(
+            new BrokerRuntimeSnapshot
+            {
+                ActiveServerProfileId = activeServer.Id,
+                ActiveServerName = activeServer.Name,
+                ActiveServerAddress = activeServer.ServerAddress
+            });
     }
 }

@@ -19,6 +19,7 @@ internal static class BrokerServerProfileQueries
             is_active AS IsActive,
             created_at_utc AS CreatedAtUtc
         FROM broker_server_profiles
+        WHERE workspace_id = @WorkspaceId
         ORDER BY is_active DESC, name COLLATE NOCASE ASC;
         """;
 
@@ -39,7 +40,8 @@ internal static class BrokerServerProfileQueries
             is_active AS IsActive,
             created_at_utc AS CreatedAtUtc
         FROM broker_server_profiles
-        WHERE is_active = 1
+        WHERE workspace_id = @WorkspaceId
+          AND is_active = 1
         ORDER BY created_at_utc DESC
         LIMIT 1;
         """;
@@ -61,27 +63,32 @@ internal static class BrokerServerProfileQueries
             is_active AS IsActive,
             created_at_utc AS CreatedAtUtc
         FROM broker_server_profiles
-        WHERE id = @Id;
+        WHERE workspace_id = @WorkspaceId
+          AND id = @Id;
         """;
 
-    public static string ClearActive =>
+    public static string SetExclusiveActive =>
         """
         UPDATE broker_server_profiles
-        SET is_active = 0
-        WHERE is_active = 1;
-        """;
-
-    public static string SetActive =>
-        """
-        UPDATE broker_server_profiles
-        SET is_active = 1
-        WHERE id = @Id;
+        SET is_active = CASE
+            WHEN id = @Id THEN 1
+            ELSE 0
+        END
+        WHERE EXISTS (
+            SELECT 1
+            FROM broker_server_profiles
+            WHERE workspace_id = @WorkspaceId
+              AND id = @Id
+        )
+          AND workspace_id = @WorkspaceId
+          AND (id = @Id OR is_active = 1);
         """;
 
     public static string Upsert =>
         """
         INSERT INTO broker_server_profiles (
             id,
+            workspace_id,
             name,
             host,
             port,
@@ -96,6 +103,7 @@ internal static class BrokerServerProfileQueries
             created_at_utc)
         VALUES (
             @Id,
+            @WorkspaceId,
             @Name,
             @Host,
             @Port,
@@ -109,6 +117,7 @@ internal static class BrokerServerProfileQueries
             @IsActive,
             @CreatedAtUtc)
         ON CONFLICT(id) DO UPDATE SET
+            workspace_id = excluded.workspace_id,
             name = excluded.name,
             host = excluded.host,
             port = excluded.port,
@@ -126,6 +135,7 @@ internal static class BrokerServerProfileQueries
         """
         INSERT INTO broker_server_profiles (
             id,
+            workspace_id,
             name,
             host,
             port,
@@ -140,6 +150,7 @@ internal static class BrokerServerProfileQueries
             created_at_utc)
         SELECT
             @Id,
+            @WorkspaceId,
             @Name,
             @Host,
             @Port,
@@ -152,6 +163,10 @@ internal static class BrokerServerProfileQueries
             @EnableSend,
             1,
             @CreatedAtUtc
-        WHERE NOT EXISTS (SELECT 1 FROM broker_server_profiles);
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM broker_server_profiles
+            WHERE workspace_id = @WorkspaceId
+        );
         """;
 }

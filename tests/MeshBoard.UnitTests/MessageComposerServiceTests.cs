@@ -183,9 +183,9 @@ public sealed class MessageComposerServiceTests
             _status = status;
         }
 
-        public SendCapabilityStatus GetStatus()
+        public Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default)
         {
-            return _status;
+            return Task.FromResult(_status);
         }
     }
 

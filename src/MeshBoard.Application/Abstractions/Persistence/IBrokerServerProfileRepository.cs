@@ -4,17 +4,26 @@ namespace MeshBoard.Application.Abstractions.Persistence;
 
 public interface IBrokerServerProfileRepository
 {
-    Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default);
 
-    Task<BrokerServerProfile?> GetActiveAsync(CancellationToken cancellationToken = default);
+    Task<BrokerServerProfile?> GetActiveAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default);
 
-    Task<BrokerServerProfile?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<BrokerServerProfile?> GetByIdAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default);
 
-    Task ClearActiveAsync(CancellationToken cancellationToken = default);
-
-    Task SetActiveAsync(Guid id, CancellationToken cancellationToken = default);
+    Task SetExclusiveActiveAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default);
 
     Task<BrokerServerProfile> UpsertAsync(
+        string workspaceId,
         SaveBrokerServerProfileRequest request,
         CancellationToken cancellationToken = default);
 }

@@ -60,7 +60,7 @@ public sealed partial class MessageComposerService : IMessageComposerService
         }
 
         var toNodeId = NormalizeNodeId(request.ToNodeId);
-        var capability = _sendCapabilityService.GetStatus();
+        var capability = await _sendCapabilityService.GetStatus(cancellationToken);
 
         if (!capability.IsEnabled)
         {
@@ -99,7 +99,7 @@ public sealed partial class MessageComposerService : IMessageComposerService
         {
             return await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
         }
-        catch
+        catch (NotFoundException)
         {
             return null;
         }

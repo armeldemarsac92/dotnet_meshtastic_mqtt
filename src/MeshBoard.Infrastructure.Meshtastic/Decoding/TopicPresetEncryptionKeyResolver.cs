@@ -1,5 +1,6 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,11 +79,13 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
             var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
             var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
-            var activeServer = await brokerServerProfileRepository.GetActiveAsync(cancellationToken);
+            var workspaceContextAccessor = scope.ServiceProvider.GetRequiredService<IWorkspaceContextAccessor>();
+            var workspaceId = workspaceContextAccessor.GetWorkspaceId();
+            var activeServer = await brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken);
             var activeServerAddress = activeServer?.ServerAddress;
             var presets = string.IsNullOrWhiteSpace(activeServerAddress)
                 ? Array.Empty<TopicPreset>()
-                : await topicPresetRepository.GetAllAsync(activeServerAddress, cancellationToken);
+                : await topicPresetRepository.GetAllAsync(workspaceId, activeServerAddress, cancellationToken);
             var defaultKeyBytes = ResolveDefaultKeyBytes(activeServer?.DefaultEncryptionKeyBase64 ?? string.Empty);
 
             var mappings = presets

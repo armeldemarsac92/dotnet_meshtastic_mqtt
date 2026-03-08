@@ -1,6 +1,7 @@
 using System.Text;
 using Dapper;
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Nodes;
 using MeshBoard.Infrastructure.Persistence.Context;
 using MeshBoard.Infrastructure.Persistence.Mapping;
@@ -14,10 +15,15 @@ internal sealed class NodeRepository : INodeRepository
 {
     private readonly IDbContext _dbContext;
     private readonly ILogger<NodeRepository> _logger;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
-    public NodeRepository(IDbContext dbContext, ILogger<NodeRepository> logger)
+    public NodeRepository(
+        IDbContext dbContext,
+        IWorkspaceContextAccessor workspaceContextAccessor,
+        ILogger<NodeRepository> logger)
     {
         _dbContext = dbContext;
+        _workspaceContextAccessor = workspaceContextAccessor;
         _logger = logger;
     }
 
@@ -27,7 +33,7 @@ internal sealed class NodeRepository : INodeRepository
 
         return _dbContext.QueryFirstOrDefaultAsync<int>(
             NodeQueries.CountNodes,
-            CreateQueryParameters(query),
+            CreateQueryParameters(query, _workspaceContextAccessor.GetWorkspaceId()),
             cancellationToken);
     }
 
@@ -44,7 +50,7 @@ internal sealed class NodeRepository : INodeRepository
             .AppendLine(GetOrderByClause(query.SortBy))
             .AppendLine("LIMIT @Take OFFSET @Offset;");
 
-        var parameters = CreateQueryParameters(query);
+        var parameters = CreateQueryParameters(query, _workspaceContextAccessor.GetWorkspaceId());
         parameters.Add("Take", take);
         parameters.Add("Offset", offset);
 
@@ -66,11 +72,12 @@ internal sealed class NodeRepository : INodeRepository
             cancellationToken);
     }
 
-    private static DynamicParameters CreateQueryParameters(NodeQuery query)
+    private static DynamicParameters CreateQueryParameters(NodeQuery query, string workspaceId)
     {
         var parameters = new DynamicParameters();
         var normalizedSearchText = query.SearchText.Trim();
 
+        parameters.Add("WorkspaceId", workspaceId);
         parameters.Add("SearchText", normalizedSearchText);
         parameters.Add("SearchPattern", $"%{normalizedSearchText}%");
         parameters.Add("OnlyFavorites", query.OnlyFavorites ? 1 : 0);

@@ -9,11 +9,14 @@ namespace MeshBoard.Infrastructure.Persistence.Mapping;
 
 internal static class FavoriteNodeMapping
 {
-    public static UpsertFavoriteNodeSqlRequest ToSqlRequest(this SaveFavoriteNodeRequest request)
+    public static UpsertFavoriteNodeSqlRequest ToSqlRequest(
+        this SaveFavoriteNodeRequest request,
+        string workspaceId)
     {
         return new UpsertFavoriteNodeSqlRequest
         {
             Id = Guid.NewGuid().ToString(),
+            WorkspaceId = workspaceId,
             NodeId = request.NodeId,
             ShortName = request.ShortName,
             LongName = request.LongName,

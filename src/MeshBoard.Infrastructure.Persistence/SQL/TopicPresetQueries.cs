@@ -7,6 +7,7 @@ internal static class TopicPresetQueries
         UPDATE topic_presets
         SET is_default = 0
         WHERE is_default = 1
+          AND workspace_id = @WorkspaceId
           AND broker_server = @BrokerServer;
         """;
 
@@ -20,7 +21,8 @@ internal static class TopicPresetQueries
             is_default AS IsDefault,
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
-        WHERE broker_server = @BrokerServer
+        WHERE workspace_id = @WorkspaceId
+          AND broker_server = @BrokerServer
           AND topic_pattern = @TopicPattern;
         """;
 
@@ -34,7 +36,8 @@ internal static class TopicPresetQueries
             is_default AS IsDefault,
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
-        WHERE broker_server = @BrokerServer
+        WHERE workspace_id = @WorkspaceId
+          AND broker_server = @BrokerServer
         ORDER BY is_default DESC, name ASC;
         """;
 
@@ -42,6 +45,7 @@ internal static class TopicPresetQueries
         """
         INSERT OR IGNORE INTO topic_presets (
             id,
+            workspace_id,
             broker_server,
             name,
             topic_pattern,
@@ -50,6 +54,7 @@ internal static class TopicPresetQueries
             created_at_utc)
         VALUES (
             @Id,
+            @WorkspaceId,
             @BrokerServer,
             @Name,
             @TopicPattern,
@@ -62,6 +67,7 @@ internal static class TopicPresetQueries
         """
         INSERT INTO topic_presets (
             id,
+            workspace_id,
             broker_server,
             name,
             topic_pattern,
@@ -70,13 +76,14 @@ internal static class TopicPresetQueries
             created_at_utc)
         VALUES (
             @Id,
+            @WorkspaceId,
             @BrokerServer,
             @Name,
             @TopicPattern,
             @EncryptionKeyBase64,
             @IsDefault,
             @CreatedAtUtc)
-        ON CONFLICT(broker_server, topic_pattern) DO UPDATE SET
+        ON CONFLICT(workspace_id, broker_server, topic_pattern) DO UPDATE SET
             name = excluded.name,
             encryption_key_base64 = excluded.encryption_key_base64,
             is_default = excluded.is_default;

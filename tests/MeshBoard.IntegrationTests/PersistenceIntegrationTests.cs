@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
@@ -568,6 +569,140 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task WorkspaceScopedServices_ShouldIsolateProfilesPresetsAndFavorites()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                await using var scopeA = providerA.CreateAsyncScope();
+                var profilesA = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var topicPresetsA = scopeA.ServiceProvider.GetRequiredService<ITopicPresetService>();
+                var favoritesA = scopeA.ServiceProvider.GetRequiredService<IFavoriteNodeService>();
+
+                var workspaceAProfile = await profilesA.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Shared broker name",
+                        Host = "mqtt.shared.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await topicPresetsA.SaveTopicPreset(
+                    new SaveTopicPresetRequest
+                    {
+                        Name = "Workspace A preset",
+                        TopicPattern = "msh/US/2/e/LongFast/#",
+                        EncryptionKeyBase64 = null,
+                        IsDefault = false
+                    });
+
+                await favoritesA.SaveFavoriteNode(
+                    new SaveFavoriteNodeRequest
+                    {
+                        NodeId = "!shared0001",
+                        ShortName = "WA",
+                        LongName = "Workspace A Favorite"
+                    });
+
+                await using var scopeB = providerB.CreateAsyncScope();
+                var profilesB = scopeB.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var topicPresetsB = scopeB.ServiceProvider.GetRequiredService<ITopicPresetService>();
+                var favoritesB = scopeB.ServiceProvider.GetRequiredService<IFavoriteNodeService>();
+
+                var workspaceBProfile = await profilesB.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Shared broker name",
+                        Host = "mqtt.shared.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await topicPresetsB.SaveTopicPreset(
+                    new SaveTopicPresetRequest
+                    {
+                        Name = "Workspace B preset",
+                        TopicPattern = "msh/US/2/e/LongFast/#",
+                        EncryptionKeyBase64 = null,
+                        IsDefault = false
+                    });
+
+                await favoritesB.SaveFavoriteNode(
+                    new SaveFavoriteNodeRequest
+                    {
+                        NodeId = "!shared0001",
+                        ShortName = "WB",
+                        LongName = "Workspace B Favorite"
+                    });
+
+                var workspaceAProfiles = await profilesA.GetServerProfiles();
+                var workspaceBProfiles = await profilesB.GetServerProfiles();
+                var workspaceAPresets = await topicPresetsA.GetTopicPresets();
+                var workspaceBPresets = await topicPresetsB.GetTopicPresets();
+                var workspaceAFavorites = await favoritesA.GetFavoriteNodes();
+                var workspaceBFavorites = await favoritesB.GetFavoriteNodes();
+
+                Assert.Single(workspaceAProfiles);
+                Assert.Single(workspaceBProfiles);
+                Assert.NotEqual(workspaceAProfile.Id, workspaceBProfile.Id);
+                Assert.Equal("Shared broker name", workspaceAProfiles.Single().Name);
+                Assert.Equal("Shared broker name", workspaceBProfiles.Single().Name);
+
+                var presetA = Assert.Single(workspaceAPresets);
+                var presetB = Assert.Single(workspaceBPresets);
+                Assert.Equal("Workspace A preset", presetA.Name);
+                Assert.Equal("Workspace B preset", presetB.Name);
+
+                var favoriteA = Assert.Single(workspaceAFavorites);
+                var favoriteB = Assert.Single(workspaceBFavorites);
+                Assert.Equal("WA", favoriteA.ShortName);
+                Assert.Equal("WB", favoriteB.ShortName);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task TopicDiscovery_ShouldPersistObservedTopicPatterns()
     {
         var databasePath = CreateTemporaryDatabasePath();
@@ -788,7 +923,8 @@ public sealed class PersistenceIntegrationTests
         string databasePath,
         bool includeApplicationServices,
         int messageRetentionDays = 30,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        string? workspaceId = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -814,6 +950,11 @@ public sealed class PersistenceIntegrationTests
             {
                 services.AddSingleton(timeProvider);
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(workspaceId))
+        {
+            services.AddScoped<IWorkspaceContextAccessor>(_ => new FixedWorkspaceContextAccessor(workspaceId));
         }
 
         services.AddPersistenceInfrastructure(configuration);
@@ -862,6 +1003,21 @@ public sealed class PersistenceIntegrationTests
         public override DateTimeOffset GetUtcNow()
         {
             return _utcNow;
+        }
+    }
+
+    private sealed class FixedWorkspaceContextAccessor : IWorkspaceContextAccessor
+    {
+        private readonly string _workspaceId;
+
+        public FixedWorkspaceContextAccessor(string workspaceId)
+        {
+            _workspaceId = workspaceId;
+        }
+
+        public string GetWorkspaceId()
+        {
+            return _workspaceId;
         }
     }
 }

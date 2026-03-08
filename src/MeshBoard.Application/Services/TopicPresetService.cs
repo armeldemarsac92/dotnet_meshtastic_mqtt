@@ -1,5 +1,6 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
@@ -20,27 +21,31 @@ public sealed class TopicPresetService : ITopicPresetService
     private readonly ITopicEncryptionKeyResolver? _topicEncryptionKeyResolver;
     private readonly ITopicPresetRepository _topicPresetRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public TopicPresetService(
         IBrokerServerProfileService brokerServerProfileService,
         ITopicPresetRepository topicPresetRepository,
         IUnitOfWork unitOfWork,
+        IWorkspaceContextAccessor workspaceContextAccessor,
         ITopicEncryptionKeyResolver topicEncryptionKeyResolver,
         ILogger<TopicPresetService> logger)
     {
         _brokerServerProfileService = brokerServerProfileService;
         _topicPresetRepository = topicPresetRepository;
         _unitOfWork = unitOfWork;
+        _workspaceContextAccessor = workspaceContextAccessor;
         _topicEncryptionKeyResolver = topicEncryptionKeyResolver;
         _logger = logger;
     }
 
     public async Task<IReadOnlyCollection<TopicPreset>> GetTopicPresets(CancellationToken cancellationToken = default)
     {
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
         var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
         _logger.LogDebug("Attempting to get topic presets");
 
-        var topicPresets = await _topicPresetRepository.GetAllAsync(activeServerAddress, cancellationToken);
+        var topicPresets = await _topicPresetRepository.GetAllAsync(workspaceId, activeServerAddress, cancellationToken);
 
         _logger.LogDebug(
             "Retrieved {TopicPresetCount} topic presets for broker {BrokerServer}",
@@ -54,6 +59,7 @@ public sealed class TopicPresetService : ITopicPresetService
         SaveTopicPresetRequest request,
         CancellationToken cancellationToken = default)
     {
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
         var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
         var topicPattern = request.TopicPattern.Trim();
         var name = request.Name.Trim();
@@ -77,6 +83,7 @@ public sealed class TopicPresetService : ITopicPresetService
         try
         {
             var topicPreset = await _topicPresetRepository.UpsertAsync(
+                workspaceId,
                 activeServerAddress,
                 new SaveTopicPresetRequest
                 {

@@ -21,17 +21,19 @@ internal static class SchemaQueries
         """
         CREATE TABLE IF NOT EXISTS favorite_nodes (
             id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
             node_id TEXT NOT NULL,
             short_name TEXT NULL,
             long_name TEXT NULL,
             created_at_utc TEXT NOT NULL
         );
 
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_favorite_nodes_node_id
-            ON favorite_nodes(node_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_favorite_nodes_workspace_node_id
+            ON favorite_nodes(workspace_id, node_id);
 
         CREATE TABLE IF NOT EXISTS topic_presets (
             id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
             broker_server TEXT NOT NULL,
             name TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
@@ -42,6 +44,7 @@ internal static class SchemaQueries
 
         CREATE TABLE IF NOT EXISTS broker_server_profiles (
             id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
             name TEXT NOT NULL,
             host TEXT NOT NULL,
             port INTEGER NOT NULL,
@@ -56,8 +59,11 @@ internal static class SchemaQueries
             created_at_utc TEXT NOT NULL
         );
 
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_broker_server_profiles_name
-            ON broker_server_profiles(name);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_broker_server_profiles_workspace_name
+            ON broker_server_profiles(workspace_id, name);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_broker_server_topic_pattern
+            ON topic_presets(workspace_id, broker_server, topic_pattern);
 
         CREATE TABLE IF NOT EXISTS discovered_topics (
             broker_server TEXT NOT NULL,
@@ -187,6 +193,64 @@ internal static class SchemaQueries
         PRAGMA table_info(nodes);
         """;
 
+    public static string GetFavoriteNodeColumns =>
+        """
+        PRAGMA table_info(favorite_nodes);
+        """;
+
+    public static string AddFavoriteNodesWorkspaceIdColumn =>
+        """
+        ALTER TABLE favorite_nodes
+        ADD COLUMN workspace_id TEXT NULL;
+        """;
+
+    public static string BackfillFavoriteNodesWorkspaceId =>
+        """
+        UPDATE favorite_nodes
+        SET workspace_id = @WorkspaceId
+        WHERE workspace_id IS NULL OR workspace_id = '';
+        """;
+
+    public static string DropFavoriteNodesLegacyNodeIdIndex =>
+        """
+        DROP INDEX IF EXISTS ux_favorite_nodes_node_id;
+        """;
+
+    public static string CreateFavoriteNodesWorkspaceNodeIdIndex =>
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_favorite_nodes_workspace_node_id
+            ON favorite_nodes(workspace_id, node_id);
+        """;
+
+    public static string GetBrokerServerProfileColumns =>
+        """
+        PRAGMA table_info(broker_server_profiles);
+        """;
+
+    public static string AddBrokerServerProfilesWorkspaceIdColumn =>
+        """
+        ALTER TABLE broker_server_profiles
+        ADD COLUMN workspace_id TEXT NULL;
+        """;
+
+    public static string BackfillBrokerServerProfilesWorkspaceId =>
+        """
+        UPDATE broker_server_profiles
+        SET workspace_id = @WorkspaceId
+        WHERE workspace_id IS NULL OR workspace_id = '';
+        """;
+
+    public static string DropBrokerServerProfilesLegacyNameIndex =>
+        """
+        DROP INDEX IF EXISTS ux_broker_server_profiles_name;
+        """;
+
+    public static string CreateBrokerServerProfilesWorkspaceNameIndex =>
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_broker_server_profiles_workspace_name
+            ON broker_server_profiles(workspace_id, name);
+        """;
+
     public static string GetDiscoveredTopicColumns =>
         """
         PRAGMA table_info(discovered_topics);
@@ -276,6 +340,12 @@ internal static class SchemaQueries
         ADD COLUMN broker_server TEXT NULL;
         """;
 
+    public static string AddTopicPresetsWorkspaceIdColumn =>
+        """
+        ALTER TABLE topic_presets
+        ADD COLUMN workspace_id TEXT NULL;
+        """;
+
     public static string BackfillTopicPresetsBrokerServer =>
         """
         UPDATE topic_presets
@@ -283,15 +353,27 @@ internal static class SchemaQueries
         WHERE broker_server IS NULL OR broker_server = '';
         """;
 
+    public static string BackfillTopicPresetsWorkspaceId =>
+        """
+        UPDATE topic_presets
+        SET workspace_id = @WorkspaceId
+        WHERE workspace_id IS NULL OR workspace_id = '';
+        """;
+
     public static string DropTopicPresetsLegacyTopicPatternIndex =>
         """
         DROP INDEX IF EXISTS ux_topic_presets_topic_pattern;
         """;
 
-    public static string CreateTopicPresetsBrokerServerTopicPatternIndex =>
+    public static string DropTopicPresetsLegacyBrokerServerTopicPatternIndex =>
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_broker_server_topic_pattern
-            ON topic_presets(broker_server, topic_pattern);
+        DROP INDEX IF EXISTS ux_topic_presets_broker_server_topic_pattern;
+        """;
+
+    public static string CreateTopicPresetsWorkspaceBrokerServerTopicPatternIndex =>
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_broker_server_topic_pattern
+            ON topic_presets(workspace_id, broker_server, topic_pattern);
         """;
 
     public static string AddNodesBatteryLevelPercentColumn =>

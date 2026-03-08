@@ -19,68 +19,89 @@ internal sealed class BrokerServerProfileRepository : IBrokerServerProfileReposi
         _logger = logger;
     }
 
-    public async Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to fetch broker server profiles");
+        _logger.LogDebug("Attempting to fetch broker server profiles for workspace {WorkspaceId}", workspaceId);
 
         var responses = await _dbContext.QueryAsync<BrokerServerProfileSqlResponse>(
             BrokerServerProfileQueries.GetAll,
+            new { WorkspaceId = workspaceId },
             cancellationToken: cancellationToken);
 
         return responses.Select(response => response.MapToBrokerServerProfile()).ToList();
     }
 
-    public async Task<BrokerServerProfile?> GetActiveAsync(CancellationToken cancellationToken = default)
+    public async Task<BrokerServerProfile?> GetActiveAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to fetch active broker server profile");
+        _logger.LogDebug("Attempting to fetch active broker server profile for workspace {WorkspaceId}", workspaceId);
 
         var response = await _dbContext.QueryFirstOrDefaultAsync<BrokerServerProfileSqlResponse>(
             BrokerServerProfileQueries.GetActive,
+            new { WorkspaceId = workspaceId },
             cancellationToken: cancellationToken);
 
         return response?.MapToBrokerServerProfile();
     }
 
-    public async Task<BrokerServerProfile?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<BrokerServerProfile?> GetByIdAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to fetch broker server profile by id: {ProfileId}", id);
+        _logger.LogDebug(
+            "Attempting to fetch broker server profile by id: {ProfileId} for workspace {WorkspaceId}",
+            id,
+            workspaceId);
 
         var response = await _dbContext.QueryFirstOrDefaultAsync<BrokerServerProfileSqlResponse>(
             BrokerServerProfileQueries.GetById,
-            new { Id = id.ToString() },
+            new
+            {
+                WorkspaceId = workspaceId,
+                Id = id.ToString()
+            },
             cancellationToken);
 
         return response?.MapToBrokerServerProfile();
     }
 
-    public Task ClearActiveAsync(CancellationToken cancellationToken = default)
+    public Task SetExclusiveActiveAsync(
+        string workspaceId,
+        Guid id,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to clear active broker server profile");
-
-        return _dbContext.ExecuteAsync(BrokerServerProfileQueries.ClearActive, cancellationToken: cancellationToken);
-    }
-
-    public Task SetActiveAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        _logger.LogDebug("Attempting to set active broker server profile: {ProfileId}", id);
+        _logger.LogDebug(
+            "Attempting to set the exclusive active broker server profile: {ProfileId} for workspace {WorkspaceId}",
+            id,
+            workspaceId);
 
         return _dbContext.ExecuteAsync(
-            BrokerServerProfileQueries.SetActive,
-            new { Id = id.ToString() },
+            BrokerServerProfileQueries.SetExclusiveActive,
+            new
+            {
+                WorkspaceId = workspaceId,
+                Id = id.ToString()
+            },
             cancellationToken);
     }
 
     public async Task<BrokerServerProfile> UpsertAsync(
+        string workspaceId,
         SaveBrokerServerProfileRequest request,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "Attempting to upsert broker server profile {Name} ({Host}:{Port})",
+            "Attempting to upsert broker server profile {Name} ({Host}:{Port}) for workspace {WorkspaceId}",
             request.Name,
             request.Host,
-            request.Port);
+            request.Port,
+            workspaceId);
 
-        var sqlRequest = request.ToSqlRequest();
+        var sqlRequest = request.ToSqlRequest(workspaceId);
 
         await _dbContext.ExecuteAsync(
             BrokerServerProfileQueries.Upsert,
@@ -89,7 +110,11 @@ internal sealed class BrokerServerProfileRepository : IBrokerServerProfileReposi
 
         var response = await _dbContext.QueryFirstOrDefaultAsync<BrokerServerProfileSqlResponse>(
             BrokerServerProfileQueries.GetById,
-            new { Id = sqlRequest.Id },
+            new
+            {
+                WorkspaceId = workspaceId,
+                Id = sqlRequest.Id
+            },
             cancellationToken);
 
         if (response is null)

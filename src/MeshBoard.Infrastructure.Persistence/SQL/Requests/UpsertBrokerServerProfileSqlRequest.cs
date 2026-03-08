@@ -4,6 +4,8 @@ internal sealed class UpsertBrokerServerProfileSqlRequest
 {
     public required string Id { get; set; }
 
+    public required string WorkspaceId { get; set; }
+
     public required string Name { get; set; }
 
     public required string Host { get; set; }
