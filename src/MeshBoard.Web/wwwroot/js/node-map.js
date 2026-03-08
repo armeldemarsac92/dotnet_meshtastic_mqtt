@@ -10,7 +10,7 @@ const DEFAULT_CAMERA = {
     height: 22000000
 };
 const HOVER_LINK_LIMIT = 18;
-const HOVER_CLEAR_DELAY_MS = 180;
+const HOVER_CLEAR_DELAY_MS = 45;
 const MAX_RENDER_RESOLUTION_SCALE = 2;
 const NODE_ENTITY_PREFIX = "node:";
 const LIGHT_BASEMAP_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer";
@@ -175,6 +175,7 @@ async function getOrCreateMapState(containerId, dotNetCallbackRef) {
         dotNetCallbackRef,
         viewer,
         interactionHandler: null,
+        mouseLeaveHandler: null,
         hoverClearTimeoutId: null,
         nodeDataById: new Map(),
         nodeEntities: new Map(),
@@ -238,6 +239,12 @@ function wireInteractions(mapState) {
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     mapState.interactionHandler = handler;
+
+    mapState.mouseLeaveHandler = () => {
+        clearHoverStateImmediately(mapState);
+    };
+
+    mapState.viewer.container.addEventListener("mouseleave", mapState.mouseLeaveHandler);
 }
 
 function getPickResults(scene, position) {
@@ -319,8 +326,7 @@ function clearPendingHoverClear(mapState) {
 
 function scheduleHoverClear(mapState) {
     if (mapState.pinnedNodeId) {
-        mapState.hoveredNodeId = null;
-        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+        notifyHoverCleared(mapState);
         return;
     }
 
@@ -336,10 +342,28 @@ function scheduleHoverClear(mapState) {
             return;
         }
 
-        mapState.hoveredNodeId = null;
-        syncHoverState(mapState);
-        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+        clearHoverStateImmediately(mapState);
     }, HOVER_CLEAR_DELAY_MS);
+}
+
+function notifyHoverCleared(mapState) {
+    mapState.hoveredNodeId = null;
+    mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+}
+
+function clearHoverStateImmediately(mapState) {
+    clearPendingHoverClear(mapState);
+
+    if (mapState.viewer.isDestroyed()) {
+        return;
+    }
+
+    if (mapState.hoveredNodeId === null) {
+        return;
+    }
+
+    notifyHoverCleared(mapState);
+    syncHoverState(mapState);
 }
 
 function normalizeNodes(nodes) {
@@ -763,6 +787,10 @@ export function disposeNodeMap(containerId) {
 
     clearHoverLinks(mapState);
     clearPendingHoverClear(mapState);
+    if (mapState.mouseLeaveHandler) {
+        mapState.viewer.container.removeEventListener("mouseleave", mapState.mouseLeaveHandler);
+        mapState.mouseLeaveHandler = null;
+    }
     mapState.interactionHandler?.destroy();
 
     if (!mapState.viewer.isDestroyed()) {
