@@ -13,120 +13,100 @@ namespace MeshBoard.UnitTests;
 public sealed class BrokerMonitorServiceTests
 {
     [Fact]
-    public async Task SubscribeToTopic_ShouldPersistIntent_ConnectAndSubscribe_WithTrimmedFilter()
+    public async Task SubscribeToTopic_ShouldPersistIntent_AndReconcileActiveProfile_WithTrimmedFilter()
     {
-        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(isConnected: false);
         var targetProfile = CreateProfile(
             name: "Default server",
             host: "mqtt.meshtastic.org",
             defaultTopicPattern: "msh/US/2/e/LongFast/#");
         var profileService = new FakeBrokerServerProfileService(targetProfile);
-        var profileRepository = new FakeBrokerServerProfileRepository();
         var intentRepository = new FakeSubscriptionIntentRepository();
-        var service = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository);
+        var runtimeCommandService = new FakeBrokerRuntimeCommandService();
+        var service = CreateService(runtimeCommandService, profileService, intentRepository);
 
         await service.SubscribeToTopic("  msh/US/2/e/LongFast/#  ");
 
-        Assert.Equal(1, brokerSessionManager.ConnectCalls);
-        Assert.Equal(
-            [
-                "msh/US/2/e/LongFast/#",
-                "msh/US/2/json/LongFast/#"
-            ],
-            brokerSessionManager.SubscribedFilters);
+        Assert.Equal(["workspace-tests"], runtimeCommandService.ReconcileActiveProfileCalls);
         Assert.Equal(["msh/US/2/e/LongFast/#"], intentRepository.GetStoredTopicFilters(targetProfile.Id));
-        Assert.True(profileRepository.IsInitialized(targetProfile.Id));
     }
 
     [Fact]
-    public async Task UnsubscribeFromTopic_ShouldRemoveIntent_AndUnsubscribeRuntimeFilters()
+    public async Task UnsubscribeFromTopic_ShouldRemoveIntent_AndReconcileActiveProfile()
     {
         var targetProfile = CreateProfile(
             name: "Default server",
             host: "mqtt.meshtastic.org",
             defaultTopicPattern: "msh/US/2/e/LongFast/#");
-        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(
-            isConnected: true,
-            [
-                "msh/US/2/e/LongFast/#",
-                "msh/US/2/json/LongFast/#"
-            ]);
         var profileService = new FakeBrokerServerProfileService(targetProfile);
-        var profileRepository = new FakeBrokerServerProfileRepository();
-        profileRepository.MarkInitialized(targetProfile.Id);
         var intentRepository = new FakeSubscriptionIntentRepository();
         intentRepository.AddStoredIntent(targetProfile.Id, "msh/US/2/e/LongFast/#");
-        var service = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository);
+        var runtimeCommandService = new FakeBrokerRuntimeCommandService();
+        var service = CreateService(runtimeCommandService, profileService, intentRepository);
 
         await service.UnsubscribeFromTopic("  msh/US/2/e/LongFast/#  ");
 
-        Assert.Equal(
-            [
-                "msh/US/2/e/LongFast/#",
-                "msh/US/2/json/LongFast/#"
-            ],
-            brokerSessionManager.UnsubscribedFilters);
+        Assert.Equal(["workspace-tests"], runtimeCommandService.ReconcileActiveProfileCalls);
         Assert.Empty(intentRepository.GetStoredTopicFilters(targetProfile.Id));
     }
 
     [Fact]
     public async Task SubscribeToTopic_ShouldThrowBadRequest_WhenFilterIsMissing()
     {
-        var service = CreateService(new FakeWorkspaceBrokerSessionManager(isConnected: true));
+        var service = CreateService(new FakeBrokerRuntimeCommandService());
 
         await Assert.ThrowsAsync<BadRequestException>(() => service.SubscribeToTopic(" "));
     }
 
     [Fact]
-    public async Task SubscribeToEphemeralTopic_ShouldNotPersistIntent()
+    public async Task SubscribeToEphemeralTopic_ShouldNotPersistIntent_AndDelegateToRuntimeCommand()
     {
-        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(isConnected: true);
         var targetProfile = CreateProfile(
             name: "Default server",
             host: "mqtt.meshtastic.org",
             defaultTopicPattern: "msh/US/2/e/LongFast/#");
         var intentRepository = new FakeSubscriptionIntentRepository();
+        var runtimeCommandService = new FakeBrokerRuntimeCommandService();
         var service = CreateService(
-            brokerSessionManager,
+            runtimeCommandService,
             new FakeBrokerServerProfileService(targetProfile),
-            new FakeBrokerServerProfileRepository(),
-            intentRepository);
+            intentRepository: intentRepository);
 
         await service.SubscribeToEphemeralTopic("msh/US/2/e/LongFast/#");
 
-        Assert.Equal(
-            [
-                "msh/US/2/e/LongFast/#",
-                "msh/US/2/json/LongFast/#"
-            ],
-            brokerSessionManager.SubscribedFilters);
+        Assert.Equal(["msh/US/2/e/LongFast/#"], runtimeCommandService.SubscribeEphemeralFilters);
         Assert.Empty(intentRepository.GetStoredTopicFilters(targetProfile.Id));
     }
 
     [Fact]
-    public void GetBrokerStatus_ShouldNormalizeJsonTopicFilters_ForDisplay()
+    public void GetBrokerStatus_ShouldReadRuntimeSnapshot_FromRegistry()
     {
-        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(
-            isConnected: true,
-            [
-                "msh/US/2/e/LongFast/#",
-                "msh/US/2/json/LongFast/#",
-                "msh/EU_868/2/json/MediumFast/#"
-            ]);
-        var service = CreateService(brokerSessionManager);
+        var runtimeRegistry = new FakeBrokerRuntimeRegistry();
+        runtimeRegistry.UpdateSnapshot(
+            "workspace-tests",
+            new BrokerRuntimeSnapshot
+            {
+                ActiveServerProfileId = Guid.NewGuid(),
+                ActiveServerName = "Runtime server",
+                ActiveServerAddress = "mqtt.runtime:1883",
+                IsConnected = true,
+                LastStatusMessage = "Connected",
+                TopicFilters = ["msh/EU_868/2/e/MediumFast/#", "msh/US/2/e/LongFast/#"]
+            });
+        var service = CreateService(
+            new FakeBrokerRuntimeCommandService(),
+            runtimeRegistry: runtimeRegistry);
 
         var status = service.GetBrokerStatus();
 
-        Assert.Equal(
-            [
-                "msh/EU_868/2/e/MediumFast/#",
-                "msh/US/2/e/LongFast/#"
-            ],
-            status.TopicFilters);
+        Assert.Equal("Runtime server", status.ActiveServerName);
+        Assert.Equal("mqtt.runtime:1883", status.ActiveServerAddress);
+        Assert.True(status.IsConnected);
+        Assert.Equal("Connected", status.LastStatusMessage);
+        Assert.Equal(["msh/EU_868/2/e/MediumFast/#", "msh/US/2/e/LongFast/#"], status.TopicFilters);
     }
 
     [Fact]
-    public async Task SwitchActiveServerProfile_ShouldResetTopicFilters_AndSeedDefaultIntent_WhenProfileNotInitialized()
+    public async Task SwitchActiveServerProfile_ShouldReconnectActiveProfileThroughRuntimeCommand()
     {
         var initialProfile = CreateProfile(
             name: "EU server",
@@ -136,29 +116,14 @@ public sealed class BrokerMonitorServiceTests
             name: "US server",
             host: "mqtt.us",
             defaultTopicPattern: "msh/US/2/e/LongFast/#");
-        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(
-            isConnected: true,
-            [
-                "msh/EU_868/2/e/MediumFast/#",
-                "msh/EU_868/2/json/MediumFast/#"
-            ]);
         var profileService = new FakeBrokerServerProfileService(initialProfile, targetProfile);
-        var profileRepository = new FakeBrokerServerProfileRepository();
-        var intentRepository = new FakeSubscriptionIntentRepository();
-        var service = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository);
+        var runtimeCommandService = new FakeBrokerRuntimeCommandService();
+        var service = CreateService(runtimeCommandService, profileService);
 
         await service.SwitchActiveServerProfile(targetProfile.Id);
 
-        Assert.Equal(1, brokerSessionManager.ResetCalls);
-        Assert.Equal(1, brokerSessionManager.ConnectCalls);
-        Assert.Equal(
-            [
-                "msh/US/2/e/#",
-                "msh/US/2/json/#"
-            ],
-            brokerSessionManager.SubscribedFilters);
-        Assert.Equal(["msh/US/2/e/#"], intentRepository.GetStoredTopicFilters(targetProfile.Id));
-        Assert.True(profileRepository.IsInitialized(targetProfile.Id));
+        Assert.Equal(["workspace-tests"], runtimeCommandService.ResetAndReconnectActiveProfileCalls);
+        Assert.Equal(targetProfile.Id, profileService.CurrentActiveProfile.Id);
     }
 
     [Fact]
@@ -172,15 +137,21 @@ public sealed class BrokerMonitorServiceTests
             name: "US server",
             host: "mqtt.us",
             defaultTopicPattern: "msh/US/2/e/LongFast/#");
-        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager(isConnected: true);
         var profileService = new FakeBrokerServerProfileService(initialProfile, targetProfile);
-        var profileRepository = new FakeBrokerServerProfileRepository();
-        profileRepository.MarkInitialized(targetProfile.Id);
-        var intentRepository = new FakeSubscriptionIntentRepository();
-        intentRepository.AddStoredIntent(targetProfile.Id, "msh/US/2/e/LongFast/#");
         var runtimeRegistry = new FakeBrokerRuntimeRegistry();
-        var serviceA = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository, runtimeRegistry);
-        var serviceB = CreateService(brokerSessionManager, profileService, profileRepository, intentRepository, runtimeRegistry);
+        var runtimeCommandService = new FakeBrokerRuntimeCommandService(runtimeRegistry)
+        {
+            SnapshotOnResetAndReconnect = new BrokerRuntimeSnapshot
+            {
+                ActiveServerProfileId = targetProfile.Id,
+                ActiveServerName = targetProfile.Name,
+                ActiveServerAddress = targetProfile.ServerAddress,
+                IsConnected = true,
+                TopicFilters = ["msh/US/2/e/LongFast/#"]
+            }
+        };
+        var serviceA = CreateService(runtimeCommandService, profileService, runtimeRegistry: runtimeRegistry);
+        var serviceB = CreateService(runtimeCommandService, profileService, runtimeRegistry: runtimeRegistry);
 
         await serviceA.SwitchActiveServerProfile(targetProfile.Id);
 
@@ -192,40 +163,19 @@ public sealed class BrokerMonitorServiceTests
     }
 
     [Fact]
-    public async Task EnsureConnected_ShouldNotOverwriteRuntimeSnapshot_WhenSessionIsAlreadyConnected()
+    public async Task EnsureConnected_ShouldDelegateToRuntimeCommand()
     {
-        var runtimeRegistry = new FakeBrokerRuntimeRegistry();
-        runtimeRegistry.UpdateSnapshot(
-            "workspace-tests",
-            new BrokerRuntimeSnapshot
-            {
-                ActiveServerProfileId = Guid.NewGuid(),
-                ActiveServerName = "Already connected runtime",
-                ActiveServerAddress = "mqtt.connected:1883"
-            });
-        var activeProfile = CreateProfile(
-            name: "Different workspace profile",
-            host: "mqtt.different",
-            defaultTopicPattern: "msh/US/2/e/LongFast/#");
-        var service = CreateService(
-            new FakeWorkspaceBrokerSessionManager(isConnected: true),
-            new FakeBrokerServerProfileService(activeProfile),
-            new FakeBrokerServerProfileRepository(),
-            new FakeSubscriptionIntentRepository(),
-            runtimeRegistry);
+        var runtimeCommandService = new FakeBrokerRuntimeCommandService();
+        var service = CreateService(runtimeCommandService);
 
         await service.EnsureConnected();
 
-        var status = service.GetBrokerStatus();
-
-        Assert.Equal("Already connected runtime", status.ActiveServerName);
-        Assert.Equal("mqtt.connected:1883", status.ActiveServerAddress);
+        Assert.Equal(["workspace-tests"], runtimeCommandService.EnsureConnectedCalls);
     }
 
     private static BrokerMonitorService CreateService(
-        IWorkspaceBrokerSessionManager brokerSessionManager,
+        FakeBrokerRuntimeCommandService runtimeCommandService,
         FakeBrokerServerProfileService? profileService = null,
-        FakeBrokerServerProfileRepository? profileRepository = null,
         FakeSubscriptionIntentRepository? intentRepository = null,
         FakeBrokerRuntimeRegistry? runtimeRegistry = null)
     {
@@ -235,9 +185,8 @@ public sealed class BrokerMonitorServiceTests
             defaultTopicPattern: "msh/US/2/e/LongFast/#");
 
         return new BrokerMonitorService(
-            brokerSessionManager,
+            runtimeCommandService,
             profileService ?? new FakeBrokerServerProfileService(defaultProfile),
-            profileRepository ?? new FakeBrokerServerProfileRepository(),
             intentRepository ?? new FakeSubscriptionIntentRepository(),
             new FakeWorkspaceContextAccessor(),
             Options.Create(new BrokerOptions { Host = "mqtt.meshtastic.org", Port = 1883 }),
@@ -273,7 +222,8 @@ public sealed class BrokerMonitorServiceTests
         private BrokerRuntimeSnapshot _snapshot = new()
         {
             ActiveServerName = "Default server",
-            ActiveServerAddress = "mqtt.meshtastic.org:1883"
+            ActiveServerAddress = "mqtt.meshtastic.org:1883",
+            TopicFilters = []
         };
 
         public BrokerRuntimeSnapshot GetSnapshot(string workspaceId)
@@ -282,7 +232,10 @@ public sealed class BrokerMonitorServiceTests
             {
                 ActiveServerProfileId = _snapshot.ActiveServerProfileId,
                 ActiveServerName = _snapshot.ActiveServerName,
-                ActiveServerAddress = _snapshot.ActiveServerAddress
+                ActiveServerAddress = _snapshot.ActiveServerAddress,
+                IsConnected = _snapshot.IsConnected,
+                LastStatusMessage = _snapshot.LastStatusMessage,
+                TopicFilters = [.._snapshot.TopicFilters]
             };
         }
 
@@ -292,7 +245,10 @@ public sealed class BrokerMonitorServiceTests
             {
                 ActiveServerProfileId = snapshot.ActiveServerProfileId,
                 ActiveServerName = snapshot.ActiveServerName,
-                ActiveServerAddress = snapshot.ActiveServerAddress
+                ActiveServerAddress = snapshot.ActiveServerAddress,
+                IsConnected = snapshot.IsConnected,
+                LastStatusMessage = snapshot.LastStatusMessage,
+                TopicFilters = [..snapshot.TopicFilters]
             };
         }
     }
@@ -367,83 +323,6 @@ public sealed class BrokerMonitorServiceTests
         }
     }
 
-    private sealed class FakeBrokerServerProfileRepository : IBrokerServerProfileRepository
-    {
-        private readonly HashSet<Guid> _initializedProfiles = [];
-
-        public Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveAsync(
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult<IReadOnlyCollection<WorkspaceBrokerServerProfile>>([]);
-        }
-
-        public Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
-            string workspaceId,
-            CancellationToken cancellationToken = default)
-        {
-            IReadOnlyCollection<BrokerServerProfile> profiles = [];
-            return Task.FromResult(profiles);
-        }
-
-        public Task<BrokerServerProfile?> GetActiveAsync(
-            string workspaceId,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult<BrokerServerProfile?>(null);
-        }
-
-        public Task<BrokerServerProfile?> GetByIdAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult<BrokerServerProfile?>(null);
-        }
-
-        public Task SetExclusiveActiveAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> AreSubscriptionIntentsInitializedAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(_initializedProfiles.Contains(id));
-        }
-
-        public Task MarkSubscriptionIntentsInitializedAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            _initializedProfiles.Add(id);
-            return Task.CompletedTask;
-        }
-
-        public Task<BrokerServerProfile> UpsertAsync(
-            string workspaceId,
-            SaveBrokerServerProfileRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public bool IsInitialized(Guid profileId)
-        {
-            return _initializedProfiles.Contains(profileId);
-        }
-
-        public void MarkInitialized(Guid profileId)
-        {
-            _initializedProfiles.Add(profileId);
-        }
-    }
-
     private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
     {
         private BrokerServerProfile _activeProfile;
@@ -454,6 +333,8 @@ public sealed class BrokerMonitorServiceTests
             _profiles = profiles.ToDictionary(profile => profile.Id);
             _activeProfile = profiles.First();
         }
+
+        public BrokerServerProfile CurrentActiveProfile => _activeProfile;
 
         public Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default)
         {
@@ -493,99 +374,76 @@ public sealed class BrokerMonitorServiceTests
         }
     }
 
-#pragma warning disable CS0067
-    private sealed class FakeWorkspaceBrokerSessionManager : IWorkspaceBrokerSessionManager
+    private sealed class FakeBrokerRuntimeCommandService : IBrokerRuntimeCommandService
     {
-        private readonly List<string> _topicFilters;
+        private readonly FakeBrokerRuntimeRegistry? _runtimeRegistry;
 
-        public FakeWorkspaceBrokerSessionManager(bool isConnected, IEnumerable<string>? topicFilters = null)
+        public FakeBrokerRuntimeCommandService(FakeBrokerRuntimeRegistry? runtimeRegistry = null)
         {
-            _isConnected = isConnected;
-            _topicFilters = topicFilters?.ToList() ?? [];
+            _runtimeRegistry = runtimeRegistry;
         }
 
-        private bool _isConnected;
+        public List<string> EnsureConnectedCalls { get; } = [];
 
-        public int ConnectCalls { get; private set; }
+        public List<string> ReconcileActiveProfileCalls { get; } = [];
 
-        public int DisconnectCalls { get; private set; }
+        public List<string> ResetAndReconnectActiveProfileCalls { get; } = [];
 
-        public int ResetCalls { get; private set; }
+        public List<string> SubscribeEphemeralFilters { get; } = [];
 
-        public List<string> SubscribedFilters { get; } = [];
+        public List<string> UnsubscribeEphemeralFilters { get; } = [];
 
-        public List<string> UnsubscribedFilters { get; } = [];
+        public BrokerRuntimeSnapshot? SnapshotOnResetAndReconnect { get; set; }
 
-        public event Func<MqttInboundMessage, Task>? MessageReceived;
-
-        public bool IsConnected(string workspaceId)
+        public Task EnsureConnectedAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
-            return _isConnected;
-        }
-
-        public string? GetLastStatusMessage(string workspaceId)
-        {
-            return null;
-        }
-
-        public IReadOnlyCollection<string> GetTopicFilters(string workspaceId)
-        {
-            return _topicFilters.ToList();
-        }
-
-        public Task ConnectAsync(string workspaceId, CancellationToken cancellationToken = default)
-        {
-            ConnectCalls++;
-            _isConnected = true;
+            EnsureConnectedCalls.Add(workspaceId);
             return Task.CompletedTask;
         }
 
-        public Task ResetRuntimeAsync(string workspaceId, CancellationToken cancellationToken = default)
+        public Task ReconcileActiveProfileAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
-            ResetCalls++;
-            DisconnectCalls++;
-            _isConnected = false;
-            _topicFilters.Clear();
+            ReconcileActiveProfileCalls.Add(workspaceId);
             return Task.CompletedTask;
         }
 
-        public Task DisconnectAsync(string workspaceId, CancellationToken cancellationToken = default)
+        public Task ResetAndReconnectActiveProfileAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
-            DisconnectCalls++;
-            _isConnected = false;
-            return Task.CompletedTask;
-        }
+            ResetAndReconnectActiveProfileCalls.Add(workspaceId);
 
-        public Task DisconnectAllAsync(CancellationToken cancellationToken = default)
-        {
-            _isConnected = false;
-            _topicFilters.Clear();
-            return Task.CompletedTask;
-        }
-
-        public Task PublishAsync(string workspaceId, string topic, string payload, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task SubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
-        {
-            SubscribedFilters.Add(topicFilter);
-
-            if (!_topicFilters.Contains(topicFilter, StringComparer.Ordinal))
+            if (SnapshotOnResetAndReconnect is not null)
             {
-                _topicFilters.Add(topicFilter);
+                _runtimeRegistry?.UpdateSnapshot(workspaceId, SnapshotOnResetAndReconnect);
             }
 
             return Task.CompletedTask;
         }
 
-        public Task UnsubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
+        public Task PublishAsync(
+            string workspaceId,
+            string topic,
+            string payload,
+            CancellationToken cancellationToken = default)
         {
-            UnsubscribedFilters.Add(topicFilter);
-            _topicFilters.RemoveAll(filter => string.Equals(filter, topicFilter, StringComparison.Ordinal));
+            return Task.CompletedTask;
+        }
+
+        public Task SubscribeEphemeralAsync(
+            string workspaceId,
+            string topicFilter,
+            CancellationToken cancellationToken = default)
+        {
+            SubscribeEphemeralFilters.Add(topicFilter);
+            return Task.CompletedTask;
+        }
+
+        public Task UnsubscribeEphemeralAsync(
+            string workspaceId,
+            string topicFilter,
+            CancellationToken cancellationToken = default)
+        {
+            UnsubscribeEphemeralFilters.Add(topicFilter);
             return Task.CompletedTask;
         }
     }
-#pragma warning restore CS0067
 }

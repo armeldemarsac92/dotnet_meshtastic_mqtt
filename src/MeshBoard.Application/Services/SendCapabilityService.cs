@@ -16,17 +16,17 @@ public sealed class SendCapabilityService : ISendCapabilityService
 {
     private readonly BrokerOptions _brokerOptions;
     private readonly IBrokerServerProfileService _brokerServerProfileService;
-    private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
+    private readonly IBrokerRuntimeRegistry _brokerRuntimeRegistry;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public SendCapabilityService(
         IOptions<BrokerOptions> brokerOptions,
-        IWorkspaceBrokerSessionManager brokerSessionManager,
+        IBrokerRuntimeRegistry brokerRuntimeRegistry,
         IBrokerServerProfileService brokerServerProfileService,
         IWorkspaceContextAccessor workspaceContextAccessor)
     {
         _brokerOptions = brokerOptions.Value;
-        _brokerSessionManager = brokerSessionManager;
+        _brokerRuntimeRegistry = brokerRuntimeRegistry;
         _brokerServerProfileService = brokerServerProfileService;
         _workspaceContextAccessor = workspaceContextAccessor;
     }
@@ -34,6 +34,7 @@ public sealed class SendCapabilityService : ISendCapabilityService
     public async Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default)
     {
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
+        var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot(workspaceId);
         var activeServer = await TryGetActiveServerProfile(cancellationToken);
         var host = activeServer?.Host ?? _brokerOptions.Host;
         var port = activeServer?.Port ?? _brokerOptions.Port;
@@ -45,7 +46,7 @@ public sealed class SendCapabilityService : ISendCapabilityService
             Host = host,
             Port = port,
             DownlinkTopic = downlinkTopic,
-            IsBrokerConnected = _brokerSessionManager.IsConnected(workspaceId)
+            IsBrokerConnected = runtimeSnapshot.IsConnected
         };
 
         if (!enableSend)
@@ -53,7 +54,7 @@ public sealed class SendCapabilityService : ISendCapabilityService
             status.BlockingReasons.Add("Sending is disabled by configuration. Set Broker:EnableSend to true to enable compose.");
         }
 
-        if (!_brokerSessionManager.IsConnected(workspaceId))
+        if (!runtimeSnapshot.IsConnected)
         {
             status.BlockingReasons.Add("The MQTT session is not connected.");
         }

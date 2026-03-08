@@ -18,13 +18,25 @@ public static class ServiceCollectionExtensions
         services
             .AddOptions<BrokerOptions>()
             .Bind(configuration.GetSection(BrokerOptions.SectionName));
+        services
+            .AddOptions<MeshtasticRuntimeOptions>()
+            .Bind(configuration.GetSection(MeshtasticRuntimeOptions.SectionName));
 
         services.AddSingleton<ITopicEncryptionKeyResolver, TopicPresetEncryptionKeyResolver>();
         services.AddSingleton<IMeshtasticEnvelopeReader, MeshtasticEnvelopeReader>();
         services.AddSingleton<IMqttSessionFactory, MqttSessionFactory>();
         services.AddSingleton<IWorkspaceBrokerSessionManager, WorkspaceBrokerSessionManager>();
+        services.AddSingleton<IBrokerRuntimeCommandService, LocalBrokerRuntimeCommandService>();
         services.AddSingleton<IBrokerRuntimeBootstrapService, BrokerRuntimeBootstrapService>();
-        services.AddHostedService<MeshtasticMqttHostedService>();
+
+        var runtimeOptions = configuration
+            .GetSection(MeshtasticRuntimeOptions.SectionName)
+            .Get<MeshtasticRuntimeOptions>() ?? new MeshtasticRuntimeOptions();
+
+        if (runtimeOptions.EnableHostedService)
+        {
+            services.AddHostedService<MeshtasticMqttHostedService>();
+        }
 
         return services;
     }

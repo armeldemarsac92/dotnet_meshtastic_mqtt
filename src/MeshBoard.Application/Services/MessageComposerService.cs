@@ -21,20 +21,20 @@ public sealed partial class MessageComposerService : IMessageComposerService
 {
     private readonly BrokerOptions _fallbackBrokerOptions;
     private readonly IBrokerServerProfileService _brokerServerProfileService;
-    private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
+    private readonly IBrokerRuntimeCommandService _brokerRuntimeCommandService;
     private readonly ILogger<MessageComposerService> _logger;
     private readonly ISendCapabilityService _sendCapabilityService;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public MessageComposerService(
-        IWorkspaceBrokerSessionManager brokerSessionManager,
+        IBrokerRuntimeCommandService brokerRuntimeCommandService,
         ISendCapabilityService sendCapabilityService,
         IBrokerServerProfileService brokerServerProfileService,
         IWorkspaceContextAccessor workspaceContextAccessor,
         IOptions<BrokerOptions> brokerOptions,
         ILogger<MessageComposerService> logger)
     {
-        _brokerSessionManager = brokerSessionManager;
+        _brokerRuntimeCommandService = brokerRuntimeCommandService;
         _sendCapabilityService = sendCapabilityService;
         _brokerServerProfileService = brokerServerProfileService;
         _workspaceContextAccessor = workspaceContextAccessor;
@@ -83,7 +83,7 @@ public sealed partial class MessageComposerService : IMessageComposerService
             ? JsonSerializer.Serialize(new { type = "sendtext", payload = messageText })
             : JsonSerializer.Serialize(new { type = "sendtext", payload = messageText, to = toNodeId });
 
-        await _brokerSessionManager.PublishAsync(
+        await _brokerRuntimeCommandService.PublishAsync(
             _workspaceContextAccessor.GetWorkspaceId(),
             downlinkTopic,
             payload,

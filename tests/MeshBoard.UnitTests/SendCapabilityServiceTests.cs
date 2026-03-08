@@ -81,7 +81,7 @@ public sealed class SendCapabilityServiceTests
                     EnableSend = true,
                     DownlinkTopic = "msh/EU_868/2/json/mqtt/"
                 }),
-            new FakeWorkspaceBrokerSessionManager(isConnected: true),
+            new FakeBrokerRuntimeRegistry(isConnected: true),
             new ThrowingBrokerServerProfileService(new NotFoundException("No active broker server profile is configured.")),
             new FakeWorkspaceContextAccessor());
 
@@ -105,7 +105,7 @@ public sealed class SendCapabilityServiceTests
                     EnableSend = true,
                     DownlinkTopic = "msh/US/2/json/mqtt/"
                 }),
-            new FakeWorkspaceBrokerSessionManager(isConnected: true),
+            new FakeBrokerRuntimeRegistry(isConnected: true),
             new ThrowingBrokerServerProfileService(new InvalidOperationException("database unavailable")),
             new FakeWorkspaceContextAccessor());
 
@@ -118,7 +118,7 @@ public sealed class SendCapabilityServiceTests
     {
         return new SendCapabilityService(
             Options.Create(options),
-            new FakeWorkspaceBrokerSessionManager(isConnected),
+            new FakeBrokerRuntimeRegistry(isConnected),
             new FakeBrokerServerProfileService(
                 new BrokerServerProfile
                 {
@@ -199,69 +199,29 @@ public sealed class SendCapabilityServiceTests
         }
     }
 
-#pragma warning disable CS0067
-    private sealed class FakeWorkspaceBrokerSessionManager : IWorkspaceBrokerSessionManager
+    private sealed class FakeBrokerRuntimeRegistry : IBrokerRuntimeRegistry
     {
-        public FakeWorkspaceBrokerSessionManager(bool isConnected)
+        private readonly BrokerRuntimeSnapshot _snapshot;
+
+        public FakeBrokerRuntimeRegistry(bool isConnected)
         {
-            _isConnected = isConnected;
+            _snapshot = new BrokerRuntimeSnapshot { IsConnected = isConnected };
         }
 
-        private readonly bool _isConnected;
-
-        public event Func<MqttInboundMessage, Task>? MessageReceived;
-
-        public bool IsConnected(string workspaceId)
+        public BrokerRuntimeSnapshot GetSnapshot(string workspaceId)
         {
-            return _isConnected;
+            return new BrokerRuntimeSnapshot
+            {
+                IsConnected = _snapshot.IsConnected,
+                TopicFilters = [.._snapshot.TopicFilters]
+            };
         }
 
-        public string? GetLastStatusMessage(string workspaceId)
+        public void UpdateSnapshot(string workspaceId, BrokerRuntimeSnapshot snapshot)
         {
-            return null;
-        }
-
-        public IReadOnlyCollection<string> GetTopicFilters(string workspaceId)
-        {
-            return [];
-        }
-
-        public Task ConnectAsync(string workspaceId, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task ResetRuntimeAsync(string workspaceId, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task DisconnectAsync(string workspaceId, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task DisconnectAllAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task PublishAsync(string workspaceId, string topic, string payload, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task SubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task UnsubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
+            throw new NotSupportedException();
         }
     }
-#pragma warning restore CS0067
 
     private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
     {
