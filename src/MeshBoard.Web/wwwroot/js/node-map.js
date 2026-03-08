@@ -10,10 +10,10 @@ const DEFAULT_CAMERA = {
     height: 22000000
 };
 const HOVER_LINK_LIMIT = 18;
-const HOVER_CLEAR_DELAY_MS = 90;
+const HOVER_CLEAR_DELAY_MS = 180;
 const MAX_RENDER_RESOLUTION_SCALE = 2;
 const NODE_ENTITY_PREFIX = "node:";
-const LINK_ALTITUDE_METERS = 0;
+const LINK_ALTITUDE_METERS = 120;
 const LIGHT_BASEMAP_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer";
 
 let cesiumLoadPromise = null;
@@ -455,6 +455,12 @@ function syncHoverState(mapState) {
     const linkColor = resolveChannelColor(hoveredNode.channel, 0.92);
 
     for (const peer of peers) {
+        const linkMaterial = new Cesium.PolylineOutlineMaterialProperty({
+            color: linkColor,
+            outlineColor: Cesium.Color.fromCssColorString("#10202f").withAlpha(0.52),
+            outlineWidth: 2
+        });
+
         const linkEntity = mapState.viewer.entities.add({
             polyline: {
                 positions: [
@@ -463,11 +469,8 @@ function syncHoverState(mapState) {
                 ],
                 width: 7,
                 arcType: Cesium.ArcType.GEODESIC,
-                material: new Cesium.PolylineOutlineMaterialProperty({
-                    color: linkColor,
-                    outlineColor: Cesium.Color.fromCssColorString("#10202f").withAlpha(0.52),
-                    outlineWidth: 2
-                }),
+                material: linkMaterial,
+                depthFailMaterial: linkMaterial,
                 clampToGround: false
             }
         });
@@ -599,11 +602,12 @@ function triggerActivityPulse(mapState, nodeId) {
     const Cesium = window.Cesium;
     const pulseState = {
         radius: 2200,
+        pointSize: 20,
         alpha: 0.95
     };
 
     const pulseColor = resolveChannelColor(node.channel, 0.98);
-    const pulseEntity = mapState.viewer.entities.add({
+    const groundPulseEntity = mapState.viewer.entities.add({
         position: Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0),
         ellipse: {
             semiMajorAxis: new Cesium.CallbackProperty(() => pulseState.radius, false),
@@ -623,6 +627,22 @@ function triggerActivityPulse(mapState, nodeId) {
         }
     });
 
+    const pointPulseEntity = mapState.viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0),
+        point: {
+            pixelSize: new Cesium.CallbackProperty(() => pulseState.pointSize, false),
+            color: new Cesium.CallbackProperty(
+                () => pulseColor.withAlpha(Math.max(pulseState.alpha * 0.9, 0)),
+                false),
+            outlineColor: new Cesium.CallbackProperty(
+                () => Cesium.Color.WHITE.withAlpha(Math.max(pulseState.alpha * 0.95, 0)),
+                false),
+            outlineWidth: 3,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY
+        }
+    });
+
     const startedAt = performance.now();
     const durationMilliseconds = 1700;
 
@@ -634,6 +654,7 @@ function triggerActivityPulse(mapState, nodeId) {
 
         const progress = Math.min(1, (now - startedAt) / durationMilliseconds);
         pulseState.radius = 2200 + (progress * 30000);
+        pulseState.pointSize = 20 + (progress * 34);
         pulseState.alpha = 0.95 * (1 - progress);
         currentState.viewer.scene.requestRender();
 
@@ -642,7 +663,8 @@ function triggerActivityPulse(mapState, nodeId) {
             return;
         }
 
-        currentState.viewer.entities.remove(pulseEntity);
+        currentState.viewer.entities.remove(groundPulseEntity);
+        currentState.viewer.entities.remove(pointPulseEntity);
         currentState.viewer.scene.requestRender();
     };
 
