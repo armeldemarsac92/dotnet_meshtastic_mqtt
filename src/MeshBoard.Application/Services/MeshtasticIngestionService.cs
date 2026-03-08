@@ -126,20 +126,32 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             ? WorkspaceConstants.DefaultWorkspaceId
             : envelope.WorkspaceId;
 
-        var changeKinds = new List<ProjectionChangeKind>
+        var changes = new List<ProjectionChangeDescriptor>
         {
-            ProjectionChangeKind.MessageAdded,
-            ProjectionChangeKind.ChannelSummaryUpdated
+            new()
+            {
+                Kind = ProjectionChangeKind.MessageAdded
+            },
+            new()
+            {
+                Kind = ProjectionChangeKind.ChannelSummaryUpdated,
+                EntityKey = ResolveChannelEntityKey(envelope)
+            }
         };
 
         if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
         {
-            changeKinds.Add(ProjectionChangeKind.NodeUpdated);
+            changes.Add(
+                new ProjectionChangeDescriptor
+                {
+                    Kind = ProjectionChangeKind.NodeUpdated,
+                    EntityKey = envelope.FromNodeId.Trim()
+                });
         }
 
         try
         {
-            await _projectionChangeRepository.AppendAsync(workspaceId, changeKinds, cancellationToken);
+            await _projectionChangeRepository.AppendAsync(workspaceId, changes, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -149,6 +161,40 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 workspaceId,
                 envelope.Topic);
         }
+    }
+
+    private static string? ResolveChannelEntityKey(MeshtasticEnvelope envelope)
+    {
+        if (!string.IsNullOrWhiteSpace(envelope.LastHeardChannel))
+        {
+            return envelope.LastHeardChannel.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(envelope.Topic))
+        {
+            return null;
+        }
+
+        var segments = envelope.Topic
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (segments.Length < 5 ||
+            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var region = segments[1];
+        var channel = segments[4];
+
+        if (string.IsNullOrWhiteSpace(region) ||
+            string.IsNullOrWhiteSpace(channel) ||
+            channel is "#" or "+")
+        {
+            return null;
+        }
+
+        return $"{region}/{channel}";
     }
 
     private static string BuildMessageKey(MeshtasticEnvelope envelope)

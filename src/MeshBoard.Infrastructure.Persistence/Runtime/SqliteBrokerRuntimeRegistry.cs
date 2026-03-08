@@ -96,6 +96,7 @@ internal sealed class SqliteBrokerRuntimeRegistry : IBrokerRuntimeRegistry
             {
                 WorkspaceId = workspaceId,
                 ChangeKind = ProjectionChangeKind.RuntimeStatusChanged.ToString(),
+                EntityKey = (string?)null,
                 OccurredAtUtc = DateTimeOffset.UtcNow.ToString("O")
             });
     }

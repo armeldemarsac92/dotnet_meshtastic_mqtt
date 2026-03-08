@@ -1772,6 +1772,7 @@ public sealed class PersistenceIntegrationTests
                 var runtimeChange = Assert.Single(changes);
                 Assert.Equal("workspace-a", runtimeChange.WorkspaceId);
                 Assert.Equal(ProjectionChangeKind.RuntimeStatusChanged, runtimeChange.Kind);
+                Assert.Null(runtimeChange.EntityKey);
             }
             finally
             {
@@ -1837,14 +1838,26 @@ public sealed class PersistenceIntegrationTests
 
                 var changes = await projectionChangeRepository.GetChangesAfterAsync(baselineId, 10);
 
-                Assert.Equal(
-                    [
-                        ProjectionChangeKind.MessageAdded,
-                        ProjectionChangeKind.ChannelSummaryUpdated,
-                        ProjectionChangeKind.NodeUpdated
-                    ],
-                    changes.Select(change => change.Kind).ToArray());
-                Assert.All(changes, change => Assert.Equal(WorkspaceConstants.DefaultWorkspaceId, change.WorkspaceId));
+                Assert.Collection(
+                    changes,
+                    change =>
+                    {
+                        Assert.Equal(ProjectionChangeKind.MessageAdded, change.Kind);
+                        Assert.Equal(WorkspaceConstants.DefaultWorkspaceId, change.WorkspaceId);
+                        Assert.Null(change.EntityKey);
+                    },
+                    change =>
+                    {
+                        Assert.Equal(ProjectionChangeKind.ChannelSummaryUpdated, change.Kind);
+                        Assert.Equal(WorkspaceConstants.DefaultWorkspaceId, change.WorkspaceId);
+                        Assert.Equal("US/LongFast", change.EntityKey);
+                    },
+                    change =>
+                    {
+                        Assert.Equal(ProjectionChangeKind.NodeUpdated, change.Kind);
+                        Assert.Equal(WorkspaceConstants.DefaultWorkspaceId, change.WorkspaceId);
+                        Assert.Equal("!abc12345", change.EntityKey);
+                    });
             }
             finally
             {

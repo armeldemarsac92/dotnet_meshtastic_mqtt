@@ -32,17 +32,26 @@ internal sealed class SqliteProjectionChangeRepository : IProjectionChangeReposi
 
     public async Task AppendAsync(
         string workspaceId,
-        IReadOnlyCollection<ProjectionChangeKind> changeKinds,
+        IReadOnlyCollection<ProjectionChangeDescriptor> changes,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
-        ArgumentNullException.ThrowIfNull(changeKinds);
+        ArgumentNullException.ThrowIfNull(changes);
 
-        var normalizedChangeKinds = changeKinds
+        var normalizedChanges = changes
+            .Where(change => change is not null)
+            .Select(
+                change => new
+                {
+                    change.Kind,
+                    EntityKey = string.IsNullOrWhiteSpace(change.EntityKey)
+                        ? null
+                        : change.EntityKey.Trim()
+                })
             .Distinct()
             .ToArray();
 
-        if (normalizedChangeKinds.Length == 0)
+        if (normalizedChanges.Length == 0)
         {
             return;
         }
@@ -52,11 +61,12 @@ internal sealed class SqliteProjectionChangeRepository : IProjectionChangeReposi
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var occurredAtUtc = DateTimeOffset.UtcNow.ToString("O");
-        var rows = normalizedChangeKinds.Select(
-            changeKind => new
+        var rows = normalizedChanges.Select(
+            change => new
             {
                 WorkspaceId = workspaceId.Trim(),
-                ChangeKind = changeKind.ToString(),
+                ChangeKind = change.Kind.ToString(),
+                change.EntityKey,
                 OccurredAtUtc = occurredAtUtc
             });
 
@@ -136,6 +146,9 @@ internal sealed class SqliteProjectionChangeRepository : IProjectionChangeReposi
 
         return new ProjectionChangeEvent
         {
+            EntityKey = string.IsNullOrWhiteSpace(response.EntityKey)
+                ? null
+                : response.EntityKey.Trim(),
             Id = response.Id,
             WorkspaceId = response.WorkspaceId,
             Kind = changeKind,

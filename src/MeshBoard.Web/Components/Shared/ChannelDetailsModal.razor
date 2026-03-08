@@ -1,7 +1,11 @@
+@implements IAsyncDisposable
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IBrokerServerProfileService BrokerServerProfileService
 @inject ICachedChannelDetailService CachedChannelDetailService
 @inject ITopicPresetService TopicPresetService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
+@inject ServerSelectionNotifier ServerSelectionNotifier
 
 @if (IsOpen)
 {
@@ -204,6 +208,7 @@
 
 @code {
     private const int MessagesPageSize = 40;
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
 
     [Parameter]
     public bool IsOpen { get; set; }
@@ -231,6 +236,7 @@
     private string? _statusMessage;
     private IReadOnlyCollection<ChannelTopNode> _topNodes = [];
     private string _defaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
 
     private int DecodedRatio =>
         _channelSummary.PacketCount == 0
@@ -252,6 +258,12 @@
 
     private string TopicFilter => $"msh/{Region}/2/e/{Channel}/#";
 
+    protected override void OnInitialized()
+    {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         if (!IsOpen || string.IsNullOrWhiteSpace(Region) || string.IsNullOrWhiteSpace(Channel))
@@ -269,21 +281,107 @@
 
         _loadedChannelKey = channelKey;
         _currentMessagesPage = 1;
-        await LoadAsync();
+        await LoadAsync(_cancellationTokenSource.Token, forceRefresh: true);
     }
 
-    private async Task LoadAsync()
+    public ValueTask DisposeAsync()
+    {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private Task HandleServerSelectionChangedAsync()
+    {
+        if (!IsOpen)
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync(forceRefresh: true);
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (change.Kind == ProjectionChangeKind.RuntimeStatusChanged)
+        {
+            return InvokeAsync(StateHasChanged);
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!IsOpen ||
+            string.IsNullOrWhiteSpace(Region) ||
+            string.IsNullOrWhiteSpace(Channel) ||
+            !string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (change.Kind == ProjectionChangeKind.RuntimeStatusChanged)
+        {
+            return true;
+        }
+
+        return change.Kind == ProjectionChangeKind.ChannelSummaryUpdated &&
+            !string.IsNullOrWhiteSpace(change.EntityKey) &&
+            string.Equals(change.EntityKey, GetChannelEntityKey(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token, forceRefresh);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task LoadAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
         _isLoading = true;
         _statusMessage = null;
 
         try
         {
-            var channelSummaryTask = CachedChannelDetailService.GetChannelSummary(Region, Channel);
-            var topNodesTask = CachedChannelDetailService.GetTopNodesByChannel(Region, Channel, 12);
-            var messagesTask = LoadMessagesPageAsync();
-            var presetsTask = TopicPresetService.GetTopicPresets();
-            var activeServerTask = BrokerServerProfileService.GetActiveServerProfile();
+            var channelSummaryTask = CachedChannelDetailService.GetChannelSummary(Region, Channel, forceRefresh, cancellationToken);
+            var topNodesTask = CachedChannelDetailService.GetTopNodesByChannel(Region, Channel, 12, forceRefresh, cancellationToken);
+            var messagesTask = LoadMessagesPageAsync(cancellationToken, forceRefresh);
+            var presetsTask = TopicPresetService.GetTopicPresets(cancellationToken);
+            var activeServerTask = BrokerServerProfileService.GetActiveServerProfile(cancellationToken);
 
             await Task.WhenAll(channelSummaryTask, topNodesTask, messagesTask, presetsTask, activeServerTask);
 
@@ -304,6 +402,9 @@
 
             _encryptionKeyInput = _matchedPreset?.EncryptionKeyBase64 ?? string.Empty;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception exception)
         {
             _statusMessage = exception.Message;
@@ -317,7 +418,9 @@
         }
     }
 
-    private async Task LoadMessagesPageAsync()
+    private async Task LoadMessagesPageAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
         _isMessagesLoading = true;
 
@@ -327,7 +430,9 @@
                 Region,
                 Channel,
                 offset: (_currentMessagesPage - 1) * MessagesPageSize,
-                take: MessagesPageSize);
+                take: MessagesPageSize,
+                forceRefresh: forceRefresh,
+                cancellationToken: cancellationToken);
 
             if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
             {
@@ -336,7 +441,9 @@
                     Region,
                     Channel,
                     offset: (_currentMessagesPage - 1) * MessagesPageSize,
-                    take: MessagesPageSize);
+                    take: MessagesPageSize,
+                    forceRefresh: forceRefresh,
+                    cancellationToken: cancellationToken);
             }
 
             _channelMessagesPage = page;
@@ -494,4 +601,8 @@
         return string.Join('/', segments);
     }
 
+    private string GetChannelEntityKey()
+    {
+        return $"{Region.Trim()}/{Channel.Trim()}";
+    }
 }

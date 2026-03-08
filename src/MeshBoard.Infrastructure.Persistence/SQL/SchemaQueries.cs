@@ -114,6 +114,7 @@ internal static class SchemaQueries
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
             workspace_id TEXT NOT NULL,
             change_kind TEXT NOT NULL,
+            entity_key TEXT NULL,
             occurred_at_utc TEXT NOT NULL
         );
 
@@ -200,6 +201,17 @@ internal static class SchemaQueries
     public static string GetMessageHistoryColumns =>
         """
         PRAGMA table_info(message_history);
+        """;
+
+    public static string GetProjectionChangeLogColumns =>
+        """
+        PRAGMA table_info(projection_change_log);
+        """;
+
+    public static string AddProjectionChangeLogEntityKeyColumn =>
+        """
+        ALTER TABLE projection_change_log
+        ADD COLUMN entity_key TEXT NULL;
         """;
 
     public static string AddMessageHistoryPacketTypeColumn =>

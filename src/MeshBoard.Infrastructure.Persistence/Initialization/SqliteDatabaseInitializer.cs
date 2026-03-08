@@ -58,6 +58,7 @@ internal sealed class SqliteDatabaseInitializer
         await MigrateBrokerServerProfilesAsync(connection, cancellationToken);
         await MigrateDiscoveredTopicsAsync(connection, cancellationToken);
         await MigrateTopicPresetsAsync(connection, cancellationToken);
+        await MigrateProjectionChangeLogAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
             SchemaQueries.DeleteExpiredMessages,
@@ -226,6 +227,26 @@ internal sealed class SqliteDatabaseInitializer
             new CommandDefinition(
                 SchemaQueries.CreateFavoriteNodesWorkspaceNodeIdIndex,
                 cancellationToken: cancellationToken));
+    }
+
+    private static async Task MigrateProjectionChangeLogAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var columnCommand = new CommandDefinition(
+            SchemaQueries.GetProjectionChangeLogColumns,
+            cancellationToken: cancellationToken);
+
+        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand))
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        await EnsureColumnAsync(
+            connection,
+            columns,
+            "entity_key",
+            SchemaQueries.AddProjectionChangeLogEntityKeyColumn,
+            cancellationToken);
     }
 
     private static async Task MigrateBrokerServerProfilesAsync(

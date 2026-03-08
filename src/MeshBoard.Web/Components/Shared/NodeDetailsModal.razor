@@ -1,5 +1,8 @@
+@implements IAsyncDisposable
 @inject ICachedNodeDetailService CachedNodeDetailService
 @inject IFavoriteNodeService FavoriteNodeService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
 
 @if (IsOpen)
 {
@@ -192,6 +195,7 @@
 
 @code {
     private const int MessagesPageSize = 40;
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
 
     [Parameter]
     public bool IsOpen { get; set; }
@@ -216,12 +220,18 @@
     private MessagePageResult _relatedMessagesPage = new();
     private int _currentMessagesPage = 1;
     private string? _loadedNodeId;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
 
     private bool CanGoToNextMessagesPage =>
         !_isMessagesLoading && !_isLoading && (_currentMessagesPage * MessagesPageSize) < _relatedMessagesPage.TotalCount;
 
     private bool CanGoToPreviousMessagesPage =>
         !_isMessagesLoading && !_isLoading && _currentMessagesPage > 1;
+
+    protected override void OnInitialized()
+    {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -239,10 +249,74 @@
 
         _loadedNodeId = NodeId;
         _currentMessagesPage = 1;
-        await LoadAsync();
+        await LoadAsync(_cancellationTokenSource.Token, forceRefresh: true);
     }
 
-    private async Task LoadAsync()
+    public ValueTask DisposeAsync()
+    {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!IsOpen ||
+            string.IsNullOrWhiteSpace(NodeId) ||
+            !string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return change.Kind == ProjectionChangeKind.NodeUpdated &&
+            !string.IsNullOrWhiteSpace(change.EntityKey) &&
+            string.Equals(change.EntityKey, NodeId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task LoadAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
         _isLoading = true;
         _isFavoriteActionPending = false;
@@ -251,8 +325,8 @@
 
         try
         {
-            var nodeTask = CachedNodeDetailService.GetNodeById(NodeId);
-            var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes();
+            var nodeTask = CachedNodeDetailService.GetNodeById(NodeId, forceRefresh, cancellationToken);
+            var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes(cancellationToken);
 
             await Task.WhenAll(nodeTask, favoriteNodesTask);
 
@@ -270,7 +344,10 @@
                 return;
             }
 
-            await LoadMessagesPageAsync();
+            await LoadMessagesPageAsync(cancellationToken, forceRefresh);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
@@ -286,7 +363,9 @@
         }
     }
 
-    private async Task LoadMessagesPageAsync()
+    private async Task LoadMessagesPageAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
         if (_node is null)
         {
@@ -302,7 +381,9 @@
             var page = await CachedNodeDetailService.GetMessagesPageBySender(
                 _node.NodeId,
                 offset: (_currentMessagesPage - 1) * MessagesPageSize,
-                take: MessagesPageSize);
+                take: MessagesPageSize,
+                forceRefresh: forceRefresh,
+                cancellationToken: cancellationToken);
 
             if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
             {
@@ -310,7 +391,9 @@
                 page = await CachedNodeDetailService.GetMessagesPageBySender(
                     _node.NodeId,
                     offset: (_currentMessagesPage - 1) * MessagesPageSize,
-                    take: MessagesPageSize);
+                    take: MessagesPageSize,
+                    forceRefresh: forceRefresh,
+                    cancellationToken: cancellationToken);
             }
 
             _relatedMessagesPage = page;

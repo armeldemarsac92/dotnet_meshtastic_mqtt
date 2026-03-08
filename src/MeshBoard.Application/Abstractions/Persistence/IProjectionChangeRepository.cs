@@ -6,7 +6,7 @@ public interface IProjectionChangeRepository
 {
     Task AppendAsync(
         string workspaceId,
-        IReadOnlyCollection<ProjectionChangeKind> changeKinds,
+        IReadOnlyCollection<ProjectionChangeDescriptor> changes,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<ProjectionChangeEvent>> GetChangesAfterAsync(
