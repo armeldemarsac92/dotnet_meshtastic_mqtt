@@ -63,7 +63,6 @@
 
 @code {
     private const string MapElementId = "meshboard-node-map";
-    private readonly NodeQuery _nodeQuery = new() { OnlyWithLocation = true };
     private DotNetObjectReference<Map>? _mapCallbackReference;
     private bool _isLoading;
     private bool _isMapRenderPending;
@@ -166,7 +165,7 @@
 
         try
         {
-            _nodesWithLocation = await LoadAllLocatedNodesAsync();
+            _nodesWithLocation = await NodeService.GetLocatedNodes();
             _locatedNodeCount = _nodesWithLocation.Count;
             ApplyClientFilter();
             _statusMessage = $"Loaded {_locatedNodeCount} nodes with coordinates.";
@@ -225,35 +224,6 @@
             MapElementId,
             _visibleMapNodes,
             _mapCallbackReference);
-    }
-
-    private async Task<IReadOnlyCollection<NodeSummary>> LoadAllLocatedNodesAsync()
-    {
-        var allNodes = new List<NodeSummary>();
-        var offset = 0;
-        const int batchSize = 1000;
-
-        while (true)
-        {
-            var page = await NodeService.GetNodesPage(_nodeQuery, offset, batchSize);
-
-            if (page.Items.Count == 0)
-            {
-                break;
-            }
-
-            allNodes.AddRange(page.Items);
-            offset += page.Items.Count;
-
-            if (offset >= page.TotalCount)
-            {
-                break;
-            }
-        }
-
-        return allNodes
-            .DistinctBy(node => node.NodeId, StringComparer.OrdinalIgnoreCase)
-            .ToList();
     }
 
     private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)

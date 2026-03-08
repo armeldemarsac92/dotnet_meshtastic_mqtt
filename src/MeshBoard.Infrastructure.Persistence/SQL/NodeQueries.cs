@@ -31,6 +31,66 @@ internal static class NodeQueries
         {FromAndWhereClause}
         """;
 
+    public static string SelectNodeById =>
+        """
+        SELECT
+            n.node_id AS NodeId,
+            COALESCE(n.broker_server, 'unknown') AS BrokerServer,
+            n.short_name AS ShortName,
+            n.long_name AS LongName,
+            n.last_heard_at_utc AS LastHeardAtUtc,
+            n.last_heard_channel AS LastHeardChannel,
+            n.last_text_message_at_utc AS LastTextMessageAtUtc,
+            n.last_known_latitude AS LastKnownLatitude,
+            n.last_known_longitude AS LastKnownLongitude,
+            n.battery_level_percent AS BatteryLevelPercent,
+            n.voltage AS Voltage,
+            n.channel_utilization AS ChannelUtilization,
+            n.air_util_tx AS AirUtilTx,
+            n.uptime_seconds AS UptimeSeconds,
+            n.temperature_celsius AS TemperatureCelsius,
+            n.relative_humidity AS RelativeHumidity,
+            n.barometric_pressure AS BarometricPressure
+        FROM nodes n
+        WHERE n.node_id = @NodeId
+        LIMIT 1;
+        """;
+
+    public static string SelectLocatedNodes =>
+        """
+        SELECT
+            n.node_id AS NodeId,
+            COALESCE(n.broker_server, 'unknown') AS BrokerServer,
+            n.short_name AS ShortName,
+            n.long_name AS LongName,
+            n.last_heard_at_utc AS LastHeardAtUtc,
+            n.last_heard_channel AS LastHeardChannel,
+            n.last_text_message_at_utc AS LastTextMessageAtUtc,
+            n.last_known_latitude AS LastKnownLatitude,
+            n.last_known_longitude AS LastKnownLongitude,
+            n.battery_level_percent AS BatteryLevelPercent,
+            n.voltage AS Voltage,
+            n.channel_utilization AS ChannelUtilization,
+            n.air_util_tx AS AirUtilTx,
+            n.uptime_seconds AS UptimeSeconds,
+            n.temperature_celsius AS TemperatureCelsius,
+            n.relative_humidity AS RelativeHumidity,
+            n.barometric_pressure AS BarometricPressure
+        FROM nodes n
+        WHERE n.last_known_latitude IS NOT NULL
+          AND n.last_known_longitude IS NOT NULL
+          AND (
+              @SearchText = '' OR
+              n.node_id LIKE @SearchPattern OR
+              COALESCE(n.short_name, '') LIKE @SearchPattern OR
+              COALESCE(n.long_name, '') LIKE @SearchPattern OR
+              COALESCE(n.last_heard_channel, '') LIKE @SearchPattern
+          )
+        ORDER BY COALESCE(n.last_heard_at_utc, '') DESC,
+                 COALESCE(n.long_name, n.short_name, n.node_id) COLLATE NOCASE ASC
+        LIMIT @Take;
+        """;
+
     public static string UpsertNode =>
         """
         INSERT INTO nodes (

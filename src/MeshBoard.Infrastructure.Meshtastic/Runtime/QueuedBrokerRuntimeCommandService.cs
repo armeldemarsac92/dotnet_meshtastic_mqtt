@@ -104,6 +104,7 @@ internal sealed class QueuedBrokerRuntimeCommandService : IBrokerRuntimeCommandS
                 Id = Guid.NewGuid(),
                 WorkspaceId = workspaceId,
                 CommandType = commandType,
+                Status = BrokerRuntimeCommandStatus.Pending,
                 Topic = topic,
                 Payload = payload,
                 TopicFilter = topicFilter,

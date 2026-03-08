@@ -77,6 +77,31 @@ internal sealed class MessageRepository : IMessageRepository
         return sqlResponses.MapToMessages();
     }
 
+    public async Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(
+        string region,
+        string channel,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch recent messages for region {Region}, channel {Channel} with take: {Take}",
+            region,
+            channel,
+            take);
+
+        var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
+            MessageQueries.GetRecentMessagesByChannel,
+            new
+            {
+                EncryptedTopicPattern = CreateChannelTopicPattern(region, channel, "e"),
+                JsonTopicPattern = CreateChannelTopicPattern(region, channel, "json"),
+                Take = take
+            },
+            cancellationToken);
+
+        return sqlResponses.MapToMessages();
+    }
+
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentBySenderAsync(
         string senderNodeId,
         int take,
@@ -97,5 +122,10 @@ internal sealed class MessageRepository : IMessageRepository
             cancellationToken);
 
         return sqlResponses.MapToMessages();
+    }
+
+    private static string CreateChannelTopicPattern(string region, string channel, string transport)
+    {
+        return $"msh/{region}/%/{transport}/{channel}/%";
     }
 }

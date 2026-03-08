@@ -367,6 +367,78 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task MessageService_ShouldReturnRecentMessagesByChannel()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var messageRepository = scope.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/LongFast/!node0001",
+                        PacketType = "Text Message",
+                        MessageKey = "!node0001:00000001",
+                        FromNodeId = "!node0001",
+                        PayloadPreview = "encrypted transport",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 1, 0, 0, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/json/LongFast/!node0002",
+                        PacketType = "Text Message",
+                        MessageKey = "!node0002:00000001",
+                        FromNodeId = "!node0002",
+                        PayloadPreview = "json transport",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 1, 0, 1, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/US/2/e/MediumFast/!node9999",
+                        PacketType = "Text Message",
+                        MessageKey = "!node9999:00000001",
+                        FromNodeId = "!node9999",
+                        PayloadPreview = "other channel",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 1, 0, 2, TimeSpan.Zero)
+                    });
+
+                var channelMessages = await messageService.GetRecentMessagesByChannel("US", "LongFast", take: 10);
+
+                Assert.Equal(2, channelMessages.Count);
+                Assert.All(channelMessages, message => Assert.Contains("/LongFast/", message.Topic, StringComparison.Ordinal));
+                Assert.Equal(
+                    ["json transport", "encrypted transport"],
+                    channelMessages.Select(message => message.PayloadPreview).ToArray());
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task NodePaging_ShouldSupportFavoritesAndChannelField()
     {
         var databasePath = CreateTemporaryDatabasePath();
@@ -440,6 +512,64 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal(1, favoritesOnly.TotalCount);
                 var favoriteNode = Assert.Single(favoritesOnly.Items);
                 Assert.Equal("!node0002", favoriteNode.NodeId);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task NodeService_ShouldReturnNodeById_AndLocatedNodes()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var nodeRepository = scope.ServiceProvider.GetRequiredService<INodeRepository>();
+                var nodeService = scope.ServiceProvider.GetRequiredService<INodeService>();
+
+                await nodeRepository.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!loc00001",
+                        LongName = "Locator",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 5, 12, 10, 0, TimeSpan.Zero),
+                        LastHeardChannel = "US/LongFast",
+                        LastKnownLatitude = 48.8566,
+                        LastKnownLongitude = 2.3522
+                    });
+
+                await nodeRepository.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!plain001",
+                        LongName = "No location",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 5, 12, 11, 0, TimeSpan.Zero),
+                        LastHeardChannel = "US/LongFast"
+                    });
+
+                var node = await nodeService.GetNodeById("!loc00001");
+                var locatedNodes = await nodeService.GetLocatedNodes();
+
+                Assert.NotNull(node);
+                Assert.Equal("Locator", node.LongName);
+                var locatedNode = Assert.Single(locatedNodes);
+                Assert.Equal("!loc00001", locatedNode.NodeId);
+                Assert.Equal(48.8566, locatedNode.LastKnownLatitude);
+                Assert.Equal(2.3522, locatedNode.LastKnownLongitude);
             }
             finally
             {
@@ -963,6 +1093,136 @@ public sealed class PersistenceIntegrationTests
                     leaseDuration: TimeSpan.FromSeconds(30));
 
                 Assert.Empty(afterCompletion);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeCommandQueryService_ShouldReturnWorkspaceScopedRecentCommandStatuses()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                Guid leasedCommandId;
+                Guid failedCommandId;
+
+                await using (var scopeA = providerA.CreateAsyncScope())
+                await using (var scopeB = providerB.CreateAsyncScope())
+                {
+                    var repositoryA = scopeA.ServiceProvider.GetRequiredService<IBrokerRuntimeCommandRepository>();
+                    var repositoryB = scopeB.ServiceProvider.GetRequiredService<IBrokerRuntimeCommandRepository>();
+                    var firstQueuedAtUtc = new DateTimeOffset(2026, 3, 8, 13, 0, 0, TimeSpan.Zero);
+                    var secondQueuedAtUtc = firstQueuedAtUtc.AddMinutes(5);
+                    var thirdQueuedAtUtc = firstQueuedAtUtc.AddMinutes(10);
+
+                    leasedCommandId = Guid.NewGuid();
+                    failedCommandId = Guid.NewGuid();
+
+                    await repositoryA.EnqueueAsync(
+                        new BrokerRuntimeCommand
+                        {
+                            Id = leasedCommandId,
+                            WorkspaceId = "workspace-a",
+                            CommandType = BrokerRuntimeCommandType.Publish,
+                            Status = BrokerRuntimeCommandStatus.Pending,
+                            Topic = "msh/US/2/json/mqtt/",
+                            Payload = """{"type":"sendtext","payload":"hello"}""",
+                            AttemptCount = 0,
+                            CreatedAtUtc = firstQueuedAtUtc,
+                            AvailableAtUtc = firstQueuedAtUtc
+                        });
+
+                    await repositoryA.EnqueueAsync(
+                        new BrokerRuntimeCommand
+                        {
+                            Id = failedCommandId,
+                            WorkspaceId = "workspace-a",
+                            CommandType = BrokerRuntimeCommandType.ReconcileActiveProfile,
+                            Status = BrokerRuntimeCommandStatus.Pending,
+                            AttemptCount = 0,
+                            CreatedAtUtc = secondQueuedAtUtc,
+                            AvailableAtUtc = secondQueuedAtUtc
+                        });
+
+                    await repositoryB.EnqueueAsync(
+                        new BrokerRuntimeCommand
+                        {
+                            Id = Guid.NewGuid(),
+                            WorkspaceId = "workspace-b",
+                            CommandType = BrokerRuntimeCommandType.SubscribeEphemeral,
+                            Status = BrokerRuntimeCommandStatus.Pending,
+                            TopicFilter = "msh/EU_868/2/e/MediumFast/#",
+                            AttemptCount = 0,
+                            CreatedAtUtc = thirdQueuedAtUtc,
+                            AvailableAtUtc = thirdQueuedAtUtc
+                        });
+
+                    var leasedCommands = await repositoryB.LeasePendingAsync(
+                        "processor-a",
+                        batchSize: 2,
+                        leaseDuration: TimeSpan.FromSeconds(30));
+
+                    Assert.Equal(2, leasedCommands.Count);
+                    Assert.All(leasedCommands, command => Assert.Equal(BrokerRuntimeCommandStatus.Leased, command.Status));
+
+                    await repositoryB.MarkCompletedAsync(leasedCommandId);
+                    await repositoryB.MarkFailedAsync(failedCommandId, "runtime unavailable");
+                }
+
+                await using var verificationScopeA = providerA.CreateAsyncScope();
+                await using var verificationScopeB = providerB.CreateAsyncScope();
+
+                var queryServiceA = verificationScopeA.ServiceProvider.GetRequiredService<IBrokerRuntimeCommandQueryService>();
+                var queryServiceB = verificationScopeB.ServiceProvider.GetRequiredService<IBrokerRuntimeCommandQueryService>();
+
+                var workspaceACommands = await queryServiceA.GetRecentCommands(10);
+                var workspaceBCommands = await queryServiceB.GetRecentCommands(10);
+
+                Assert.Collection(
+                    workspaceACommands,
+                    command =>
+                    {
+                        Assert.Equal(failedCommandId, command.Id);
+                        Assert.Equal(BrokerRuntimeCommandStatus.Failed, command.Status);
+                        Assert.Equal("runtime unavailable", command.LastError);
+                    },
+                    command =>
+                    {
+                        Assert.Equal(leasedCommandId, command.Id);
+                        Assert.Equal(BrokerRuntimeCommandStatus.Completed, command.Status);
+                        Assert.Null(command.LastError);
+                    });
+
+                var workspaceBCommand = Assert.Single(workspaceBCommands);
+                Assert.Equal("workspace-b", workspaceBCommand.WorkspaceId);
+                Assert.Equal(BrokerRuntimeCommandStatus.Pending, workspaceBCommand.Status);
+                Assert.Equal(BrokerRuntimeCommandType.SubscribeEphemeral, workspaceBCommand.CommandType);
             }
             finally
             {

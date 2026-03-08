@@ -45,9 +45,27 @@ public sealed class MessageServiceTests
         Assert.Null(repository.LastSenderNodeId);
     }
 
+    [Fact]
+    public async Task GetRecentMessagesByChannel_ShouldForwardChannelToRepository()
+    {
+        var repository = new FakeMessageRepository();
+        var service = new MessageService(repository, NullLogger<MessageService>.Instance);
+
+        var messages = await service.GetRecentMessagesByChannel("US", "LongFast", take: 40);
+
+        Assert.Equal("US", repository.LastRegion);
+        Assert.Equal("LongFast", repository.LastChannel);
+        Assert.Equal(40, repository.LastTake);
+        Assert.Single(messages);
+    }
+
     private sealed class FakeMessageRepository : IMessageRepository
     {
         public string? LastBrokerServer { get; private set; }
+
+        public string? LastChannel { get; private set; }
+
+        public string? LastRegion { get; private set; }
 
         public string? LastSenderNodeId { get; private set; }
 
@@ -86,6 +104,33 @@ public sealed class MessageServiceTests
                     Id = Guid.NewGuid(),
                     BrokerServer = brokerServer,
                     Topic = "msh/US/2/e/LongFast/!abc12345",
+                    PacketType = "Text Message",
+                    FromNodeId = "!abc12345",
+                    PayloadPreview = "hello",
+                    IsPrivate = false,
+                    ReceivedAtUtc = DateTimeOffset.UtcNow
+                }
+            ];
+
+            return Task.FromResult(messages);
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(
+            string region,
+            string channel,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            LastRegion = region;
+            LastChannel = channel;
+            LastTake = take;
+
+            IReadOnlyCollection<MessageSummary> messages =
+            [
+                new MessageSummary
+                {
+                    Id = Guid.NewGuid(),
+                    Topic = $"msh/{region}/2/e/{channel}/!abc12345",
                     PacketType = "Text Message",
                     FromNodeId = "!abc12345",
                     PayloadPreview = "hello",

@@ -23,18 +23,21 @@ public sealed class QueuedBrokerRuntimeCommandServiceTests
             {
                 Assert.Equal("workspace-a", command.WorkspaceId);
                 Assert.Equal(BrokerRuntimeCommandType.EnsureConnected, command.CommandType);
+                Assert.Equal(BrokerRuntimeCommandStatus.Pending, command.Status);
                 Assert.Null(command.Topic);
                 Assert.Null(command.TopicFilter);
             },
             command =>
             {
                 Assert.Equal(BrokerRuntimeCommandType.Publish, command.CommandType);
+                Assert.Equal(BrokerRuntimeCommandStatus.Pending, command.Status);
                 Assert.Equal("msh/US/2/json/mqtt/", command.Topic);
                 Assert.Equal("""{"type":"sendtext","payload":"hello"}""", command.Payload);
             },
             command =>
             {
                 Assert.Equal(BrokerRuntimeCommandType.SubscribeEphemeral, command.CommandType);
+                Assert.Equal(BrokerRuntimeCommandStatus.Pending, command.Status);
                 Assert.Equal("msh/US/2/e/LongFast/#", command.TopicFilter);
             });
 
@@ -49,6 +52,14 @@ public sealed class QueuedBrokerRuntimeCommandServiceTests
         {
             Commands.Add(command);
             return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyCollection<BrokerRuntimeCommand>> GetRecentAsync(
+            string workspaceId,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
 
         public Task<IReadOnlyCollection<BrokerRuntimeCommand>> LeasePendingAsync(

@@ -126,11 +126,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        var nodes = await NodeService.GetNodes(
-            new NodeQuery { SearchText = NodeId },
-            take: 500);
-
-        _node = nodes.FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
+        _node = await NodeService.GetNodeById(NodeId);
 
         if (_node is null)
         {

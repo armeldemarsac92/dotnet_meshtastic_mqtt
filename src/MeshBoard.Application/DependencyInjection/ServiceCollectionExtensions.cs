@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();
+        services.AddScoped<IBrokerRuntimeCommandQueryService, BrokerRuntimeCommandQueryService>();
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
         services.AddScoped<IMessageComposerService, MessageComposerService>();

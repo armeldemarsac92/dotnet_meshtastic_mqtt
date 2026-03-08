@@ -37,6 +37,41 @@ internal sealed class NodeRepository : INodeRepository
             cancellationToken);
     }
 
+    public async Task<NodeSummary?> GetByIdAsync(string nodeId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+
+        _logger.LogInformation("Attempting to fetch node by id {NodeId}", nodeId);
+
+        var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
+            NodeQueries.SelectNodeById,
+            new { NodeId = nodeId },
+            cancellationToken);
+
+        return sqlResponses.MapToNodes().FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyCollection<NodeSummary>> GetLocatedAsync(
+        string? searchText,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Attempting to fetch located nodes with take {Take}", take);
+
+        var normalizedSearchText = searchText?.Trim() ?? string.Empty;
+        var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
+            NodeQueries.SelectLocatedNodes,
+            new
+            {
+                SearchText = normalizedSearchText,
+                SearchPattern = $"%{normalizedSearchText}%",
+                Take = take
+            },
+            cancellationToken);
+
+        return sqlResponses.MapToNodes();
+    }
+
     public async Task<IReadOnlyCollection<NodeSummary>> GetPageAsync(
         NodeQuery query,
         int offset,

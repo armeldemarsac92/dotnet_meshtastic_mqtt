@@ -73,6 +73,7 @@ internal static class BrokerRuntimeCommandQueries
             id AS Id,
             workspace_id AS WorkspaceId,
             command_type AS CommandType,
+            status AS Status,
             topic AS Topic,
             payload AS Payload,
             topic_filter AS TopicFilter,
@@ -87,6 +88,30 @@ internal static class BrokerRuntimeCommandQueries
         FROM broker_runtime_commands
         WHERE id IN @Ids
         ORDER BY created_at_utc;
+        """;
+
+    public static string GetRecentByWorkspace =>
+        """
+        SELECT
+            id AS Id,
+            workspace_id AS WorkspaceId,
+            command_type AS CommandType,
+            status AS Status,
+            topic AS Topic,
+            payload AS Payload,
+            topic_filter AS TopicFilter,
+            attempt_count AS AttemptCount,
+            created_at_utc AS CreatedAtUtc,
+            available_at_utc AS AvailableAtUtc,
+            leased_at_utc AS LeasedAtUtc,
+            lease_expires_at_utc AS LeaseExpiresAtUtc,
+            completed_at_utc AS CompletedAtUtc,
+            failed_at_utc AS FailedAtUtc,
+            last_error AS LastError
+        FROM broker_runtime_commands
+        WHERE workspace_id = @WorkspaceId
+        ORDER BY created_at_utc DESC
+        LIMIT @Take;
         """;
 
     public static string MarkCompleted =>

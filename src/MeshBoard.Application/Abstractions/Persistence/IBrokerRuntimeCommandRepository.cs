@@ -6,6 +6,11 @@ public interface IBrokerRuntimeCommandRepository
 {
     Task EnqueueAsync(BrokerRuntimeCommand command, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<BrokerRuntimeCommand>> GetRecentAsync(
+        string workspaceId,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<BrokerRuntimeCommand>> LeasePendingAsync(
         string processorId,
         int batchSize,

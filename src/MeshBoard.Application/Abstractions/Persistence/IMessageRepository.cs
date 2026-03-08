@@ -15,6 +15,12 @@ public interface IMessageRepository
         int take,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(
+        string region,
+        string channel,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<MessageSummary>> GetRecentBySenderAsync(
         string senderNodeId,
         int take,

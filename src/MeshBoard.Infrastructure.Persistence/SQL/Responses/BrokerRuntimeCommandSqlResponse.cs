@@ -8,6 +8,8 @@ internal sealed class BrokerRuntimeCommandSqlResponse
 
     public string CommandType { get; set; } = string.Empty;
 
+    public string Status { get; set; } = string.Empty;
+
     public string? Topic { get; set; }
 
     public string? Payload { get; set; }

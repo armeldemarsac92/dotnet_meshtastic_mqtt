@@ -8,6 +8,8 @@ public sealed class BrokerRuntimeCommand
 
     public BrokerRuntimeCommandType CommandType { get; set; }
 
+    public BrokerRuntimeCommandStatus Status { get; set; } = BrokerRuntimeCommandStatus.Pending;
+
     public string? Topic { get; set; }
 
     public string? Payload { get; set; }

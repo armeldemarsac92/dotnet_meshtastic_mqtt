@@ -1,5 +1,6 @@
 @page "/settings"
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IBrokerRuntimeCommandQueryService BrokerRuntimeCommandQueryService
 @inject IMessageRetentionService MessageRetentionService
 @inject IOptions<PersistenceOptions> PersistenceConfiguration
 
@@ -70,17 +71,72 @@
             </div>
         </article>
     </section>
+
+    <section class="liquid-panel rounded-[1.6rem] p-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h2 class="font-display text-3xl text-cinder-950">Runtime commands</h2>
+                <p class="mt-2 max-w-3xl text-sm leading-7 text-cinder-800/78">
+                    This is the durable command queue between the web app and the runtime worker.
+                </p>
+            </div>
+            <button type="button"
+                    class="liquid-button inline-flex items-center rounded-full px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                    @onclick="RefreshRuntimeViewAsync"
+                    disabled="@_isRefreshingRuntime">
+                @(_isRefreshingRuntime ? "Refreshing..." : "Refresh runtime view")
+            </button>
+        </div>
+
+        @if (_recentCommands.Count == 0)
+        {
+            <p class="mt-5 text-sm text-cinder-800/78">No runtime commands have been recorded for this workspace yet.</p>
+        }
+        else
+        {
+            <div class="mt-5 overflow-x-auto">
+                <table class="min-w-full text-left text-sm text-cinder-900">
+                    <thead class="border-b border-sand-200/80 text-xs uppercase tracking-[0.2em] text-cinder-800/65">
+                        <tr>
+                            <th class="pb-3 pr-4 font-semibold">Created</th>
+                            <th class="pb-3 pr-4 font-semibold">Type</th>
+                            <th class="pb-3 pr-4 font-semibold">Status</th>
+                            <th class="pb-3 pr-4 font-semibold">Target</th>
+                            <th class="pb-3 pr-4 font-semibold">Attempts</th>
+                            <th class="pb-3 pr-4 font-semibold">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var command in _recentCommands)
+                        {
+                            <tr class="border-b border-sand-200/60 align-top">
+                                <td class="py-3 pr-4 whitespace-nowrap">@command.CreatedAtUtc.ToString("u")</td>
+                                <td class="py-3 pr-4">@FormatCommandType(command.CommandType)</td>
+                                <td class="py-3 pr-4">@FormatCommandStatus(command.Status)</td>
+                                <td class="py-3 pr-4">
+                                    <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@DescribeCommandTarget(command)</code>
+                                </td>
+                                <td class="py-3 pr-4">@command.AttemptCount</td>
+                                <td class="py-3 pr-4 text-cinder-800/78">@(string.IsNullOrWhiteSpace(command.LastError) ? "-" : command.LastError)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
 </div>
 
 @code {
     private BrokerStatus _brokerStatus = new();
+    private bool _isRefreshingRuntime;
     private bool _isPruningMessages;
     private string? _pruneStatusMessage;
+    private IReadOnlyCollection<BrokerRuntimeCommand> _recentCommands = [];
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        _brokerStatus = BrokerMonitorService.GetBrokerStatus();
-        return Task.CompletedTask;
+        await LoadRuntimeViewAsync();
     }
 
     private async Task PruneMessageHistory()
@@ -99,7 +155,7 @@
             var noun = deletedCount == 1 ? "message" : "messages";
             var timestamp = DateTimeOffset.UtcNow.ToString("u");
             _pruneStatusMessage = $"Pruned {deletedCount} expired {noun} at {timestamp}.";
-            _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+            await LoadRuntimeViewAsync();
         }
         catch (Exception exception)
         {
@@ -109,5 +165,65 @@
         {
             _isPruningMessages = false;
         }
+    }
+
+    private async Task RefreshRuntimeViewAsync()
+    {
+        if (_isRefreshingRuntime)
+        {
+            return;
+        }
+
+        await LoadRuntimeViewAsync();
+    }
+
+    private async Task LoadRuntimeViewAsync()
+    {
+        _isRefreshingRuntime = true;
+
+        try
+        {
+            _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+            _recentCommands = await BrokerRuntimeCommandQueryService.GetRecentCommands(12);
+        }
+        finally
+        {
+            _isRefreshingRuntime = false;
+        }
+    }
+
+    private static string DescribeCommandTarget(BrokerRuntimeCommand command)
+    {
+        return !string.IsNullOrWhiteSpace(command.Topic)
+            ? command.Topic
+            : !string.IsNullOrWhiteSpace(command.TopicFilter)
+                ? command.TopicFilter
+                : "workspace runtime";
+    }
+
+    private static string FormatCommandStatus(BrokerRuntimeCommandStatus status)
+    {
+        return status switch
+        {
+            BrokerRuntimeCommandStatus.Pending => "Queued",
+            BrokerRuntimeCommandStatus.Leased => "Running",
+            BrokerRuntimeCommandStatus.Completed => "Completed",
+            BrokerRuntimeCommandStatus.Failed => "Failed",
+            _ => status.ToString()
+        };
+    }
+
+    private static string FormatCommandType(BrokerRuntimeCommandType commandType)
+    {
+        return commandType switch
+        {
+            BrokerRuntimeCommandType.EnsureConnected => "Ensure connected",
+            BrokerRuntimeCommandType.ReconcileActiveProfile => "Reconcile profile",
+            BrokerRuntimeCommandType.ResetAndReconnectActiveProfile => "Reset and reconnect",
+            BrokerRuntimeCommandType.Publish => "Publish",
+            BrokerRuntimeCommandType.SubscribeEphemeral => "Subscribe ephemeral",
+            BrokerRuntimeCommandType.UnsubscribeEphemeral => "Unsubscribe ephemeral",
+            _ => commandType.ToString()
+        };
     }
 }

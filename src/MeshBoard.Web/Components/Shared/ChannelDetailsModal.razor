@@ -236,7 +236,7 @@
 
         try
         {
-            var messagesTask = MessageService.GetRecentMessages(5_000);
+            var messagesTask = MessageService.GetRecentMessagesByChannel(Region, Channel, 5_000);
             var presetsTask = TopicPresetService.GetTopicPresets();
             var activeServerTask = BrokerServerProfileService.GetActiveServerProfile();
 
@@ -250,10 +250,7 @@
                 ? TopicEncryptionKey.DefaultKeyBase64
                 : activeServer.DefaultEncryptionKeyBase64;
 
-            _channelMessages = messages
-                .Where(message => IsTopicInChannel(message.Topic, Region, Channel))
-                .OrderByDescending(message => message.ReceivedAtUtc)
-                .ToList();
+            _channelMessages = messages;
 
             _observedBrokerServers = _channelMessages
                 .Select(message => message.BrokerServer)
@@ -386,27 +383,6 @@
     private static bool IsDecodedMessage(MessageSummary message)
     {
         return message.PacketType is not ("Encrypted Packet" or "Unknown Packet" or "Legacy Packet");
-    }
-
-    private static bool IsTopicInChannel(string topic, string region, string channel)
-    {
-        if (string.IsNullOrWhiteSpace(topic))
-        {
-            return false;
-        }
-
-        var segments = topic.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        if (segments.Length < 5 ||
-            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(segments[1], region, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(segments[4], channel, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetSenderDisplayName(MessageSummary message)

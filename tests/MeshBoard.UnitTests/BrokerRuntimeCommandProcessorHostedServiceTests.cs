@@ -115,6 +115,14 @@ public sealed class BrokerRuntimeCommandProcessorHostedServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<IReadOnlyCollection<BrokerRuntimeCommand>> GetRecentAsync(
+            string workspaceId,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IReadOnlyCollection<BrokerRuntimeCommand>> LeasePendingAsync(
             string processorId,
             int batchSize,

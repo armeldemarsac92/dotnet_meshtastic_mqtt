@@ -48,12 +48,40 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
                     command.Topic,
                     command.Payload,
                     command.TopicFilter,
-                    Status = StatusPending,
+                    Status = ToStorageStatus(command.Status == default ? BrokerRuntimeCommandStatus.Pending : command.Status),
                     command.AttemptCount,
                     CreatedAtUtc = command.CreatedAtUtc.ToString("O"),
                     AvailableAtUtc = command.AvailableAtUtc.ToString("O")
                 },
                 cancellationToken: cancellationToken));
+    }
+
+    public async Task<IReadOnlyCollection<BrokerRuntimeCommand>> GetRecentAsync(
+        string workspaceId,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+
+        if (take <= 0)
+        {
+            return [];
+        }
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var responses = await connection.QueryAsync<BrokerRuntimeCommandSqlResponse>(
+            new CommandDefinition(
+                BrokerRuntimeCommandQueries.GetRecentByWorkspace,
+                new
+                {
+                    WorkspaceId = workspaceId,
+                    Take = take
+                },
+                cancellationToken: cancellationToken));
+
+        return responses.Select(Map).ToList();
     }
 
     public async Task<IReadOnlyCollection<BrokerRuntimeCommand>> LeasePendingAsync(
@@ -188,6 +216,7 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
             Id = Guid.Parse(response.Id),
             WorkspaceId = response.WorkspaceId,
             CommandType = Enum.Parse<BrokerRuntimeCommandType>(response.CommandType, ignoreCase: true),
+            Status = ParseStatus(response.Status),
             Topic = response.Topic,
             Payload = response.Payload,
             TopicFilter = response.TopicFilter,
@@ -199,6 +228,30 @@ internal sealed class SqliteBrokerRuntimeCommandRepository : IBrokerRuntimeComma
             CompletedAtUtc = string.IsNullOrWhiteSpace(response.CompletedAtUtc) ? null : DateTimeOffset.Parse(response.CompletedAtUtc),
             FailedAtUtc = string.IsNullOrWhiteSpace(response.FailedAtUtc) ? null : DateTimeOffset.Parse(response.FailedAtUtc),
             LastError = response.LastError
+        };
+    }
+
+    private static BrokerRuntimeCommandStatus ParseStatus(string status)
+    {
+        return status switch
+        {
+            StatusPending => BrokerRuntimeCommandStatus.Pending,
+            StatusLeased => BrokerRuntimeCommandStatus.Leased,
+            StatusCompleted => BrokerRuntimeCommandStatus.Completed,
+            StatusFailed => BrokerRuntimeCommandStatus.Failed,
+            _ => throw new InvalidOperationException($"Unsupported broker runtime command status '{status}'.")
+        };
+    }
+
+    private static string ToStorageStatus(BrokerRuntimeCommandStatus status)
+    {
+        return status switch
+        {
+            BrokerRuntimeCommandStatus.Pending => StatusPending,
+            BrokerRuntimeCommandStatus.Leased => StatusLeased,
+            BrokerRuntimeCommandStatus.Completed => StatusCompleted,
+            BrokerRuntimeCommandStatus.Failed => StatusFailed,
+            _ => throw new InvalidOperationException($"Unsupported broker runtime command status '{status}'.")
         };
     }
 }

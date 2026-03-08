@@ -215,15 +215,14 @@
 
         try
         {
-            var nodesTask = NodeService.GetNodes(new NodeQuery { SearchText = NodeId }, take: 500);
+            var nodeTask = NodeService.GetNodeById(NodeId);
             var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes();
 
-            await Task.WhenAll(nodesTask, favoriteNodesTask);
+            await Task.WhenAll(nodeTask, favoriteNodesTask);
 
-            var nodes = await nodesTask;
+            _node = await nodeTask;
             var favoriteNodes = await favoriteNodesTask;
 
-            _node = nodes.FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
             _isFavorite = _node is not null &&
                 favoriteNodes.Any(favoriteNode => string.Equals(favoriteNode.NodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase));
 

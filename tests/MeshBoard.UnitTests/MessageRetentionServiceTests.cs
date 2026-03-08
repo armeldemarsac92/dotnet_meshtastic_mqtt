@@ -86,6 +86,15 @@ public sealed class MessageRetentionServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(
+            string region,
+            string channel,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentBySenderAsync(
             string senderNodeId,
             int take,
