@@ -1,6 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
-using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,9 +17,7 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
     private readonly ILogger<TopicPresetEncryptionKeyResolver> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly IServiceScopeFactory _serviceScopeFactory;
-    private DateTimeOffset _cacheUpdatedAtUtc = DateTimeOffset.MinValue;
-    private byte[] _currentDefaultKeyBytes = [..TopicEncryptionKey.DefaultKeyBytes];
-    private IReadOnlyCollection<KeyMapping> _mappings = [];
+    private readonly Dictionary<string, WorkspaceKeyCache> _cacheByWorkspace = new(StringComparer.Ordinal);
 
     public TopicPresetEncryptionKeyResolver(
         IServiceScopeFactory serviceScopeFactory,
@@ -30,17 +27,19 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
         _fallbackDefaultKeyBytes = ResolveDefaultKeyBytes(brokerOptions.Value.DefaultEncryptionKeyBase64);
-        _currentDefaultKeyBytes = [.._fallbackDefaultKeyBytes];
     }
 
     public async Task<IReadOnlyCollection<byte[]>> ResolveCandidateKeysAsync(
+        string workspaceId,
         string topic,
         CancellationToken cancellationToken = default)
     {
-        await EnsureCacheIsFreshAsync(cancellationToken);
+        await EnsureCacheIsFreshAsync(workspaceId, cancellationToken);
 
-        var bestCustomMatch = TryFindBestMatch(topic);
-        var defaultKeyBytes = _currentDefaultKeyBytes;
+        var cache = GetWorkspaceCache(workspaceId);
+
+        var bestCustomMatch = TryFindBestMatch(topic, cache.Mappings);
+        var defaultKeyBytes = cache.DefaultKeyBytes;
 
         if (bestCustomMatch is null)
         {
@@ -57,12 +56,15 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
 
     public void InvalidateCache()
     {
-        _cacheUpdatedAtUtc = DateTimeOffset.MinValue;
+        lock (_cacheSync)
+        {
+            _cacheByWorkspace.Clear();
+        }
     }
 
-    private async Task EnsureCacheIsFreshAsync(CancellationToken cancellationToken)
+    private async Task EnsureCacheIsFreshAsync(string workspaceId, CancellationToken cancellationToken)
     {
-        if (DateTimeOffset.UtcNow - _cacheUpdatedAtUtc < CacheLifetime)
+        if (IsCacheFresh(workspaceId))
         {
             return;
         }
@@ -71,7 +73,7 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
 
         try
         {
-            if (DateTimeOffset.UtcNow - _cacheUpdatedAtUtc < CacheLifetime)
+            if (IsCacheFresh(workspaceId))
             {
                 return;
             }
@@ -79,8 +81,6 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
             var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
             var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
-            var workspaceContextAccessor = scope.ServiceProvider.GetRequiredService<IWorkspaceContextAccessor>();
-            var workspaceId = workspaceContextAccessor.GetWorkspaceId();
             var activeServer = await brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken);
             var activeServerAddress = activeServer?.ServerAddress;
             var presets = string.IsNullOrWhiteSpace(activeServerAddress)
@@ -96,9 +96,12 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
 
             lock (_cacheSync)
             {
-                _mappings = mappings;
-                _currentDefaultKeyBytes = defaultKeyBytes;
-                _cacheUpdatedAtUtc = DateTimeOffset.UtcNow;
+                _cacheByWorkspace[workspaceId] = new WorkspaceKeyCache
+                {
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    DefaultKeyBytes = defaultKeyBytes,
+                    Mappings = mappings
+                };
             }
         }
         finally
@@ -107,7 +110,34 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         }
     }
 
-    private KeyMapping? TryFindBestMatch(string topic)
+    private bool IsCacheFresh(string workspaceId)
+    {
+        lock (_cacheSync)
+        {
+            return _cacheByWorkspace.TryGetValue(workspaceId, out var cache) &&
+                DateTimeOffset.UtcNow - cache.UpdatedAtUtc < CacheLifetime;
+        }
+    }
+
+    private WorkspaceKeyCache GetWorkspaceCache(string workspaceId)
+    {
+        lock (_cacheSync)
+        {
+            if (_cacheByWorkspace.TryGetValue(workspaceId, out var cache))
+            {
+                return cache;
+            }
+        }
+
+        return new WorkspaceKeyCache
+        {
+            UpdatedAtUtc = DateTimeOffset.MinValue,
+            DefaultKeyBytes = [.._fallbackDefaultKeyBytes],
+            Mappings = []
+        };
+    }
+
+    private KeyMapping? TryFindBestMatch(string topic, IReadOnlyCollection<KeyMapping> mappings)
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
@@ -115,7 +145,6 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         }
 
         var normalizedTopic = NormalizeTransportSegment(topic);
-        var mappings = _mappings;
         KeyMapping? bestMatch = null;
 
         foreach (var mapping in mappings)
@@ -253,5 +282,14 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         public int MatchScore { get; set; }
 
         public required string NormalizedPattern { get; set; }
+    }
+
+    private sealed class WorkspaceKeyCache
+    {
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+
+        public required byte[] DefaultKeyBytes { get; set; }
+
+        public required IReadOnlyCollection<KeyMapping> Mappings { get; set; }
     }
 }

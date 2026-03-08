@@ -79,7 +79,7 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     public BrokerStatus GetBrokerStatus()
     {
         var workspaceId = GetWorkspaceId();
-        var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot();
+        var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot(workspaceId);
         var activeServerAddress = string.IsNullOrWhiteSpace(runtimeSnapshot.ActiveServerAddress)
             ? $"{_fallbackBrokerOptions.Host}:{_fallbackBrokerOptions.Port}"
             : runtimeSnapshot.ActiveServerAddress;
@@ -145,14 +145,7 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
             activeProfile.ServerAddress);
 
         var workspaceId = GetWorkspaceId();
-        var previousTopicFilters = _brokerSessionManager.GetTopicFilters(workspaceId).ToList();
-
-        foreach (var topicFilter in previousTopicFilters)
-        {
-            await _brokerSessionManager.UnsubscribeAsync(workspaceId, topicFilter, cancellationToken);
-        }
-
-        await _brokerSessionManager.DisconnectAsync(workspaceId, cancellationToken);
+        await _brokerSessionManager.ResetRuntimeAsync(workspaceId, cancellationToken);
         await _brokerSessionManager.ConnectAsync(workspaceId, cancellationToken);
 
         await EnsureDefaultSubscriptionIntent(activeProfile, cancellationToken);
@@ -300,6 +293,7 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     private void UpdateRuntimeSnapshot(BrokerServerProfile activeServer)
     {
         _brokerRuntimeRegistry.UpdateSnapshot(
+            GetWorkspaceId(),
             new BrokerRuntimeSnapshot
             {
                 ActiveServerProfileId = activeServer.Id,

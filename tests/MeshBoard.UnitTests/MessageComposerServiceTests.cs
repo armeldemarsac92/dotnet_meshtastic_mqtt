@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
@@ -14,9 +15,9 @@ public sealed class MessageComposerServiceTests
     [Fact]
     public async Task SendTextMessage_ShouldPublishPublicMessage_WhenCapabilityIsEnabled()
     {
-        var mqttSession = new FakeMqttSession();
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager();
         var service = CreateService(
-            mqttSession,
+            brokerSessionManager,
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -31,17 +32,17 @@ public sealed class MessageComposerServiceTests
                 Text = "hello mesh"
             });
 
-        Assert.Equal("msh/US/2/json/mqtt/", mqttSession.LastPublishedTopic);
-        Assert.Equal("""{"type":"sendtext","payload":"hello mesh"}""", mqttSession.LastPublishedPayload);
+        Assert.Equal("msh/US/2/json/mqtt/", brokerSessionManager.LastPublishedTopic);
+        Assert.Equal("""{"type":"sendtext","payload":"hello mesh"}""", brokerSessionManager.LastPublishedPayload);
         Assert.False(result.IsPrivate);
     }
 
     [Fact]
     public async Task SendTextMessage_ShouldPublishPrivateMessage_WhenToNodeIdProvided()
     {
-        var mqttSession = new FakeMqttSession();
+        var brokerSessionManager = new FakeWorkspaceBrokerSessionManager();
         var service = CreateService(
-            mqttSession,
+            brokerSessionManager,
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -57,8 +58,8 @@ public sealed class MessageComposerServiceTests
                 ToNodeId = "!ABCDEF12"
             });
 
-        Assert.Equal("msh/US/2/json/mqtt/", mqttSession.LastPublishedTopic);
-        Assert.Equal("""{"type":"sendtext","payload":"private ping","to":"!abcdef12"}""", mqttSession.LastPublishedPayload);
+        Assert.Equal("msh/US/2/json/mqtt/", brokerSessionManager.LastPublishedTopic);
+        Assert.Equal("""{"type":"sendtext","payload":"private ping","to":"!abcdef12"}""", brokerSessionManager.LastPublishedPayload);
         Assert.True(result.IsPrivate);
         Assert.Equal("!abcdef12", result.ToNodeId);
     }
@@ -67,7 +68,7 @@ public sealed class MessageComposerServiceTests
     public async Task SendTextMessage_ShouldThrowBadRequest_WhenCapabilityIsBlocked()
     {
         var service = CreateService(
-            new FakeMqttSession(),
+            new FakeWorkspaceBrokerSessionManager(),
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -85,7 +86,7 @@ public sealed class MessageComposerServiceTests
     public async Task SendTextMessage_ShouldThrowBadRequest_WhenNodeIdIsInvalid()
     {
         var service = CreateService(
-            new FakeMqttSession(),
+            new FakeWorkspaceBrokerSessionManager(),
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -103,10 +104,12 @@ public sealed class MessageComposerServiceTests
                 }));
     }
 
-    private static MessageComposerService CreateService(IMqttSession mqttSession, ISendCapabilityService sendCapabilityService)
+    private static MessageComposerService CreateService(
+        IWorkspaceBrokerSessionManager brokerSessionManager,
+        ISendCapabilityService sendCapabilityService)
     {
         return new MessageComposerService(
-            mqttSession,
+            brokerSessionManager,
             sendCapabilityService,
             new FakeBrokerServerProfileService(
                 new BrokerServerProfile
@@ -120,6 +123,7 @@ public sealed class MessageComposerServiceTests
                     EnableSend = true,
                     IsActive = true
                 }),
+            new FakeWorkspaceContextAccessor(),
             Options.Create(
                 new BrokerOptions
                 {
@@ -129,50 +133,75 @@ public sealed class MessageComposerServiceTests
     }
 
 #pragma warning disable CS0067
-    private sealed class FakeMqttSession : IMqttSession
+    private sealed class FakeWorkspaceBrokerSessionManager : IWorkspaceBrokerSessionManager
     {
-        public bool IsConnected => true;
-
-        public string? LastStatusMessage => null;
-
         public string? LastPublishedPayload { get; private set; }
 
         public string? LastPublishedTopic { get; private set; }
 
-        public IReadOnlyCollection<string> TopicFilters => [];
-
-        public event Func<bool, Task>? ConnectionStateChanged;
-
         public event Func<MqttInboundMessage, Task>? MessageReceived;
 
-        public Task ConnectAsync(CancellationToken cancellationToken = default)
+        public bool IsConnected(string workspaceId)
+        {
+            return true;
+        }
+
+        public string? GetLastStatusMessage(string workspaceId)
+        {
+            return null;
+        }
+
+        public IReadOnlyCollection<string> GetTopicFilters(string workspaceId)
+        {
+            return [];
+        }
+
+        public Task ConnectAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        public Task ResetRuntimeAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)
+        public Task DisconnectAsync(string workspaceId, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task DisconnectAllAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task PublishAsync(string workspaceId, string topic, string payload, CancellationToken cancellationToken = default)
         {
             LastPublishedTopic = topic;
             LastPublishedPayload = payload;
             return Task.CompletedTask;
         }
 
-        public Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task SubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task UnsubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
     }
 #pragma warning restore CS0067
+
+    private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
+    {
+        public string GetWorkspaceId()
+        {
+            return "workspace-tests";
+        }
+    }
 
     private sealed class FakeSendCapabilityService : ISendCapabilityService
     {

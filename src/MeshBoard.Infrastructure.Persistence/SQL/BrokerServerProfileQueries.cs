@@ -2,9 +2,32 @@ namespace MeshBoard.Infrastructure.Persistence.SQL;
 
 internal static class BrokerServerProfileQueries
 {
+    public static string GetAllActiveAcrossWorkspaces =>
+        """
+        SELECT
+            workspace_id AS WorkspaceId,
+            id AS Id,
+            name AS Name,
+            host AS Host,
+            port AS Port,
+            use_tls AS UseTls,
+            username AS Username,
+            password AS Password,
+            default_topic_pattern AS DefaultTopicPattern,
+            default_encryption_key_base64 AS DefaultEncryptionKeyBase64,
+            downlink_topic AS DownlinkTopic,
+            enable_send AS EnableSend,
+            is_active AS IsActive,
+            created_at_utc AS CreatedAtUtc
+        FROM broker_server_profiles
+        WHERE is_active = 1
+        ORDER BY workspace_id COLLATE NOCASE ASC, created_at_utc DESC;
+        """;
+
     public static string GetAll =>
         """
         SELECT
+            workspace_id AS WorkspaceId,
             id AS Id,
             name AS Name,
             host AS Host,
@@ -26,6 +49,7 @@ internal static class BrokerServerProfileQueries
     public static string GetActive =>
         """
         SELECT
+            workspace_id AS WorkspaceId,
             id AS Id,
             name AS Name,
             host AS Host,
@@ -49,6 +73,7 @@ internal static class BrokerServerProfileQueries
     public static string GetById =>
         """
         SELECT
+            workspace_id AS WorkspaceId,
             id AS Id,
             name AS Name,
             host AS Host,

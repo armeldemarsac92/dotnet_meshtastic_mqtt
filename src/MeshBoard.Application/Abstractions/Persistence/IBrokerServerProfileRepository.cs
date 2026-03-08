@@ -4,6 +4,9 @@ namespace MeshBoard.Application.Abstractions.Persistence;
 
 public interface IBrokerServerProfileRepository
 {
+    Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveAsync(
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
         string workspaceId,
         CancellationToken cancellationToken = default);

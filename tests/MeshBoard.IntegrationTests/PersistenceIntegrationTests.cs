@@ -703,6 +703,199 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task SubscriptionIntents_ShouldBeScopedByWorkspaceAndProfile()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                await using var scopeA = providerA.CreateAsyncScope();
+                var profilesA = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var profileRepositoryA = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+                var intentRepositoryA = scopeA.ServiceProvider.GetRequiredService<ISubscriptionIntentRepository>();
+
+                var workspaceAProfileOne = await profilesA.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Workspace A profile one",
+                        Host = "mqtt-a-one.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                var workspaceAProfileTwo = await profilesA.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Workspace A profile two",
+                        Host = "mqtt-a-two.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/EU_868/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/EU_868/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = false
+                    });
+
+                await intentRepositoryA.AddAsync("workspace-a", workspaceAProfileOne.Id, "msh/US/2/e/LongFast/#");
+                await intentRepositoryA.AddAsync("workspace-a", workspaceAProfileTwo.Id, "msh/EU_868/2/e/MediumFast/#");
+                await profileRepositoryA.MarkSubscriptionIntentsInitializedAsync("workspace-a", workspaceAProfileOne.Id);
+
+                await using var scopeB = providerB.CreateAsyncScope();
+                var profilesB = scopeB.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var profileRepositoryB = scopeB.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+                var intentRepositoryB = scopeB.ServiceProvider.GetRequiredService<ISubscriptionIntentRepository>();
+
+                var workspaceBProfile = await profilesB.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Workspace B profile",
+                        Host = "mqtt-b.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await intentRepositoryB.AddAsync("workspace-b", workspaceBProfile.Id, "msh/US/2/e/LongFast/#");
+
+                var workspaceAProfileOneIntents = await intentRepositoryA.GetAllAsync("workspace-a", workspaceAProfileOne.Id);
+                var workspaceAProfileTwoIntents = await intentRepositoryA.GetAllAsync("workspace-a", workspaceAProfileTwo.Id);
+                var workspaceBIntents = await intentRepositoryB.GetAllAsync("workspace-b", workspaceBProfile.Id);
+
+                Assert.Equal(["msh/US/2/e/LongFast/#"], workspaceAProfileOneIntents.Select(intent => intent.TopicFilter).ToArray());
+                Assert.Equal(["msh/EU_868/2/e/MediumFast/#"], workspaceAProfileTwoIntents.Select(intent => intent.TopicFilter).ToArray());
+                Assert.Equal(["msh/US/2/e/LongFast/#"], workspaceBIntents.Select(intent => intent.TopicFilter).ToArray());
+
+                Assert.True(await profileRepositoryA.AreSubscriptionIntentsInitializedAsync("workspace-a", workspaceAProfileOne.Id));
+                Assert.False(await profileRepositoryA.AreSubscriptionIntentsInitializedAsync("workspace-a", workspaceAProfileTwo.Id));
+                Assert.False(await profileRepositoryB.AreSubscriptionIntentsInitializedAsync("workspace-b", workspaceBProfile.Id));
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task BrokerServerProfiles_ShouldReturnActiveProfilesAcrossWorkspaces()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                await using var scopeA = providerA.CreateAsyncScope();
+                var profilesA = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+
+                await profilesA.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Workspace A profile",
+                        Host = "mqtt-a.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await using var scopeB = providerB.CreateAsyncScope();
+                var profilesB = scopeB.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                await profilesB.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Workspace B profile",
+                        Host = "mqtt-b.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/EU_868/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/EU_868/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                var profileRepository = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+                var activeProfiles = await profileRepository.GetAllActiveAsync();
+                var relevantProfiles = activeProfiles
+                    .Where(profile => profile.WorkspaceId is "workspace-a" or "workspace-b")
+                    .ToArray();
+
+                Assert.Equal(2, relevantProfiles.Length);
+                Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-a" && profile.Profile.Name == "Workspace A profile");
+                Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-b" && profile.Profile.Name == "Workspace B profile");
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task TopicDiscovery_ShouldPersistObservedTopicPatterns()
     {
         var databasePath = CreateTemporaryDatabasePath();

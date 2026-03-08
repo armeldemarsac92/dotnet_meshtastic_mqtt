@@ -2,6 +2,8 @@ namespace MeshBoard.Infrastructure.Persistence.SQL.Responses;
 
 internal sealed class BrokerServerProfileSqlResponse
 {
+    public string WorkspaceId { get; set; } = string.Empty;
+
     public required string Id { get; set; }
 
     public required string Name { get; set; }

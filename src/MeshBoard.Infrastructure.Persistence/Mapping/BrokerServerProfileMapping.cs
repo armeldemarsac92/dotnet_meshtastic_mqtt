@@ -50,6 +50,16 @@ internal static class BrokerServerProfileMapping
         };
     }
 
+    public static WorkspaceBrokerServerProfile MapToWorkspaceBrokerServerProfile(
+        this BrokerServerProfileSqlResponse response)
+    {
+        return new WorkspaceBrokerServerProfile
+        {
+            WorkspaceId = response.WorkspaceId,
+            Profile = response.MapToBrokerServerProfile()
+        };
+    }
+
     private static DateTimeOffset ParseOrDefault(string value)
     {
         return DateTimeOffset.TryParse(

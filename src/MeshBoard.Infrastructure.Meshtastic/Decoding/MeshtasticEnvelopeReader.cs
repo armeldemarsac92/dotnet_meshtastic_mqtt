@@ -25,13 +25,14 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
     }
 
     public async Task<MeshtasticEnvelope?> Read(
+        string workspaceId,
         string topic,
         byte[] payload,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            return await ReadCore(topic, payload, cancellationToken);
+            return await ReadCore(workspaceId, topic, payload, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -45,6 +46,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
     }
 
     private async Task<MeshtasticEnvelope?> ReadCore(
+        string workspaceId,
         string topic,
         byte[] payload,
         CancellationToken cancellationToken)
@@ -54,14 +56,14 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             serviceEnvelope.Packet is not null &&
             HasPacketContent(serviceEnvelope.Packet))
         {
-            return await MapEnvelope(topic, serviceEnvelope.Packet, payload.Length, cancellationToken);
+            return await MapEnvelope(workspaceId, topic, serviceEnvelope.Packet, payload.Length, cancellationToken);
         }
 
         if (TryParseMeshPacket(payload, out var directPacket) &&
             directPacket is not null &&
             HasPacketContent(directPacket))
         {
-            return await MapEnvelope(topic, directPacket, payload.Length, cancellationToken);
+            return await MapEnvelope(workspaceId, topic, directPacket, payload.Length, cancellationToken);
         }
 
         if (TryParseJsonEnvelope(topic, payload, out var jsonEnvelope) && jsonEnvelope is not null)
@@ -73,6 +75,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
     }
 
     private async Task<MeshtasticEnvelope> MapEnvelope(
+        string workspaceId,
         string topic,
         MeshPacket packet,
         int payloadLength,
@@ -93,6 +96,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         {
             MeshPacket.PayloadVariantOneofCase.Decoded => packet.Decoded,
             MeshPacket.PayloadVariantOneofCase.Encrypted => await TryDecryptPayload(
+                workspaceId,
                 topic,
                 packet,
                 cancellationToken),
@@ -128,6 +132,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
     }
 
     private async Task<Data?> TryDecryptPayload(
+        string workspaceId,
         string topic,
         MeshPacket packet,
         CancellationToken cancellationToken)
@@ -138,7 +143,10 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         }
 
         var nonce = BuildNonce(packet.From, packet.Id);
-        var candidateKeys = await _topicEncryptionKeyResolver.ResolveCandidateKeysAsync(topic, cancellationToken);
+        var candidateKeys = await _topicEncryptionKeyResolver.ResolveCandidateKeysAsync(
+            workspaceId,
+            topic,
+            cancellationToken);
 
         foreach (var key in candidateKeys)
         {

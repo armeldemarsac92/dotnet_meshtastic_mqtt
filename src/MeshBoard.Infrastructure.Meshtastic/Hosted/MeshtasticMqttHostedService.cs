@@ -1,5 +1,6 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Services;
+using MeshBoard.Infrastructure.Meshtastic.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -9,21 +10,24 @@ namespace MeshBoard.Infrastructure.Meshtastic.Hosted;
 internal sealed class MeshtasticMqttHostedService : IHostedService
 {
     private readonly IHostApplicationLifetime _applicationLifetime;
+    private readonly IBrokerRuntimeBootstrapService _brokerRuntimeBootstrapService;
+    private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
     private readonly IMeshtasticEnvelopeReader _envelopeReader;
     private readonly ILogger<MeshtasticMqttHostedService> _logger;
-    private readonly IMqttSession _mqttSession;
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly CancellationTokenSource _stoppingTokenSource = new();
     private Task? _startupTask;
 
     public MeshtasticMqttHostedService(
-        IMqttSession mqttSession,
+        IBrokerRuntimeBootstrapService brokerRuntimeBootstrapService,
+        IWorkspaceBrokerSessionManager brokerSessionManager,
         IMeshtasticEnvelopeReader envelopeReader,
         IServiceScopeFactory serviceScopeFactory,
         IHostApplicationLifetime applicationLifetime,
         ILogger<MeshtasticMqttHostedService> logger)
     {
-        _mqttSession = mqttSession;
+        _brokerRuntimeBootstrapService = brokerRuntimeBootstrapService;
+        _brokerSessionManager = brokerSessionManager;
         _envelopeReader = envelopeReader;
         _serviceScopeFactory = serviceScopeFactory;
         _applicationLifetime = applicationLifetime;
@@ -32,7 +36,7 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _mqttSession.MessageReceived += OnMessageReceived;
+        _brokerSessionManager.MessageReceived += OnMessageReceived;
 
         _applicationLifetime.ApplicationStarted.Register(
             () => _startupTask = Task.Run(() => ConnectAndSubscribeAsync(_stoppingTokenSource.Token), CancellationToken.None));
@@ -43,7 +47,7 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _stoppingTokenSource.Cancel();
-        _mqttSession.MessageReceived -= OnMessageReceived;
+        _brokerSessionManager.MessageReceived -= OnMessageReceived;
 
         if (_startupTask is not null)
         {
@@ -56,7 +60,7 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
             }
         }
 
-        await _mqttSession.DisconnectAsync(cancellationToken);
+        await _brokerSessionManager.DisconnectAllAsync(cancellationToken);
         _stoppingTokenSource.Dispose();
     }
 
@@ -66,11 +70,7 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
         try
         {
-            await using var scope = _serviceScopeFactory.CreateAsyncScope();
-            var brokerMonitorService = scope.ServiceProvider.GetRequiredService<IBrokerMonitorService>();
-
-            await brokerMonitorService.EnsureConnected(cancellationToken);
-            await brokerMonitorService.SubscribeToDefaultTopic(cancellationToken);
+            await _brokerRuntimeBootstrapService.InitializeActiveWorkspacesAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -85,7 +85,10 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
     private async Task OnMessageReceived(MeshBoard.Contracts.Meshtastic.MqttInboundMessage inboundMessage)
     {
-        var envelope = await _envelopeReader.Read(inboundMessage.Topic, inboundMessage.Payload);
+        var envelope = await _envelopeReader.Read(
+            inboundMessage.WorkspaceId,
+            inboundMessage.Topic,
+            inboundMessage.Payload);
 
         if (envelope is null)
         {

@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
@@ -80,8 +81,9 @@ public sealed class SendCapabilityServiceTests
                     EnableSend = true,
                     DownlinkTopic = "msh/EU_868/2/json/mqtt/"
                 }),
-            new FakeMqttSession(isConnected: true),
-            new ThrowingBrokerServerProfileService(new NotFoundException("No active broker server profile is configured.")));
+            new FakeWorkspaceBrokerSessionManager(isConnected: true),
+            new ThrowingBrokerServerProfileService(new NotFoundException("No active broker server profile is configured.")),
+            new FakeWorkspaceContextAccessor());
 
         var status = await service.GetStatus();
 
@@ -103,8 +105,9 @@ public sealed class SendCapabilityServiceTests
                     EnableSend = true,
                     DownlinkTopic = "msh/US/2/json/mqtt/"
                 }),
-            new FakeMqttSession(isConnected: true),
-            new ThrowingBrokerServerProfileService(new InvalidOperationException("database unavailable")));
+            new FakeWorkspaceBrokerSessionManager(isConnected: true),
+            new ThrowingBrokerServerProfileService(new InvalidOperationException("database unavailable")),
+            new FakeWorkspaceContextAccessor());
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetStatus());
 
@@ -115,7 +118,7 @@ public sealed class SendCapabilityServiceTests
     {
         return new SendCapabilityService(
             Options.Create(options),
-            new FakeMqttSession(isConnected),
+            new FakeWorkspaceBrokerSessionManager(isConnected),
             new FakeBrokerServerProfileService(
                 new BrokerServerProfile
                 {
@@ -128,7 +131,8 @@ public sealed class SendCapabilityServiceTests
                     DownlinkTopic = options.DownlinkTopic,
                     EnableSend = options.EnableSend,
                     IsActive = true
-                }));
+                }),
+            new FakeWorkspaceContextAccessor());
     }
 
     private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
@@ -196,47 +200,74 @@ public sealed class SendCapabilityServiceTests
     }
 
 #pragma warning disable CS0067
-    private sealed class FakeMqttSession : IMqttSession
+    private sealed class FakeWorkspaceBrokerSessionManager : IWorkspaceBrokerSessionManager
     {
-        public FakeMqttSession(bool isConnected)
+        public FakeWorkspaceBrokerSessionManager(bool isConnected)
         {
-            IsConnected = isConnected;
+            _isConnected = isConnected;
         }
 
-        public bool IsConnected { get; }
-
-        public string? LastStatusMessage => null;
-
-        public IReadOnlyCollection<string> TopicFilters => [];
-
-        public event Func<bool, Task>? ConnectionStateChanged;
+        private readonly bool _isConnected;
 
         public event Func<MqttInboundMessage, Task>? MessageReceived;
 
-        public Task ConnectAsync(CancellationToken cancellationToken = default)
+        public bool IsConnected(string workspaceId)
+        {
+            return _isConnected;
+        }
+
+        public string? GetLastStatusMessage(string workspaceId)
+        {
+            return null;
+        }
+
+        public IReadOnlyCollection<string> GetTopicFilters(string workspaceId)
+        {
+            return [];
+        }
+
+        public Task ConnectAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        public Task ResetRuntimeAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)
+        public Task DisconnectAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task DisconnectAllAsync(CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task PublishAsync(string workspaceId, string topic, string payload, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task SubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task UnsubscribeAsync(string workspaceId, string topicFilter, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
     }
 #pragma warning restore CS0067
+
+    private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
+    {
+        public string GetWorkspaceId()
+        {
+            return "workspace-tests";
+        }
+    }
 }

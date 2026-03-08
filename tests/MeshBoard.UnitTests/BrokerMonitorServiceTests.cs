@@ -149,13 +149,7 @@ public sealed class BrokerMonitorServiceTests
 
         await service.SwitchActiveServerProfile(targetProfile.Id);
 
-        Assert.Equal(
-            [
-                "msh/EU_868/2/e/MediumFast/#",
-                "msh/EU_868/2/json/MediumFast/#"
-            ],
-            brokerSessionManager.UnsubscribedFilters);
-        Assert.Equal(1, brokerSessionManager.DisconnectCalls);
+        Assert.Equal(1, brokerSessionManager.ResetCalls);
         Assert.Equal(1, brokerSessionManager.ConnectCalls);
         Assert.Equal(
             [
@@ -202,6 +196,7 @@ public sealed class BrokerMonitorServiceTests
     {
         var runtimeRegistry = new FakeBrokerRuntimeRegistry();
         runtimeRegistry.UpdateSnapshot(
+            "workspace-tests",
             new BrokerRuntimeSnapshot
             {
                 ActiveServerProfileId = Guid.NewGuid(),
@@ -281,7 +276,7 @@ public sealed class BrokerMonitorServiceTests
             ActiveServerAddress = "mqtt.meshtastic.org:1883"
         };
 
-        public BrokerRuntimeSnapshot GetSnapshot()
+        public BrokerRuntimeSnapshot GetSnapshot(string workspaceId)
         {
             return new BrokerRuntimeSnapshot
             {
@@ -291,7 +286,7 @@ public sealed class BrokerMonitorServiceTests
             };
         }
 
-        public void UpdateSnapshot(BrokerRuntimeSnapshot snapshot)
+        public void UpdateSnapshot(string workspaceId, BrokerRuntimeSnapshot snapshot)
         {
             _snapshot = new BrokerRuntimeSnapshot
             {
@@ -375,6 +370,12 @@ public sealed class BrokerMonitorServiceTests
     private sealed class FakeBrokerServerProfileRepository : IBrokerServerProfileRepository
     {
         private readonly HashSet<Guid> _initializedProfiles = [];
+
+        public Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<WorkspaceBrokerServerProfile>>([]);
+        }
 
         public Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
             string workspaceId,
@@ -509,6 +510,8 @@ public sealed class BrokerMonitorServiceTests
 
         public int DisconnectCalls { get; private set; }
 
+        public int ResetCalls { get; private set; }
+
         public List<string> SubscribedFilters { get; } = [];
 
         public List<string> UnsubscribedFilters { get; } = [];
@@ -537,10 +540,26 @@ public sealed class BrokerMonitorServiceTests
             return Task.CompletedTask;
         }
 
+        public Task ResetRuntimeAsync(string workspaceId, CancellationToken cancellationToken = default)
+        {
+            ResetCalls++;
+            DisconnectCalls++;
+            _isConnected = false;
+            _topicFilters.Clear();
+            return Task.CompletedTask;
+        }
+
         public Task DisconnectAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             DisconnectCalls++;
             _isConnected = false;
+            return Task.CompletedTask;
+        }
+
+        public Task DisconnectAllAsync(CancellationToken cancellationToken = default)
+        {
+            _isConnected = false;
+            _topicFilters.Clear();
             return Task.CompletedTask;
         }
 

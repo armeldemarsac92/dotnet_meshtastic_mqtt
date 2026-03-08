@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Meshtastic;
@@ -15,20 +16,24 @@ public sealed class SendCapabilityService : ISendCapabilityService
 {
     private readonly BrokerOptions _brokerOptions;
     private readonly IBrokerServerProfileService _brokerServerProfileService;
-    private readonly IMqttSession _mqttSession;
+    private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public SendCapabilityService(
         IOptions<BrokerOptions> brokerOptions,
-        IMqttSession mqttSession,
-        IBrokerServerProfileService brokerServerProfileService)
+        IWorkspaceBrokerSessionManager brokerSessionManager,
+        IBrokerServerProfileService brokerServerProfileService,
+        IWorkspaceContextAccessor workspaceContextAccessor)
     {
         _brokerOptions = brokerOptions.Value;
-        _mqttSession = mqttSession;
+        _brokerSessionManager = brokerSessionManager;
         _brokerServerProfileService = brokerServerProfileService;
+        _workspaceContextAccessor = workspaceContextAccessor;
     }
 
     public async Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default)
     {
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
         var activeServer = await TryGetActiveServerProfile(cancellationToken);
         var host = activeServer?.Host ?? _brokerOptions.Host;
         var port = activeServer?.Port ?? _brokerOptions.Port;
@@ -40,7 +45,7 @@ public sealed class SendCapabilityService : ISendCapabilityService
             Host = host,
             Port = port,
             DownlinkTopic = downlinkTopic,
-            IsBrokerConnected = _mqttSession.IsConnected
+            IsBrokerConnected = _brokerSessionManager.IsConnected(workspaceId)
         };
 
         if (!enableSend)
@@ -48,7 +53,7 @@ public sealed class SendCapabilityService : ISendCapabilityService
             status.BlockingReasons.Add("Sending is disabled by configuration. Set Broker:EnableSend to true to enable compose.");
         }
 
-        if (!_mqttSession.IsConnected)
+        if (!_brokerSessionManager.IsConnected(workspaceId))
         {
             status.BlockingReasons.Add("The MQTT session is not connected.");
         }

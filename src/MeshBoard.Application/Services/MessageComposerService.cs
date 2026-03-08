@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Messages;
@@ -20,20 +21,23 @@ public sealed partial class MessageComposerService : IMessageComposerService
 {
     private readonly BrokerOptions _fallbackBrokerOptions;
     private readonly IBrokerServerProfileService _brokerServerProfileService;
+    private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
     private readonly ILogger<MessageComposerService> _logger;
-    private readonly IMqttSession _mqttSession;
     private readonly ISendCapabilityService _sendCapabilityService;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public MessageComposerService(
-        IMqttSession mqttSession,
+        IWorkspaceBrokerSessionManager brokerSessionManager,
         ISendCapabilityService sendCapabilityService,
         IBrokerServerProfileService brokerServerProfileService,
+        IWorkspaceContextAccessor workspaceContextAccessor,
         IOptions<BrokerOptions> brokerOptions,
         ILogger<MessageComposerService> logger)
     {
-        _mqttSession = mqttSession;
+        _brokerSessionManager = brokerSessionManager;
         _sendCapabilityService = sendCapabilityService;
         _brokerServerProfileService = brokerServerProfileService;
+        _workspaceContextAccessor = workspaceContextAccessor;
         _fallbackBrokerOptions = brokerOptions.Value;
         _logger = logger;
     }
@@ -79,7 +83,11 @@ public sealed partial class MessageComposerService : IMessageComposerService
             ? JsonSerializer.Serialize(new { type = "sendtext", payload = messageText })
             : JsonSerializer.Serialize(new { type = "sendtext", payload = messageText, to = toNodeId });
 
-        await _mqttSession.PublishAsync(downlinkTopic, payload, cancellationToken);
+        await _brokerSessionManager.PublishAsync(
+            _workspaceContextAccessor.GetWorkspaceId(),
+            downlinkTopic,
+            payload,
+            cancellationToken);
 
         return new ComposeTextMessageResult
         {

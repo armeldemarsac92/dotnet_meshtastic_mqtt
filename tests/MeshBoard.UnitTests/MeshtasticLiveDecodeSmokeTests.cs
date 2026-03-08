@@ -68,6 +68,7 @@ public sealed class MeshtasticLiveDecodeSmokeTests
             Interlocked.Increment(ref observedMessages);
 
             var envelope = await reader.Read(
+                "workspace-live-smoke",
                 eventArgs.ApplicationMessage.Topic,
                 CopyPayload(eventArgs.ApplicationMessage.Payload),
                 timeout.Token);
@@ -209,6 +210,7 @@ public sealed class MeshtasticLiveDecodeSmokeTests
         }
 
         public Task<IReadOnlyCollection<byte[]>> ResolveCandidateKeysAsync(
+            string workspaceId,
             string topic,
             CancellationToken cancellationToken = default)
         {

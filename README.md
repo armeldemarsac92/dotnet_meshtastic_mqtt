@@ -36,6 +36,28 @@ npm run tailwind:watch
 
 Run that in a second terminal while running the app.
 
+## MCP Integration
+
+This repo includes a project-scoped `.mcp.json` entry for [`csharp-lsp-mcp`](https://github.com/HYMMA/csharp-lsp-mcp).
+
+It launches through `scripts/run-csharp-lsp-mcp.sh`, which uses `dnx` to run:
+
+- `CSharpLspMcp@1.0.0`
+- `csharp-ls@0.22.0`
+
+Requirements:
+
+- .NET SDK 10.x or newer
+- An MCP client that supports project-level `.mcp.json` files, such as Claude Code
+
+On first launch, `dnx` will download the tool packages. After the MCP client connects, call `csharp_set_workspace` with this repository root:
+
+```text
+/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server
+```
+
+If you need to rebuild while the language server is running, call `csharp_stop` first to release file locks, then run `csharp_set_workspace` again afterward.
+
 ## Tests
 
 ```bash
