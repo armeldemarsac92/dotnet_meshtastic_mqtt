@@ -490,9 +490,10 @@ function triggerActivityPulse(mapState, nodeId) {
             semiMajorAxis: new Cesium.CallbackProperty(() => pulseState.radius, false),
             semiMinorAxis: new Cesium.CallbackProperty(() => pulseState.radius, false),
             height: 0,
-            material: new Cesium.CallbackProperty(
-                () => pulseColor.withAlpha(Math.max(pulseState.alpha * 0.24, 0)),
-                false),
+            material: new Cesium.ColorMaterialProperty(
+                new Cesium.CallbackProperty(
+                    () => pulseColor.withAlpha(Math.max(pulseState.alpha * 0.24, 0)),
+                    false)),
             outline: true,
             outlineColor: new Cesium.CallbackProperty(
                 () => pulseColor.withAlpha(Math.max(pulseState.alpha, 0)),
