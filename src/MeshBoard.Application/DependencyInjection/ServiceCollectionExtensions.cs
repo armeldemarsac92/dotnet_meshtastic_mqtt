@@ -1,6 +1,7 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Meshtastic;
 using MeshBoard.Application.Abstractions.Workspaces;
+using MeshBoard.Application.Authentication;
 using MeshBoard.Application.Caching;
 using MeshBoard.Application.Observability;
 using MeshBoard.Application.Services;
@@ -18,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
         services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
         services.TryAddSingleton<IActiveCircuitMetricsService, InMemoryActiveCircuitMetricsService>();
+        services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();
         services.TryAddSingleton<IReadModelCacheInvalidator, InMemoryReadModelCacheInvalidator>();
         services.TryAddSingleton<IReadModelMetricsService, InMemoryReadModelMetricsService>();
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
@@ -41,6 +43,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
         services.AddScoped<ITopicProbeService, TopicProbeService>();
         services.AddScoped<ITopicPresetService, TopicPresetService>();
+        services.AddScoped<IUserAccountService, UserAccountService>();
+        services.AddScoped<IWorkspaceProvisioningService, WorkspaceProvisioningService>();
 
         return services;
     }

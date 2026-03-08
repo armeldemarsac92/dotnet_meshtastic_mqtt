@@ -3,6 +3,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Favorites;
 using MeshBoard.Contracts.Messages;
@@ -1990,6 +1991,80 @@ public sealed class PersistenceIntegrationTests
             finally
             {
                 await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task UserAccountService_ShouldRegisterValidateAndProvisionWorkspace()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var authProvider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true);
+
+            var authHostedServices = authProvider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(authHostedServices);
+
+            string userId;
+
+            try
+            {
+                await using var authScope = authProvider.CreateAsyncScope();
+                var userAccountService = authScope.ServiceProvider.GetRequiredService<IUserAccountService>();
+
+                var user = await userAccountService.RegisterAsync(
+                    new RegisterUserRequest
+                    {
+                        Username = "alpha.user",
+                        Password = "secret-pass"
+                    });
+
+                userId = user.Id;
+
+                var validatedUser = await userAccountService.ValidateCredentialsAsync("ALPHA.USER", "secret-pass");
+
+                Assert.NotNull(validatedUser);
+                Assert.Equal(user.Id, validatedUser!.Id);
+                Assert.Equal("alpha.user", validatedUser.Username);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(authHostedServices);
+            }
+
+            await using var workspaceProvider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: userId);
+
+            var workspaceHostedServices = workspaceProvider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(workspaceHostedServices);
+
+            try
+            {
+                await using var workspaceScope = workspaceProvider.CreateAsyncScope();
+                var brokerServerProfileService = workspaceScope.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var topicPresetService = workspaceScope.ServiceProvider.GetRequiredService<ITopicPresetService>();
+
+                var activeProfile = await brokerServerProfileService.GetActiveServerProfile();
+                var presets = await topicPresetService.GetTopicPresets();
+
+                Assert.Equal("Default server", activeProfile.Name);
+                Assert.Equal("mqtt.meshtastic.org", activeProfile.Host);
+                Assert.Contains(presets, preset => preset.Name == "US Public Feed");
+                Assert.Contains(presets, preset => preset.Name == "EU Public Feed");
+            }
+            finally
+            {
+                await StopHostedServicesAsync(workspaceHostedServices);
             }
         }
         finally

@@ -66,6 +66,17 @@ internal static class SchemaQueries
         CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_broker_server_topic_pattern
             ON topic_presets(workspace_id, broker_server, topic_pattern);
 
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT NOT NULL PRIMARY KEY,
+            username TEXT NOT NULL,
+            normalized_username TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_users_normalized_username
+            ON users(normalized_username);
+
         CREATE TABLE IF NOT EXISTS subscription_intents (
             workspace_id TEXT NOT NULL,
             broker_server_profile_id TEXT NOT NULL,

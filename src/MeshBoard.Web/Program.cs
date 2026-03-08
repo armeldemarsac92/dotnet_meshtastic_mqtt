@@ -1,8 +1,11 @@
 using MeshBoard.Application.DependencyInjection;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Infrastructure.Meshtastic.DependencyInjection;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
+using MeshBoard.Web.Authentication;
 using MeshBoard.Web.Components;
 using MeshBoard.Web.State;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +13,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplicationServices();
 builder.Services.AddMeshtasticInfrastructure(builder.Configuration);
 builder.Services.AddPersistenceInfrastructure(builder.Configuration);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/login";
+        options.ExpireTimeSpan = TimeSpan.FromDays(14);
+        options.SlidingExpiration = true;
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddScoped<IWorkspaceContextAccessor, AuthenticatedWorkspaceContextAccessor>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -29,8 +44,11 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
+app.MapUserAuthEndpoints();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

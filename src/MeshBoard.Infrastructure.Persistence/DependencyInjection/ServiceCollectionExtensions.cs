@@ -43,6 +43,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProjectionChangeRepository, SqliteProjectionChangeRepository>();
         services.AddScoped<ISubscriptionIntentRepository, SubscriptionIntentRepository>();
         services.AddScoped<ITopicPresetRepository, TopicPresetRepository>();
+        services.AddScoped<IUserAccountRepository, UserAccountRepository>();
         services.AddSingleton<IBrokerRuntimeCommandRepository, SqliteBrokerRuntimeCommandRepository>();
         services.AddSingleton<IBrokerRuntimeRegistry, SqliteBrokerRuntimeRegistry>();
 
