@@ -4,25 +4,26 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Infrastructure.Meshtastic.Mqtt;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Infrastructure.Meshtastic.Runtime;
 
 internal sealed class WorkspaceBrokerSessionManager : IWorkspaceBrokerSessionManager
 {
-    private readonly IBrokerServerProfileRepository _brokerServerProfileRepository;
     private readonly ILogger<WorkspaceBrokerSessionManager> _logger;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _workspaceLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, WorkspaceRuntime> _runtimes = new(StringComparer.Ordinal);
     private readonly IMqttSessionFactory _mqttSessionFactory;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private event Func<MqttInboundMessage, Task>? _messageReceived;
 
     public WorkspaceBrokerSessionManager(
-        IBrokerServerProfileRepository brokerServerProfileRepository,
+        IServiceScopeFactory serviceScopeFactory,
         IMqttSessionFactory mqttSessionFactory,
         ILogger<WorkspaceBrokerSessionManager> logger)
     {
-        _brokerServerProfileRepository = brokerServerProfileRepository;
+        _serviceScopeFactory = serviceScopeFactory;
         _mqttSessionFactory = mqttSessionFactory;
         _logger = logger;
     }
@@ -124,7 +125,7 @@ internal sealed class WorkspaceBrokerSessionManager : IWorkspaceBrokerSessionMan
     private async Task<WorkspaceRuntime> GetOrCreateRuntimeAsync(string workspaceId, CancellationToken cancellationToken)
     {
         ValidateWorkspaceId(workspaceId);
-        var activeProfile = await _brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken)
+        var activeProfile = await GetRequiredActiveProfileAsync(workspaceId, cancellationToken)
             ?? throw new InvalidOperationException($"No active broker server profile is configured for workspace '{workspaceId}'.");
 
         var workspaceLock = GetWorkspaceLock(workspaceId);
@@ -157,6 +158,13 @@ internal sealed class WorkspaceBrokerSessionManager : IWorkspaceBrokerSessionMan
         {
             workspaceLock.Release();
         }
+    }
+
+    private async Task<BrokerServerProfile?> GetRequiredActiveProfileAsync(string workspaceId, CancellationToken cancellationToken)
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+        return await brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken);
     }
 
     private WorkspaceRuntime CreateRuntime(string workspaceId, BrokerServerProfile activeProfile)

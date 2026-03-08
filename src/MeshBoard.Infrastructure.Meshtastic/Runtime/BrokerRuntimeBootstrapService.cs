@@ -1,29 +1,32 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Infrastructure.Meshtastic.Runtime;
 
 internal sealed class BrokerRuntimeBootstrapService : IBrokerRuntimeBootstrapService
 {
-    private readonly IBrokerServerProfileRepository _brokerServerProfileRepository;
-    private readonly IBrokerRuntimeCommandService _brokerRuntimeCommandService;
+    private readonly IBrokerRuntimeCommandExecutor _brokerRuntimeCommandExecutor;
     private readonly ILogger<BrokerRuntimeBootstrapService> _logger;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
 
     public BrokerRuntimeBootstrapService(
-        IBrokerServerProfileRepository brokerServerProfileRepository,
-        IBrokerRuntimeCommandService brokerRuntimeCommandService,
+        IServiceScopeFactory serviceScopeFactory,
+        IBrokerRuntimeCommandExecutor brokerRuntimeCommandExecutor,
         ILogger<BrokerRuntimeBootstrapService> logger)
     {
-        _brokerServerProfileRepository = brokerServerProfileRepository;
-        _brokerRuntimeCommandService = brokerRuntimeCommandService;
+        _serviceScopeFactory = serviceScopeFactory;
+        _brokerRuntimeCommandExecutor = brokerRuntimeCommandExecutor;
         _logger = logger;
     }
 
     public async Task InitializeActiveWorkspacesAsync(CancellationToken cancellationToken = default)
     {
-        var activeProfiles = await _brokerServerProfileRepository.GetAllActiveAsync(cancellationToken);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+        var activeProfiles = await brokerServerProfileRepository.GetAllActiveAsync(cancellationToken);
 
         foreach (var registration in activeProfiles)
         {
@@ -41,7 +44,7 @@ internal sealed class BrokerRuntimeBootstrapService : IBrokerRuntimeBootstrapSer
             registration.Profile.Id,
             registration.Profile.ServerAddress);
 
-        await _brokerRuntimeCommandService.ReconcileActiveProfileAsync(
+        await _brokerRuntimeCommandExecutor.ReconcileActiveProfileAsync(
             registration.WorkspaceId,
             cancellationToken);
     }

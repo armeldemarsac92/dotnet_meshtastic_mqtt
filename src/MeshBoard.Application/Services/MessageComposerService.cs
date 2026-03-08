@@ -96,8 +96,8 @@ public sealed partial class MessageComposerService : IMessageComposerService
             ToNodeId = toNodeId,
             SentAtUtc = DateTimeOffset.UtcNow,
             StatusMessage = toNodeId is null
-                ? "Published public send request."
-                : $"Published private send request to {toNodeId}."
+                ? "Queued public send request."
+                : $"Queued private send request to {toNodeId}."
         };
     }
 

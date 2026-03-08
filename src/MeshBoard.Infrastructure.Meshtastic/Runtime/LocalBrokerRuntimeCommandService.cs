@@ -2,27 +2,25 @@ using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Meshtastic;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Infrastructure.Meshtastic.Runtime;
 
-internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandService
+internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandExecutor
 {
-    private readonly IBrokerServerProfileRepository _brokerServerProfileRepository;
     private readonly ILogger<LocalBrokerRuntimeCommandService> _logger;
     private readonly IBrokerRuntimeRegistry _brokerRuntimeRegistry;
-    private readonly ISubscriptionIntentRepository _subscriptionIntentRepository;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IWorkspaceBrokerSessionManager _workspaceBrokerSessionManager;
 
     public LocalBrokerRuntimeCommandService(
-        IBrokerServerProfileRepository brokerServerProfileRepository,
-        ISubscriptionIntentRepository subscriptionIntentRepository,
+        IServiceScopeFactory serviceScopeFactory,
         IWorkspaceBrokerSessionManager workspaceBrokerSessionManager,
         IBrokerRuntimeRegistry brokerRuntimeRegistry,
         ILogger<LocalBrokerRuntimeCommandService> logger)
     {
-        _brokerServerProfileRepository = brokerServerProfileRepository;
-        _subscriptionIntentRepository = subscriptionIntentRepository;
+        _serviceScopeFactory = serviceScopeFactory;
         _workspaceBrokerSessionManager = workspaceBrokerSessionManager;
         _brokerRuntimeRegistry = brokerRuntimeRegistry;
         _logger = logger;
@@ -125,13 +123,18 @@ internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandSe
         string workspaceId,
         CancellationToken cancellationToken)
     {
-        return await _brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken)
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+
+        return await brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken)
             ?? throw new InvalidOperationException($"No active broker server profile is configured for workspace '{workspaceId}'.");
     }
 
     private async Task RefreshRuntimeSnapshotAsync(string workspaceId, CancellationToken cancellationToken)
     {
-        var activeProfile = await _brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+        var activeProfile = await brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken);
 
         if (activeProfile is not null)
         {
@@ -159,7 +162,11 @@ internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandSe
         BrokerServerProfile activeProfile,
         CancellationToken cancellationToken)
     {
-        if (await _brokerServerProfileRepository.AreSubscriptionIntentsInitializedAsync(
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+        var subscriptionIntentRepository = scope.ServiceProvider.GetRequiredService<ISubscriptionIntentRepository>();
+
+        if (await brokerServerProfileRepository.AreSubscriptionIntentsInitializedAsync(
                 workspaceId,
                 activeProfile.Id,
                 cancellationToken))
@@ -171,14 +178,14 @@ internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandSe
 
         if (!string.IsNullOrWhiteSpace(defaultTopicFilter))
         {
-            await _subscriptionIntentRepository.AddAsync(
+            await subscriptionIntentRepository.AddAsync(
                 workspaceId,
                 activeProfile.Id,
                 NormalizeTopicFilterForIntent(defaultTopicFilter),
                 cancellationToken);
         }
 
-        await _brokerServerProfileRepository.MarkSubscriptionIntentsInitializedAsync(
+        await brokerServerProfileRepository.MarkSubscriptionIntentsInitializedAsync(
             workspaceId,
             activeProfile.Id,
             cancellationToken);
@@ -189,7 +196,9 @@ internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandSe
         BrokerServerProfile activeProfile,
         CancellationToken cancellationToken)
     {
-        var intents = await _subscriptionIntentRepository.GetAllAsync(workspaceId, activeProfile.Id, cancellationToken);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        var subscriptionIntentRepository = scope.ServiceProvider.GetRequiredService<ISubscriptionIntentRepository>();
+        var intents = await subscriptionIntentRepository.GetAllAsync(workspaceId, activeProfile.Id, cancellationToken);
         var desiredFilters = intents
             .SelectMany(intent => ExpandWithCompanionFilter(intent.TopicFilter))
             .Distinct(StringComparer.Ordinal)

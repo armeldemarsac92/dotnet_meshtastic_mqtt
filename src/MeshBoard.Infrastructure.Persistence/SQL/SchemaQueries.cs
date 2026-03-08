@@ -74,6 +74,42 @@ internal static class SchemaQueries
             PRIMARY KEY (workspace_id, broker_server_profile_id, topic_filter)
         );
 
+        CREATE TABLE IF NOT EXISTS workspace_runtime_status (
+            workspace_id TEXT NOT NULL PRIMARY KEY,
+            active_server_profile_id TEXT NULL,
+            active_server_name TEXT NULL,
+            active_server_address TEXT NULL,
+            is_connected INTEGER NOT NULL,
+            last_status_message TEXT NULL,
+            topic_filters_json TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS broker_runtime_commands (
+            id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            command_type TEXT NOT NULL,
+            topic TEXT NULL,
+            payload TEXT NULL,
+            topic_filter TEXT NULL,
+            status TEXT NOT NULL,
+            attempt_count INTEGER NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            available_at_utc TEXT NOT NULL,
+            leased_by TEXT NULL,
+            leased_at_utc TEXT NULL,
+            lease_expires_at_utc TEXT NULL,
+            completed_at_utc TEXT NULL,
+            failed_at_utc TEXT NULL,
+            last_error TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_broker_runtime_commands_status_available_at_utc
+            ON broker_runtime_commands(status, available_at_utc, created_at_utc);
+
+        CREATE INDEX IF NOT EXISTS ix_broker_runtime_commands_workspace_status_created_at_utc
+            ON broker_runtime_commands(workspace_id, status, created_at_utc);
+
         CREATE TABLE IF NOT EXISTS discovered_topics (
             broker_server TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,

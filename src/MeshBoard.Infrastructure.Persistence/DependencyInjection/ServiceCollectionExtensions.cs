@@ -1,8 +1,10 @@
+using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Persistence.Context;
 using MeshBoard.Infrastructure.Persistence.Initialization;
 using MeshBoard.Infrastructure.Persistence.Repositories;
+using MeshBoard.Infrastructure.Persistence.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -40,6 +42,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INodeRepository, NodeRepository>();
         services.AddScoped<ISubscriptionIntentRepository, SubscriptionIntentRepository>();
         services.AddScoped<ITopicPresetRepository, TopicPresetRepository>();
+        services.AddSingleton<IBrokerRuntimeCommandRepository, SqliteBrokerRuntimeCommandRepository>();
+        services.AddSingleton<IBrokerRuntimeRegistry, SqliteBrokerRuntimeRegistry>();
 
         services.AddSingleton<SqliteDatabaseInitializer>();
         services.AddHostedService<PersistenceInitializationHostedService>();

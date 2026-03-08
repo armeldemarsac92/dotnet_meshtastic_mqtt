@@ -5,6 +5,7 @@ using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Workspaces;
 using MeshBoard.Infrastructure.Meshtastic.Mqtt;
 using MeshBoard.Infrastructure.Meshtastic.Runtime;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeshBoard.UnitTests;
@@ -19,7 +20,7 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
             CreateProfile("workspace-a", "mqtt-a.example.org"),
             CreateProfile("workspace-b", "mqtt-b.example.org"));
         var manager = new WorkspaceBrokerSessionManager(
-            repository,
+            CreateScopeFactory(repository),
             sessionFactory,
             NullLogger<WorkspaceBrokerSessionManager>.Instance);
 
@@ -41,7 +42,7 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
         var sessionFactory = new FakeMqttSessionFactory();
         var repository = new FakeBrokerServerProfileRepository(initialProfile);
         var manager = new WorkspaceBrokerSessionManager(
-            repository,
+            CreateScopeFactory(repository),
             sessionFactory,
             NullLogger<WorkspaceBrokerSessionManager>.Instance);
 
@@ -61,7 +62,7 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
         var profile = CreateProfile("workspace-a", "mqtt-a.example.org");
         var sessionFactory = new FakeMqttSessionFactory();
         var manager = new WorkspaceBrokerSessionManager(
-            new FakeBrokerServerProfileRepository(profile),
+            CreateScopeFactory(new FakeBrokerServerProfileRepository(profile)),
             sessionFactory,
             NullLogger<WorkspaceBrokerSessionManager>.Instance);
         MqttInboundMessage? observedMessage = null;
@@ -101,6 +102,13 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
             EnableSend = true,
             IsActive = true
         };
+    }
+
+    private static IServiceScopeFactory CreateScopeFactory(FakeBrokerServerProfileRepository repository)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<IBrokerServerProfileRepository>(_ => repository);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
     private sealed class FakeBrokerServerProfileRepository : IBrokerServerProfileRepository

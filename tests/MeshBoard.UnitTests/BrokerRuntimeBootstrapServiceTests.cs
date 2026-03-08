@@ -2,6 +2,7 @@ using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Meshtastic.Runtime;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeshBoard.UnitTests;
@@ -22,10 +23,10 @@ public sealed class BrokerRuntimeBootstrapServiceTests
             "mqtt-b.example.org",
             "msh/EU_868/2/e/MediumFast/#");
         var profileRepository = new FakeBrokerServerProfileRepository(workspaceAProfile, workspaceBProfile);
-        var runtimeCommandService = new FakeBrokerRuntimeCommandService();
+        var runtimeCommandExecutor = new FakeBrokerRuntimeCommandExecutor();
         var service = new BrokerRuntimeBootstrapService(
-            profileRepository,
-            runtimeCommandService,
+            CreateScopeFactory(profileRepository),
+            runtimeCommandExecutor,
             NullLogger<BrokerRuntimeBootstrapService>.Instance);
 
         await service.InitializeActiveWorkspacesAsync();
@@ -35,7 +36,7 @@ public sealed class BrokerRuntimeBootstrapServiceTests
                 "workspace-a",
                 "workspace-b"
             ],
-            runtimeCommandService.ReconcileActiveProfileCalls.OrderBy(workspaceId => workspaceId, StringComparer.Ordinal).ToArray());
+            runtimeCommandExecutor.ReconcileActiveProfileCalls.OrderBy(workspaceId => workspaceId, StringComparer.Ordinal).ToArray());
     }
 
     private static WorkspaceBrokerServerProfile CreateProfile(
@@ -132,7 +133,14 @@ public sealed class BrokerRuntimeBootstrapServiceTests
             return $"{workspaceId}:{profileId}";
         }
     }
-    private sealed class FakeBrokerRuntimeCommandService : IBrokerRuntimeCommandService
+    private static IServiceScopeFactory CreateScopeFactory(FakeBrokerServerProfileRepository repository)
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<IBrokerServerProfileRepository>(_ => repository);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
+    private sealed class FakeBrokerRuntimeCommandExecutor : IBrokerRuntimeCommandExecutor
     {
         public List<string> EnsureConnectedCalls { get; } = [];
 

@@ -1,3 +1,4 @@
+using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
@@ -882,6 +883,165 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal(2, relevantProfiles.Length);
                 Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-a" && profile.Profile.Name == "Workspace A profile");
                 Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-b" && profile.Profile.Name == "Workspace B profile");
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeCommandRepository_ShouldPersistLeaseAndRetryCommandsAcrossServiceProviders()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(databasePath, includeApplicationServices: false);
+            await using var providerB = CreateServiceProvider(databasePath, includeApplicationServices: false);
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                var repositoryA = providerA.GetRequiredService<IBrokerRuntimeCommandRepository>();
+                var repositoryB = providerB.GetRequiredService<IBrokerRuntimeCommandRepository>();
+                var queuedAtUtc = new DateTimeOffset(2026, 3, 8, 13, 0, 0, TimeSpan.Zero);
+
+                await repositoryA.EnqueueAsync(
+                    new BrokerRuntimeCommand
+                    {
+                        Id = Guid.NewGuid(),
+                        WorkspaceId = "workspace-a",
+                        CommandType = BrokerRuntimeCommandType.Publish,
+                        Topic = "msh/US/2/json/mqtt/",
+                        Payload = """{"type":"sendtext","payload":"hello"}""",
+                        AttemptCount = 0,
+                        CreatedAtUtc = queuedAtUtc,
+                        AvailableAtUtc = queuedAtUtc
+                    });
+
+                var leasedCommands = await repositoryB.LeasePendingAsync(
+                    "processor-a",
+                    batchSize: 10,
+                    leaseDuration: TimeSpan.FromSeconds(30));
+
+                var leasedCommand = Assert.Single(leasedCommands);
+                Assert.Equal("workspace-a", leasedCommand.WorkspaceId);
+                Assert.Equal(BrokerRuntimeCommandType.Publish, leasedCommand.CommandType);
+                Assert.Equal(1, leasedCommand.AttemptCount);
+
+                await repositoryB.MarkPendingAsync(
+                    leasedCommand.Id,
+                    queuedAtUtc.AddSeconds(-1),
+                    "temporary failure");
+
+                var retriedCommands = await repositoryA.LeasePendingAsync(
+                    "processor-b",
+                    batchSize: 10,
+                    leaseDuration: TimeSpan.FromSeconds(30));
+
+                var retriedCommand = Assert.Single(retriedCommands);
+                Assert.Equal(leasedCommand.Id, retriedCommand.Id);
+                Assert.Equal(2, retriedCommand.AttemptCount);
+                Assert.Null(retriedCommand.LastError);
+
+                await repositoryA.MarkCompletedAsync(retriedCommand.Id);
+
+                var afterCompletion = await repositoryB.LeasePendingAsync(
+                    "processor-c",
+                    batchSize: 10,
+                    leaseDuration: TimeSpan.FromSeconds(30));
+
+                Assert.Empty(afterCompletion);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeStatusRegistry_ShouldShareWorkspaceStatusAcrossServiceProviders()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                var runtimeRegistryA = providerA.GetRequiredService<IBrokerRuntimeRegistry>();
+                var runtimeRegistryB = providerB.GetRequiredService<IBrokerRuntimeRegistry>();
+                var activeProfileId = Guid.NewGuid();
+
+                runtimeRegistryA.UpdateSnapshot(
+                    "workspace-a",
+                    new BrokerRuntimeSnapshot
+                    {
+                        ActiveServerProfileId = activeProfileId,
+                        ActiveServerName = "Workspace A runtime",
+                        ActiveServerAddress = "mqtt-a.example.org:1883",
+                        IsConnected = true,
+                        LastStatusMessage = "Connected",
+                        TopicFilters = ["msh/US/2/e/LongFast/#", "msh/US/2/e/LongFast/#"]
+                    });
+
+                runtimeRegistryA.UpdateSnapshot(
+                    "workspace-b",
+                    new BrokerRuntimeSnapshot
+                    {
+                        ActiveServerName = "Workspace B runtime",
+                        ActiveServerAddress = "mqtt-b.example.org:1883",
+                        IsConnected = false,
+                        LastStatusMessage = "Disconnected",
+                        TopicFilters = ["msh/EU_868/2/e/MediumFast/#"]
+                    });
+
+                var workspaceAStatus = runtimeRegistryB.GetSnapshot("workspace-a");
+                var workspaceBStatus = runtimeRegistryB.GetSnapshot("workspace-b");
+
+                Assert.Equal(activeProfileId, workspaceAStatus.ActiveServerProfileId);
+                Assert.Equal("Workspace A runtime", workspaceAStatus.ActiveServerName);
+                Assert.Equal("mqtt-a.example.org:1883", workspaceAStatus.ActiveServerAddress);
+                Assert.True(workspaceAStatus.IsConnected);
+                Assert.Equal("Connected", workspaceAStatus.LastStatusMessage);
+                Assert.Equal(["msh/US/2/e/LongFast/#"], workspaceAStatus.TopicFilters);
+
+                Assert.Null(workspaceBStatus.ActiveServerProfileId);
+                Assert.Equal("Workspace B runtime", workspaceBStatus.ActiveServerName);
+                Assert.Equal("mqtt-b.example.org:1883", workspaceBStatus.ActiveServerAddress);
+                Assert.False(workspaceBStatus.IsConnected);
+                Assert.Equal("Disconnected", workspaceBStatus.LastStatusMessage);
+                Assert.Equal(["msh/EU_868/2/e/MediumFast/#"], workspaceBStatus.TopicFilters);
             }
             finally
             {
