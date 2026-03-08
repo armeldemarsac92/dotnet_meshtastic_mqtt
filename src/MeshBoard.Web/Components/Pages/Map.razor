@@ -14,7 +14,7 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
         </div>
         <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
-            Browse all observed nodes on a 3D globe. Click a node to pin focus, hover to reveal its shared-channel cohort, and watch for echo rings when traffic is heard.
+            Browse all observed nodes on a 3D globe. Click a node to pin focus, click the globe again to release it, hover to reveal its shared-channel cohort, and watch for echo rings when traffic is heard.
         </p>
     </header>
 
@@ -137,13 +137,6 @@
                         <div class="space-y-1">
                             <div class="flex flex-wrap items-center gap-2">
                                 <p class="text-sm font-semibold text-cinder-950">@_focusedMapNode.DisplayName</p>
-
-                                @if (!string.IsNullOrWhiteSpace(_pinnedMapNodeId))
-                                {
-                                    <span class="rounded-full border border-signal-500/35 bg-signal-400/18 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-signal-700">
-                                        Pinned
-                                    </span>
-                                }
                             </div>
 
                             <p class="break-words text-[0.72rem] text-cinder-800/72">@_focusedMapNode.NodeId</p>
@@ -181,15 +174,6 @@
                                         class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
                                         @onclick="() => OpenChannelDetailsAsync(_focusedMapNode.Channel!)">
                                     Open channel
-                                </button>
-                            }
-
-                            @if (!string.IsNullOrWhiteSpace(_pinnedMapNodeId))
-                            {
-                                <button type="button"
-                                        class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
-                                        @onclick="ReleasePinnedNodeFocusAsync">
-                                    Release pin
                                 </button>
                             }
                         </div>
@@ -292,9 +276,13 @@
     }
 
     [JSInvokable]
-    public async Task OnNodeSelectedFromMap(string nodeId)
+    public async Task OnNodeSelectedFromMap(string? nodeId)
     {
-        _pinnedMapNodeId = string.IsNullOrWhiteSpace(nodeId) ? null : nodeId;
+        _pinnedMapNodeId = string.IsNullOrWhiteSpace(nodeId)
+            ? null
+            : string.Equals(_pinnedMapNodeId, nodeId, StringComparison.Ordinal)
+                ? null
+                : nodeId;
         RefreshFocusedMapNode();
         await InvokeAsync(StateHasChanged);
     }
@@ -620,25 +608,6 @@
         }
 
         return $"{summary} Focused on {_focusedChannel}.";
-    }
-
-    private async Task ReleasePinnedNodeFocusAsync()
-    {
-        _pinnedMapNodeId = null;
-        RefreshFocusedMapNode();
-
-        if (_mapModule is not null)
-        {
-            try
-            {
-                await _mapModule.InvokeVoidAsync("setPinnedNode", MapElementId, null);
-            }
-            catch (JSDisconnectedException)
-            {
-            }
-        }
-
-        await InvokeAsync(StateHasChanged);
     }
 
     private void RefreshFocusedMapNode()

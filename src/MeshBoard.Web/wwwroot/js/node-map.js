@@ -13,6 +13,7 @@ const HOVER_LINK_LIMIT = 18;
 const HOVER_CLEAR_DELAY_MS = 90;
 const MAX_RENDER_RESOLUTION_SCALE = 2;
 const NODE_ENTITY_PREFIX = "node:";
+const LINK_ALTITUDE_METERS = 0;
 const LIGHT_BASEMAP_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer";
 
 let cesiumLoadPromise = null;
@@ -217,15 +218,21 @@ function wireInteractions(mapState) {
     handler.setInputAction((movement) => {
         const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.position);
 
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", nodeId);
+
         if (!nodeId) {
+            mapState.pinnedNodeId = null;
+            mapState.hoveredNodeId = null;
+            syncHoverState(mapState);
             return;
         }
 
         clearPendingHoverClear(mapState);
         mapState.hoveredNodeId = nodeId;
-        mapState.pinnedNodeId = nodeId;
+        mapState.pinnedNodeId = mapState.pinnedNodeId === nodeId
+            ? null
+            : nodeId;
         syncHoverState(mapState);
-        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", nodeId);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     mapState.interactionHandler = handler;
@@ -451,14 +458,15 @@ function syncHoverState(mapState) {
         const linkEntity = mapState.viewer.entities.add({
             polyline: {
                 positions: [
-                    Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 32000),
-                    Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 32000)
+                    Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, LINK_ALTITUDE_METERS),
+                    Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, LINK_ALTITUDE_METERS)
                 ],
-                width: 6,
+                width: 7,
                 arcType: Cesium.ArcType.GEODESIC,
-                material: new Cesium.PolylineGlowMaterialProperty({
-                    glowPower: 0.34,
-                    color: linkColor
+                material: new Cesium.PolylineOutlineMaterialProperty({
+                    color: linkColor,
+                    outlineColor: Cesium.Color.fromCssColorString("#10202f").withAlpha(0.52),
+                    outlineWidth: 2
                 }),
                 clampToGround: false
             }
@@ -590,31 +598,33 @@ function triggerActivityPulse(mapState, nodeId) {
 
     const Cesium = window.Cesium;
     const pulseState = {
-        radius: 900,
-        alpha: 0.72
+        radius: 2200,
+        alpha: 0.95
     };
 
-    const pulseColor = resolveChannelColor(node.channel, 0.88);
+    const pulseColor = resolveChannelColor(node.channel, 0.98);
     const pulseEntity = mapState.viewer.entities.add({
         position: Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0),
         ellipse: {
             semiMajorAxis: new Cesium.CallbackProperty(() => pulseState.radius, false),
             semiMinorAxis: new Cesium.CallbackProperty(() => pulseState.radius, false),
             height: 0,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             material: new Cesium.ColorMaterialProperty(
                 new Cesium.CallbackProperty(
-                    () => pulseColor.withAlpha(Math.max(pulseState.alpha * 0.24, 0)),
+                    () => pulseColor.withAlpha(Math.max(pulseState.alpha * 0.34, 0)),
                     false)),
             outline: true,
             outlineColor: new Cesium.CallbackProperty(
                 () => pulseColor.withAlpha(Math.max(pulseState.alpha, 0)),
                 false),
-            outlineWidth: 2
+            outlineWidth: 4,
+            zIndex: 20
         }
     });
 
     const startedAt = performance.now();
-    const durationMilliseconds = 1400;
+    const durationMilliseconds = 1700;
 
     const animatePulse = (now) => {
         const currentState = mapStates.get(mapState.containerId);
@@ -623,8 +633,8 @@ function triggerActivityPulse(mapState, nodeId) {
         }
 
         const progress = Math.min(1, (now - startedAt) / durationMilliseconds);
-        pulseState.radius = 900 + (progress * 18000);
-        pulseState.alpha = 0.72 * (1 - progress);
+        pulseState.radius = 2200 + (progress * 30000);
+        pulseState.alpha = 0.95 * (1 - progress);
         currentState.viewer.scene.requestRender();
 
         if (progress < 1) {
