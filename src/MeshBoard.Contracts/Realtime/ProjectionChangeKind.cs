@@ -6,5 +6,6 @@ public enum ProjectionChangeKind
     NodeUpdated = 1,
     ChannelSummaryUpdated = 2,
     RuntimeStatusChanged = 3,
-    RuntimeCommandChanged = 4
+    RuntimeCommandChanged = 4,
+    FavoriteNodesChanged = 5
 }

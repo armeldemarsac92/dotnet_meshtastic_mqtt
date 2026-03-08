@@ -180,6 +180,7 @@
     private string? _selectedNodeId;
     private string? _selectedRegion;
     private int _totalMatchedNodeCount;
+    private bool _pendingFavoriteRefresh;
     private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private int DisplayedNodeCount => _nodes.Count;
 
@@ -228,15 +229,27 @@
             return Task.CompletedTask;
         }
 
-        _pendingNodeRefreshIds.Add(change.EntityKey!);
+        if (change.Kind == ProjectionChangeKind.NodeUpdated)
+        {
+            _pendingNodeRefreshIds.Add(change.EntityKey!);
+        }
+        else if (change.Kind == ProjectionChangeKind.FavoriteNodesChanged)
+        {
+            _pendingFavoriteRefresh = true;
+        }
+
         return ScheduleRealtimeRefreshAsync();
     }
 
     private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
     {
-        return string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal) &&
-            change.Kind == ProjectionChangeKind.NodeUpdated &&
-            !string.IsNullOrWhiteSpace(change.EntityKey);
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return (change.Kind == ProjectionChangeKind.NodeUpdated && !string.IsNullOrWhiteSpace(change.EntityKey)) ||
+            change.Kind == ProjectionChangeKind.FavoriteNodesChanged;
     }
 
     private async Task ScheduleRealtimeRefreshAsync()
@@ -250,7 +263,7 @@
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await ApplyPendingNodeUpdatesAsync(debounceCancellationTokenSource.Token);
+            await ApplyPendingRealtimeUpdatesAsync(debounceCancellationTokenSource.Token);
         }
         catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
         {
@@ -266,10 +279,32 @@
         }
     }
 
+    private async Task ApplyPendingRealtimeUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingFavoriteRefresh)
+        {
+            _pendingFavoriteRefresh = false;
+            await RefreshFavoritesAsync(cancellationToken);
+
+            if (_query.OnlyFavorites)
+            {
+                await RefreshNodesAsync(cancellationToken);
+                return;
+            }
+        }
+
+        await ApplyPendingNodeUpdatesAsync(cancellationToken);
+    }
+
     private async Task ApplyPendingNodeUpdatesAsync(CancellationToken cancellationToken)
     {
         if (_pendingNodeRefreshIds.Count == 0)
         {
+            if (!_pendingFavoriteRefresh)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+
             return;
         }
 
@@ -492,6 +527,7 @@
             if (IsFavorite(node.NodeId))
             {
                 await FavoriteNodeService.RemoveFavoriteNode(node.NodeId);
+                _favoriteNodeIds.Remove(node.NodeId);
                 _favoriteStatusMessage = $"Removed {node.NodeId} from favorites.";
             }
             else
@@ -503,14 +539,15 @@
                         ShortName = node.ShortName,
                         LongName = node.LongName
                     });
+                _favoriteNodeIds.Add(node.NodeId);
                 _favoriteStatusMessage = $"Saved {node.NodeId} as favorite.";
             }
 
-            await RefreshFavoritesAsync(_cancellationTokenSource.Token);
-
             if (_query.OnlyFavorites)
             {
-                await RefreshNodesAsync(_cancellationTokenSource.Token);
+                _nodes.RemoveAll(entry => string.Equals(entry.NodeId, node.NodeId, StringComparison.OrdinalIgnoreCase));
+                _totalMatchedNodeCount = Math.Max(0, _totalMatchedNodeCount - 1);
+                await InvokeAsync(StateHasChanged);
                 return;
             }
 

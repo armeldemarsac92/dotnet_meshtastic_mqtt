@@ -2,6 +2,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Favorites;
+using MeshBoard.Contracts.Realtime;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Application.Services;
@@ -19,16 +20,19 @@ public sealed class FavoriteNodeService : IFavoriteNodeService
 {
     private readonly IFavoriteNodeRepository _favoriteNodeRepository;
     private readonly ILogger<FavoriteNodeService> _logger;
+    private readonly IProjectionChangeRepository _projectionChangeRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public FavoriteNodeService(
         IFavoriteNodeRepository favoriteNodeRepository,
+        IProjectionChangeRepository projectionChangeRepository,
         IUnitOfWork unitOfWork,
         IWorkspaceContextAccessor workspaceContextAccessor,
         ILogger<FavoriteNodeService> logger)
     {
         _favoriteNodeRepository = favoriteNodeRepository;
+        _projectionChangeRepository = projectionChangeRepository;
         _unitOfWork = unitOfWork;
         _workspaceContextAccessor = workspaceContextAccessor;
         _logger = logger;
@@ -60,6 +64,7 @@ public sealed class FavoriteNodeService : IFavoriteNodeService
             var favoriteNode = await _favoriteNodeRepository.UpsertAsync(workspaceId, request, cancellationToken);
 
             await _unitOfWork.CommitAsync(cancellationToken);
+            await PublishFavoritesChangedAsync(workspaceId, favoriteNode.NodeId, cancellationToken);
 
             _logger.LogInformation("Saved favorite node: {NodeId}", favoriteNode.NodeId);
 
@@ -89,6 +94,7 @@ public sealed class FavoriteNodeService : IFavoriteNodeService
             }
 
             await _unitOfWork.CommitAsync(cancellationToken);
+            await PublishFavoritesChangedAsync(workspaceId, nodeId, cancellationToken);
 
             _logger.LogInformation("Removed favorite node: {NodeId}", nodeId);
         }
@@ -96,6 +102,34 @@ public sealed class FavoriteNodeService : IFavoriteNodeService
         {
             await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
+        }
+    }
+
+    private async Task PublishFavoritesChangedAsync(
+        string workspaceId,
+        string nodeId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _projectionChangeRepository.AppendAsync(
+                workspaceId,
+                [
+                    new ProjectionChangeDescriptor
+                    {
+                        Kind = ProjectionChangeKind.FavoriteNodesChanged,
+                        EntityKey = nodeId.Trim()
+                    }
+                ],
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to persist favorite-node projection change for workspace {WorkspaceId} and node {NodeId}",
+                workspaceId,
+                nodeId);
         }
     }
 }

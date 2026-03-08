@@ -121,6 +121,11 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
                 break;
             case ProjectionChangeKind.RuntimeCommandChanged:
                 break;
+            case ProjectionChangeKind.FavoriteNodesChanged:
+                _readModelCacheInvalidator.Invalidate(
+                    change.WorkspaceId,
+                    ReadModelCacheRegion.Dashboard);
+                break;
         }
     }
 }

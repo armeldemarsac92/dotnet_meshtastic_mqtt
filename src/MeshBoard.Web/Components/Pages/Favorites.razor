@@ -1,5 +1,8 @@
 @page "/favorites"
+@implements IAsyncDisposable
 @inject IFavoriteNodeService FavoriteNodeService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
 
 <PageTitle>Favorites</PageTitle>
 
@@ -96,19 +99,32 @@
                   OnClose="CloseNodeDetails" />
 
 @code {
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
     private IReadOnlyCollection<FavoriteNode> _favoriteNodes = [];
     private string? _pendingNodeId;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private string? _selectedNodeId;
     private string? _statusMessage;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadAsync();
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        await LoadAsync(_cancellationTokenSource.Token);
     }
 
-    private async Task LoadAsync()
+    public ValueTask DisposeAsync()
     {
-        _favoriteNodes = await FavoriteNodeService.GetFavoriteNodes();
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task LoadAsync(CancellationToken cancellationToken = default)
+    {
+        _favoriteNodes = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
     }
 
     private async Task RemoveFavoriteAsync(string nodeId)
@@ -120,7 +136,9 @@
         {
             await FavoriteNodeService.RemoveFavoriteNode(nodeId);
             _statusMessage = $"Removed {nodeId} from favorites.";
-            await LoadAsync();
+            _favoriteNodes = _favoriteNodes
+                .Where(favoriteNode => !string.Equals(favoriteNode.NodeId, nodeId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
         }
         catch (Exception exception)
         {
@@ -141,6 +159,45 @@
     {
         _selectedNodeId = null;
         return Task.CompletedTask;
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal) ||
+            change.Kind != ProjectionChangeKind.FavoriteNodesChanged)
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
     }
 
 }

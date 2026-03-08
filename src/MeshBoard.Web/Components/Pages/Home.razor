@@ -1,8 +1,10 @@
 @page "/"
 @implements IAsyncDisposable
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IFavoriteNodeService FavoriteNodeService
 @inject IHomeDashboardService HomeDashboardService
 @inject IMessageService MessageService
+@inject INodeService NodeService
 @inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject IOptions<PersistenceOptions> PersistenceConfiguration
 @inject ProjectionChangeNotifier ProjectionChangeNotifier
@@ -100,7 +102,9 @@
     private IReadOnlyCollection<MessageSummary> _messages = [];
     private int _observedNodeCount;
     private bool _pendingBrokerStatusRefresh;
+    private bool _pendingFavoritesRefresh;
     private bool _pendingMessagesRefresh;
+    private bool _pendingObservedNodeCountRefresh;
     private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private Task? _refreshTask;
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
@@ -171,6 +175,12 @@
             case ProjectionChangeKind.MessageAdded:
                 _pendingMessagesRefresh = true;
                 return ScheduleRealtimeRefreshAsync();
+            case ProjectionChangeKind.NodeUpdated:
+                _pendingObservedNodeCountRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
+            case ProjectionChangeKind.FavoriteNodesChanged:
+                _pendingFavoritesRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
             case ProjectionChangeKind.RuntimeStatusChanged:
                 _pendingBrokerStatusRefresh = true;
                 return ScheduleRealtimeRefreshAsync();
@@ -193,7 +203,9 @@
             if (forceRefresh)
             {
                 _pendingBrokerStatusRefresh = false;
+                _pendingFavoritesRefresh = false;
                 _pendingMessagesRefresh = false;
+                _pendingObservedNodeCountRefresh = false;
                 await LoadAsync(debounceCancellationTokenSource.Token, true);
             }
             else
@@ -225,10 +237,22 @@
             _pendingBrokerStatusRefresh = false;
         }
 
+        if (_pendingFavoritesRefresh)
+        {
+            _favoriteNodes = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
+            _pendingFavoritesRefresh = false;
+        }
+
         if (_pendingMessagesRefresh)
         {
             _messages = await MessageService.GetRecentMessages(120, cancellationToken);
             _pendingMessagesRefresh = false;
+        }
+
+        if (_pendingObservedNodeCountRefresh)
+        {
+            _observedNodeCount = await NodeService.CountNodes(cancellationToken: cancellationToken);
+            _pendingObservedNodeCountRefresh = false;
         }
     }
 }

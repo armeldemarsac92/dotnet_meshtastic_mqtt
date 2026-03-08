@@ -1939,6 +1939,66 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task FavoriteNodeService_ShouldPersistProjectionChanges()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var favoriteNodeService = scope.ServiceProvider.GetRequiredService<IFavoriteNodeService>();
+                var projectionChangeRepository = scope.ServiceProvider.GetRequiredService<IProjectionChangeRepository>();
+                var baselineId = await projectionChangeRepository.GetLatestIdAsync();
+
+                await favoriteNodeService.SaveFavoriteNode(
+                    new SaveFavoriteNodeRequest
+                    {
+                        NodeId = "!fav12345",
+                        ShortName = "FAV",
+                        LongName = "Favorite projection"
+                    });
+
+                await favoriteNodeService.RemoveFavoriteNode("!fav12345");
+
+                var changes = await projectionChangeRepository.GetChangesAfterAsync(baselineId, 10);
+
+                Assert.Collection(
+                    changes,
+                    change =>
+                    {
+                        Assert.Equal("workspace-a", change.WorkspaceId);
+                        Assert.Equal(ProjectionChangeKind.FavoriteNodesChanged, change.Kind);
+                        Assert.Equal("!fav12345", change.EntityKey);
+                    },
+                    change =>
+                    {
+                        Assert.Equal("workspace-a", change.WorkspaceId);
+                        Assert.Equal(ProjectionChangeKind.FavoriteNodesChanged, change.Kind);
+                        Assert.Equal("!fav12345", change.EntityKey);
+                    });
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task TopicDiscovery_ShouldPersistObservedTopicPatterns()
     {
         var databasePath = CreateTemporaryDatabasePath();
