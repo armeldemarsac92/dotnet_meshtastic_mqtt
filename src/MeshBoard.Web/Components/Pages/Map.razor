@@ -44,21 +44,48 @@
                 <p class="text-xs text-cinder-800/72">@_statusMessage</p>
             }
 
+            @if (!string.IsNullOrWhiteSpace(_focusedChannel))
+            {
+                <div class="liquid-subpanel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
+                    <div class="space-y-1">
+                        <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel focus</p>
+                        <p class="break-words text-sm font-semibold text-cinder-950">@_focusedChannel</p>
+                        <p class="text-[0.72rem] text-cinder-800/72">The globe is currently isolating this shared-channel cohort.</p>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button"
+                                class="liquid-inline-action liquid-inline-action-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                @onclick="() => OpenChannelDetailsAsync(_focusedChannel!)">
+                            Open channel
+                        </button>
+                        <button type="button"
+                                class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                @onclick="ClearFocusedChannelAsync">
+                            Clear focus
+                        </button>
+                    </div>
+                </div>
+            }
+
             <div class="space-y-2">
-                <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Visible channels</p>
+                <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel cohorts</p>
+                <p class="text-[0.72rem] text-cinder-800/68">Click a chip to isolate that cohort on the globe.</p>
 
                 @if (_channelLegendEntries.Count == 0)
                 {
-                    <p class="text-xs text-cinder-800/70">No visible channel cohort in the current view.</p>
+                    <p class="text-xs text-cinder-800/70">No channel cohort matched the current search.</p>
                 }
                 else
                 {
                     <div class="flex flex-wrap gap-2">
                         @foreach (var entry in _channelLegendEntries)
                         {
+                            var isFocused = string.Equals(_focusedChannel, entry.Channel, StringComparison.Ordinal);
+
                             <button type="button"
-                                    class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-sand-300/80 bg-sand-100/70 px-3 py-1 text-[0.72rem] font-medium text-cinder-900"
-                                    @onclick="() => OpenChannelDetailsAsync(entry.Channel)">
+                                    class="@GetChannelChipClass(isFocused)"
+                                    @onclick="() => ToggleFocusedChannelAsync(entry.Channel)">
                                 <span class="h-2.5 w-2.5 rounded-full ring-1 ring-cinder-950/20"
                                       style="background-color:@entry.ColorCss"></span>
                                 <span>@entry.Channel</span>
@@ -168,6 +195,7 @@
     private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private CancellationTokenSource? _searchDebounceCancellationTokenSource;
     private string _searchText = string.Empty;
+    private string? _focusedChannel;
     private string? _selectedChannel;
     private string? _hoveredMapNodeId;
     private MapNodePoint? _hoveredMapNode;
@@ -175,6 +203,7 @@
     private string? _selectedNodeId;
     private string? _selectedRegion;
     private string? _statusMessage;
+    private IReadOnlyCollection<MapNodePoint> _allMapNodes = [];
     private IReadOnlyCollection<NodeSummary> _nodesWithLocation = [];
     private IReadOnlyCollection<MapNodePoint> _visibleMapNodes = [];
 
@@ -332,6 +361,19 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private Task ClearFocusedChannelAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_focusedChannel))
+        {
+            return Task.CompletedTask;
+        }
+
+        _focusedChannel = null;
+        ApplyMapPoints();
+        _shouldFitMapToNodes = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private Task OpenNodeDetailsAsync(string nodeId)
     {
         _selectedNodeId = nodeId;
@@ -347,6 +389,22 @@
 
         _selectedRegion = region;
         _selectedChannel = channel;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ToggleFocusedChannelAsync(string channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+        {
+            return Task.CompletedTask;
+        }
+
+        _focusedChannel = string.Equals(_focusedChannel, channel, StringComparison.Ordinal)
+            ? null
+            : channel;
+
+        ApplyMapPoints();
+        _shouldFitMapToNodes = true;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -425,7 +483,7 @@
 
     private void ApplyMapPoints()
     {
-        _visibleMapNodes = _nodesWithLocation
+        _allMapNodes = _nodesWithLocation
             .Where(node => node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue)
             .Select(node => new MapNodePoint
             {
@@ -438,6 +496,18 @@
             })
             .ToList();
 
+        if (!string.IsNullOrWhiteSpace(_focusedChannel) &&
+            !_allMapNodes.Any(node => string.Equals(node.Channel, _focusedChannel, StringComparison.Ordinal)))
+        {
+            _focusedChannel = null;
+        }
+
+        _visibleMapNodes = string.IsNullOrWhiteSpace(_focusedChannel)
+            ? _allMapNodes
+            : _allMapNodes
+                .Where(node => string.Equals(node.Channel, _focusedChannel, StringComparison.Ordinal))
+                .ToList();
+
         ApplyChannelLegend();
         RefreshHoveredMapNode();
         _isMapRenderPending = true;
@@ -445,7 +515,7 @@
 
     private void ApplyChannelLegend()
     {
-        var channelEntries = _visibleMapNodes
+        var channelEntries = _allMapNodes
             .Where(node => !string.IsNullOrWhiteSpace(node.Channel))
             .GroupBy(node => node.Channel!, StringComparer.Ordinal)
             .Select(group => new ChannelLegendEntry
@@ -504,9 +574,16 @@
 
     private string GetMapSummaryText()
     {
-        return string.IsNullOrWhiteSpace(_searchText)
+        var summary = string.IsNullOrWhiteSpace(_searchText)
             ? $"Showing {_visibleMapNodes.Count} located nodes."
             : $"Showing {_visibleMapNodes.Count} matching located nodes.";
+
+        if (string.IsNullOrWhiteSpace(_focusedChannel))
+        {
+            return summary;
+        }
+
+        return $"{summary} Focused on {_focusedChannel}.";
     }
 
     private void RefreshHoveredMapNode()
@@ -535,6 +612,13 @@
     private static string GetCoordinateText(MapNodePoint node)
     {
         return $"{node.Latitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}, {node.Longitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
+    private static string GetChannelChipClass(bool isFocused)
+    {
+        return isFocused
+            ? "liquid-inline-action liquid-inline-action-active inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-1 text-[0.72rem] font-medium text-cinder-950"
+            : "inline-flex cursor-pointer items-center gap-2 rounded-full border border-sand-300/80 bg-sand-100/70 px-3 py-1 text-[0.72rem] font-medium text-cinder-900";
     }
 
     private static string GetChannelColorCss(string channel)
