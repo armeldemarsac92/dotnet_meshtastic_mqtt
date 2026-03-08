@@ -31,6 +31,21 @@ public sealed class MessageServiceTests
     }
 
     [Fact]
+    public async Task GetMessagesPageBySender_ShouldForwardSenderAndPaginationToRepository()
+    {
+        var repository = new FakeMessageRepository();
+        var service = new MessageService(repository, NullLogger<MessageService>.Instance);
+
+        var page = await service.GetMessagesPageBySender(" !abc12345 ", offset: 10, take: 25);
+
+        Assert.Equal("!abc12345", repository.LastSenderNodeId);
+        Assert.Equal(10, repository.LastOffset);
+        Assert.Equal(25, repository.LastTake);
+        Assert.Equal(2, page.TotalCount);
+        Assert.Single(page.Items);
+    }
+
+    [Fact]
     public async Task GetRecentMessagesBySender_ShouldForwardSenderToRepository()
     {
         var repository = new FakeMessageRepository();
@@ -192,6 +207,14 @@ public sealed class MessageServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<int> CountBySenderAsync(
+            string senderNodeId,
+            CancellationToken cancellationToken = default)
+        {
+            LastSenderNodeId = senderNodeId;
+            return Task.FromResult(2);
+        }
+
         public Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
             string region,
             string channel,
@@ -209,6 +232,33 @@ public sealed class MessageServiceTests
             CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageBySenderAsync(
+            string senderNodeId,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            LastSenderNodeId = senderNodeId;
+            LastOffset = offset;
+            LastTake = take;
+
+            IReadOnlyCollection<MessageSummary> messages =
+            [
+                new MessageSummary
+                {
+                    Id = Guid.NewGuid(),
+                    Topic = "msh/US/2/e/LongFast/!abc12345",
+                    PacketType = "Text Message",
+                    FromNodeId = senderNodeId,
+                    PayloadPreview = "hello",
+                    IsPrivate = false,
+                    ReceivedAtUtc = DateTimeOffset.UtcNow
+                }
+            ];
+
+            return Task.FromResult(messages);
         }
 
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(

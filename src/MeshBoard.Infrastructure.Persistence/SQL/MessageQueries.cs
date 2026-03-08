@@ -183,6 +183,34 @@ internal static class MessageQueries
         LIMIT @Take;
         """;
 
+    public static string CountMessagesBySender =>
+        """
+        SELECT COUNT(1)
+        FROM message_history mh
+        WHERE mh.from_node_id = @SenderNodeId;
+        """;
+
+    public static string GetMessagesPageBySender =>
+        """
+        SELECT
+            mh.id AS Id,
+            COALESCE(mh.broker_server, 'unknown') AS BrokerServer,
+            mh.topic AS Topic,
+            mh.packet_type AS PacketType,
+            mh.from_node_id AS FromNodeId,
+            n.short_name AS FromNodeShortName,
+            n.long_name AS FromNodeLongName,
+            mh.to_node_id AS ToNodeId,
+            mh.payload_preview AS PayloadPreview,
+            mh.is_private AS IsPrivate,
+            mh.received_at_utc AS ReceivedAtUtc
+        FROM message_history mh
+        LEFT JOIN nodes n ON n.node_id = mh.from_node_id
+        WHERE mh.from_node_id = @SenderNodeId
+        ORDER BY mh.received_at_utc DESC, mh.id DESC
+        LIMIT @Take OFFSET @Offset;
+        """;
+
     public static string InsertMessage =>
         """
         INSERT INTO message_history (

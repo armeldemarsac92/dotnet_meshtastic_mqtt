@@ -367,6 +367,94 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task MessageService_ShouldReturnPagedMessagesBySender()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var messageRepository = scope.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var messageService = scope.ServiceProvider.GetRequiredService<IMessageService>();
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/EU_868/2/e/MediumFast/!sender01",
+                        PacketType = "Text Message",
+                        MessageKey = "!sender01:00000001",
+                        FromNodeId = "!sender01",
+                        PayloadPreview = "first from sender",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 0, 1, 0, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/EU_868/2/e/MediumFast/!sender01",
+                        PacketType = "Text Message",
+                        MessageKey = "!sender01:00000002",
+                        FromNodeId = "!sender01",
+                        PayloadPreview = "second from sender",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 0, 1, 1, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/EU_868/2/e/MediumFast/!sender01",
+                        PacketType = "Text Message",
+                        MessageKey = "!sender01:00000003",
+                        FromNodeId = "!sender01",
+                        PayloadPreview = "third from sender",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 0, 1, 2, TimeSpan.Zero)
+                    });
+
+                await messageRepository.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        Topic = "msh/EU_868/2/e/MediumFast/!other001",
+                        PacketType = "Text Message",
+                        MessageKey = "!other001:00000001",
+                        FromNodeId = "!other001",
+                        PayloadPreview = "from other sender",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 0, 1, 3, TimeSpan.Zero)
+                    });
+
+                var firstPage = await messageService.GetMessagesPageBySender("!sender01", offset: 0, take: 2);
+                var secondPage = await messageService.GetMessagesPageBySender("!sender01", offset: 2, take: 2);
+
+                Assert.Equal(3, firstPage.TotalCount);
+                Assert.Equal(
+                    ["third from sender", "second from sender"],
+                    firstPage.Items.Select(message => message.PayloadPreview).ToArray());
+
+                Assert.Equal(3, secondPage.TotalCount);
+                Assert.Single(secondPage.Items);
+                Assert.Equal("first from sender", secondPage.Items.Single().PayloadPreview);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task MessageService_ShouldReturnRecentMessagesByChannel()
     {
         var databasePath = CreateTemporaryDatabasePath();

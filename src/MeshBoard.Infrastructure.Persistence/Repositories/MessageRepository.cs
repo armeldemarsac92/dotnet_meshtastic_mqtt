@@ -56,6 +56,18 @@ internal sealed class MessageRepository : IMessageRepository
             cancellationToken);
     }
 
+    public Task<int> CountBySenderAsync(
+        string senderNodeId,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Attempting to count messages by sender {SenderNodeId}", senderNodeId);
+
+        return _dbContext.QueryFirstOrDefaultAsync<int>(
+            MessageQueries.CountMessagesBySender,
+            new { SenderNodeId = senderNodeId },
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<MessageSummary>> GetPageAsync(
         MessageQuery query,
         int offset,
@@ -252,6 +264,31 @@ internal sealed class MessageRepository : IMessageRepository
             new
             {
                 SenderNodeId = senderNodeId,
+                Take = take
+            },
+            cancellationToken);
+
+        return sqlResponses.MapToMessages();
+    }
+
+    public async Task<IReadOnlyCollection<MessageSummary>> GetPageBySenderAsync(
+        string senderNodeId,
+        int offset,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch paged messages by sender {SenderNodeId} with offset {Offset} and take {Take}",
+            senderNodeId,
+            offset,
+            take);
+
+        var sqlResponses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
+            MessageQueries.GetMessagesPageBySender,
+            new
+            {
+                SenderNodeId = senderNodeId,
+                Offset = offset,
                 Take = take
             },
             cancellationToken);

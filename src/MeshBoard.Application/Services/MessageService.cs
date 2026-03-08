@@ -12,6 +12,12 @@ public interface IMessageService
         int take = 100,
         CancellationToken cancellationToken = default);
 
+    Task<MessagePageResult> GetMessagesPageBySender(
+        string senderNodeId,
+        int offset = 0,
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(int take = 250, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<MessageSummary>> GetRecentMessagesByBroker(
@@ -62,6 +68,43 @@ public sealed class MessageService : IMessageService
         var totalCountTask = _messageRepository.CountAsync(sanitizedQuery, cancellationToken);
         var itemsTask = _messageRepository.GetPageAsync(
             sanitizedQuery,
+            sanitizedOffset,
+            sanitizedTake,
+            cancellationToken);
+
+        await Task.WhenAll(totalCountTask, itemsTask);
+
+        return new MessagePageResult
+        {
+            TotalCount = await totalCountTask,
+            Items = await itemsTask
+        };
+    }
+
+    public async Task<MessagePageResult> GetMessagesPageBySender(
+        string senderNodeId,
+        int offset = 0,
+        int take = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(senderNodeId))
+        {
+            return new MessagePageResult();
+        }
+
+        var normalizedSenderNodeId = senderNodeId.Trim();
+        var sanitizedOffset = Math.Max(0, offset);
+        var sanitizedTake = SanitizeTake(take);
+
+        _logger.LogDebug(
+            "Attempting to get sender messages page for sender {SenderNodeId} with offset: {Offset}, take: {Take}",
+            normalizedSenderNodeId,
+            sanitizedOffset,
+            sanitizedTake);
+
+        var totalCountTask = _messageRepository.CountBySenderAsync(normalizedSenderNodeId, cancellationToken);
+        var itemsTask = _messageRepository.GetPageBySenderAsync(
+            normalizedSenderNodeId,
             sanitizedOffset,
             sanitizedTake,
             cancellationToken);

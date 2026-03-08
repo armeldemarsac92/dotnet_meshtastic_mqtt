@@ -117,6 +117,13 @@ public sealed class MessageRetentionServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<int> CountBySenderAsync(
+            string senderNodeId,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
             string region,
             string channel,
@@ -129,6 +136,15 @@ public sealed class MessageRetentionServiceTests
         public Task<IReadOnlyCollection<MessageSummary>> GetPageByChannelAsync(
             string region,
             string channel,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageBySenderAsync(
+            string senderNodeId,
             int offset,
             int take,
             CancellationToken cancellationToken = default)

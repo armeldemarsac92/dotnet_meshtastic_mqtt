@@ -115,6 +115,13 @@ public sealed class ChannelReadServiceTests
             return Task.FromResult(3);
         }
 
+        public Task<int> CountBySenderAsync(
+            string senderNodeId,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
             string region,
             string channel,
@@ -165,6 +172,15 @@ public sealed class ChannelReadServiceTests
             ];
 
             return Task.FromResult(messages);
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageBySenderAsync(
+            string senderNodeId,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
 
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(
