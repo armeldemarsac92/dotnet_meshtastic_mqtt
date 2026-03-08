@@ -2,19 +2,21 @@ namespace MeshBoard.Web.State;
 
 public sealed class ServerSelectionNotifier
 {
-    public event Func<Task>? Changed;
+    public event Func<string, Task>? Changed;
 
-    public async Task NotifyChangedAsync()
+    public async Task NotifyChangedAsync(string workspaceId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+
         var handlers = Changed;
         if (handlers is null)
         {
             return;
         }
 
-        foreach (var handler in handlers.GetInvocationList().Cast<Func<Task>>())
+        foreach (var handler in handlers.GetInvocationList().Cast<Func<string, Task>>())
         {
-            await handler();
+            await handler(workspaceId);
         }
     }
 }

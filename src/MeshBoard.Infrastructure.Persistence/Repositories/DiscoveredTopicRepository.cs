@@ -20,15 +20,20 @@ internal sealed class DiscoveredTopicRepository : IDiscoveredTopicRepository
     }
 
     public async Task<IReadOnlyCollection<TopicCatalogEntry>> GetAllAsync(
+        string workspaceId,
         string brokerServer,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to fetch discovered topics for broker {BrokerServer}", brokerServer);
+        _logger.LogDebug(
+            "Attempting to fetch discovered topics for workspace {WorkspaceId} and broker {BrokerServer}",
+            workspaceId,
+            brokerServer);
 
         var sqlResponses = await _dbContext.QueryAsync<DiscoveredTopicSqlResponse>(
             DiscoveredTopicQueries.GetDiscoveredTopics,
             new
             {
+                WorkspaceId = workspaceId,
                 BrokerServer = brokerServer
             },
             cancellationToken: cancellationToken);
@@ -47,6 +52,7 @@ internal sealed class DiscoveredTopicRepository : IDiscoveredTopicRepository
     }
 
     public async Task UpsertAsync(
+        string workspaceId,
         string brokerServer,
         string topicPattern,
         string region,
@@ -55,14 +61,16 @@ internal sealed class DiscoveredTopicRepository : IDiscoveredTopicRepository
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug(
-            "Attempting to upsert discovered topic {TopicPattern} for broker {BrokerServer}",
+            "Attempting to upsert discovered topic {TopicPattern} for workspace {WorkspaceId} and broker {BrokerServer}",
             topicPattern,
+            workspaceId,
             brokerServer);
 
         await _dbContext.ExecuteAsync(
             DiscoveredTopicQueries.UpsertDiscoveredTopic,
             new UpsertDiscoveredTopicSqlRequest
             {
+                WorkspaceId = workspaceId,
                 BrokerServer = brokerServer,
                 TopicPattern = topicPattern,
                 Region = region,

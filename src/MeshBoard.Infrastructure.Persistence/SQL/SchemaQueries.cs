@@ -145,17 +145,18 @@ internal static class SchemaQueries
         );
 
         CREATE TABLE IF NOT EXISTS discovered_topics (
+            workspace_id TEXT NOT NULL,
             broker_server TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
             region TEXT NOT NULL,
             channel TEXT NOT NULL,
             first_observed_at_utc TEXT NOT NULL,
             last_observed_at_utc TEXT NOT NULL,
-            PRIMARY KEY (broker_server, topic_pattern)
+            PRIMARY KEY (workspace_id, broker_server, topic_pattern)
         );
 
         CREATE INDEX IF NOT EXISTS ix_discovered_topics_last_observed_at_utc
-            ON discovered_topics(broker_server, last_observed_at_utc DESC);
+            ON discovered_topics(workspace_id, broker_server, last_observed_at_utc DESC);
 
         CREATE TABLE IF NOT EXISTS nodes (
             node_id TEXT NOT NULL PRIMARY KEY,
@@ -378,25 +379,27 @@ internal static class SchemaQueries
     public static string RecreateDiscoveredTopicsWithBrokerServer =>
         """
         CREATE TABLE IF NOT EXISTS discovered_topics (
+            workspace_id TEXT NOT NULL,
             broker_server TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
             region TEXT NOT NULL,
             channel TEXT NOT NULL,
             first_observed_at_utc TEXT NOT NULL,
             last_observed_at_utc TEXT NOT NULL,
-            PRIMARY KEY (broker_server, topic_pattern)
+            PRIMARY KEY (workspace_id, broker_server, topic_pattern)
         );
         """;
 
     public static string CreateDiscoveredTopicsLastObservedIndex =>
         """
         CREATE INDEX IF NOT EXISTS ix_discovered_topics_last_observed_at_utc
-            ON discovered_topics(broker_server, last_observed_at_utc DESC);
+            ON discovered_topics(workspace_id, broker_server, last_observed_at_utc DESC);
         """;
 
     public static string CopyDiscoveredTopicsFromLegacyWithoutBrokerServer =>
         """
         INSERT INTO discovered_topics (
+            workspace_id,
             broker_server,
             topic_pattern,
             region,
@@ -404,6 +407,7 @@ internal static class SchemaQueries
             first_observed_at_utc,
             last_observed_at_utc)
         SELECT
+            @WorkspaceId AS workspace_id,
             @BrokerServer AS broker_server,
             topic_pattern,
             region,
@@ -416,6 +420,7 @@ internal static class SchemaQueries
     public static string CopyDiscoveredTopicsFromLegacyWithBrokerServer =>
         """
         INSERT INTO discovered_topics (
+            workspace_id,
             broker_server,
             topic_pattern,
             region,
@@ -423,6 +428,7 @@ internal static class SchemaQueries
             first_observed_at_utc,
             last_observed_at_utc)
         SELECT
+            @WorkspaceId AS workspace_id,
             COALESCE(NULLIF(broker_server, ''), @BrokerServer) AS broker_server,
             topic_pattern,
             region,

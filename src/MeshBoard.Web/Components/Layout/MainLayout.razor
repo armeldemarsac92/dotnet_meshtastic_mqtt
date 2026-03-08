@@ -6,6 +6,7 @@
 @implements IDisposable
 @inject IBrokerServerProfileService BrokerServerProfileService
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject ServerSelectionNotifier ServerSelectionNotifier
 
 <div class="liquid-stage min-h-screen text-cinder-950">
@@ -159,7 +160,7 @@
         try
         {
             await BrokerMonitorService.SwitchActiveServerProfile(selectedProfileId);
-            await ServerSelectionNotifier.NotifyChangedAsync();
+            await ServerSelectionNotifier.NotifyChangedAsync(WorkspaceContextAccessor.GetWorkspaceId());
         }
         catch (NotFoundException)
         {
@@ -172,8 +173,13 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task HandleServerSelectionChangedAsync()
+    private async Task HandleServerSelectionChangedAsync(string workspaceId)
     {
+        if (!string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
         await LoadServersAsync();
         await InvokeAsync(StateHasChanged);
     }

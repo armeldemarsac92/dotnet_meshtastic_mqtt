@@ -448,8 +448,13 @@
         return _brokerStatus.TopicFilters.Contains(topicFilter, StringComparer.Ordinal);
     }
 
-    private Task HandleServerSelectionChangedAsync()
+    private Task HandleServerSelectionChangedAsync(string workspaceId)
     {
+        if (!string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return Task.CompletedTask;
+        }
+
         return ScheduleRealtimeRefreshAsync();
     }
 
@@ -538,7 +543,7 @@
         {
             await BrokerMonitorService.SwitchActiveServerProfile(profileId);
             _serverStatusMessage = "Switched active MQTT server.";
-            await ServerSelectionNotifier.NotifyChangedAsync();
+            await ServerSelectionNotifier.NotifyChangedAsync(WorkspaceContextAccessor.GetWorkspaceId());
         }
         catch (Exception exception)
         {
@@ -601,7 +606,7 @@
 
             if (switchedActiveServer)
             {
-                await ServerSelectionNotifier.NotifyChangedAsync();
+                await ServerSelectionNotifier.NotifyChangedAsync(WorkspaceContextAccessor.GetWorkspaceId());
             }
         }
         catch (Exception exception)

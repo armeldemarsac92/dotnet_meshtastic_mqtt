@@ -334,8 +334,13 @@
         return ValueTask.CompletedTask;
     }
 
-    private async Task HandleServerSelectionChangedAsync()
+    private async Task HandleServerSelectionChangedAsync(string workspaceId)
     {
+        if (!string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
         _currentPage = 1;
         await LoadAsync(_cancellationTokenSource.Token, forceRefresh: true);
         await InvokeAsync(StateHasChanged);

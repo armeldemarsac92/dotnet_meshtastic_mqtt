@@ -317,12 +317,14 @@ internal sealed class SqliteDatabaseInitializer
             .Select(column => column.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        var hasWorkspaceIdColumn = columnNames.Contains("workspace_id");
         var hasBrokerServerColumn = columnNames.Contains("broker_server");
         var hasCompositePrimaryKey =
+            columns.Any(column => string.Equals(column.Name, "workspace_id", StringComparison.OrdinalIgnoreCase) && column.Pk > 0) &&
             columns.Any(column => string.Equals(column.Name, "broker_server", StringComparison.OrdinalIgnoreCase) && column.Pk > 0) &&
             columns.Any(column => string.Equals(column.Name, "topic_pattern", StringComparison.OrdinalIgnoreCase) && column.Pk > 0);
 
-        if (hasBrokerServerColumn && hasCompositePrimaryKey)
+        if (hasWorkspaceIdColumn && hasBrokerServerColumn && hasCompositePrimaryKey)
         {
             await connection.ExecuteAsync(
                 new CommandDefinition(
@@ -355,6 +357,7 @@ internal sealed class SqliteDatabaseInitializer
                 copyQuery,
                 new
                 {
+                    WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                     BrokerServer = fallbackBrokerServer
                 },
                 cancellationToken: cancellationToken));

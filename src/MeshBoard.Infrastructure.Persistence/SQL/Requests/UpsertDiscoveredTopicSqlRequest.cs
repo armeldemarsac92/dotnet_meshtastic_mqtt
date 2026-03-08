@@ -2,6 +2,8 @@ namespace MeshBoard.Infrastructure.Persistence.SQL.Requests;
 
 internal sealed class UpsertDiscoveredTopicSqlRequest
 {
+    public required string WorkspaceId { get; set; }
+
     public required string BrokerServer { get; set; }
 
     public required string Channel { get; set; }

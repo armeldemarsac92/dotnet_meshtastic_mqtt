@@ -295,9 +295,10 @@
         return ValueTask.CompletedTask;
     }
 
-    private Task HandleServerSelectionChangedAsync()
+    private Task HandleServerSelectionChangedAsync(string workspaceId)
     {
-        if (!IsOpen)
+        if (!IsOpen ||
+            !string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
         {
             return Task.CompletedTask;
         }

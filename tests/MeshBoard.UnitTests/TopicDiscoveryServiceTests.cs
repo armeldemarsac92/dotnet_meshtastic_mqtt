@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Topics;
@@ -16,11 +17,13 @@ public sealed class TopicDiscoveryServiceTests
             new FakeBrokerServerProfileService(),
             repository,
             new TopicExplorerService(),
+            new FakeWorkspaceContextAccessor(),
             NullLogger<TopicDiscoveryService>.Instance);
         var observedAtUtc = new DateTimeOffset(2026, 3, 4, 23, 0, 0, TimeSpan.Zero);
 
         await service.RecordObservedTopic("msh/EU_868/2/json/MediumFast/!12345678", observedAtUtc, "mqtt.eu:1883");
 
+        Assert.Equal("workspace-tests", repository.LastWorkspaceId);
         Assert.Equal("mqtt.eu:1883", repository.LastBrokerServer);
         Assert.Equal("msh/EU_868/2/e/MediumFast/#", repository.LastTopicPattern);
         Assert.Equal("EU_868", repository.LastRegion);
@@ -36,6 +39,7 @@ public sealed class TopicDiscoveryServiceTests
             new FakeBrokerServerProfileService(),
             repository,
             new TopicExplorerService(),
+            new FakeWorkspaceContextAccessor(),
             NullLogger<TopicDiscoveryService>.Instance);
 
         await service.RecordObservedTopic("invalid/topic/value", DateTimeOffset.UtcNow);
@@ -45,6 +49,8 @@ public sealed class TopicDiscoveryServiceTests
 
     private sealed class FakeDiscoveredTopicRepository : IDiscoveredTopicRepository
     {
+        public string? LastWorkspaceId { get; private set; }
+
         public string? LastBrokerServer { get; private set; }
 
         public string? LastChannel { get; private set; }
@@ -58,6 +64,7 @@ public sealed class TopicDiscoveryServiceTests
         public int UpsertCount { get; private set; }
 
         public Task<IReadOnlyCollection<TopicCatalogEntry>> GetAllAsync(
+            string workspaceId,
             string brokerServer,
             CancellationToken cancellationToken = default)
         {
@@ -66,6 +73,7 @@ public sealed class TopicDiscoveryServiceTests
         }
 
         public Task UpsertAsync(
+            string workspaceId,
             string brokerServer,
             string topicPattern,
             string region,
@@ -73,6 +81,7 @@ public sealed class TopicDiscoveryServiceTests
             DateTimeOffset observedAtUtc,
             CancellationToken cancellationToken = default)
         {
+            LastWorkspaceId = workspaceId;
             LastBrokerServer = brokerServer;
             LastTopicPattern = topicPattern;
             LastRegion = region;
@@ -80,6 +89,14 @@ public sealed class TopicDiscoveryServiceTests
             LastObservedAtUtc = observedAtUtc;
             UpsertCount++;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
+    {
+        public string GetWorkspaceId()
+        {
+            return "workspace-tests";
         }
     }
 

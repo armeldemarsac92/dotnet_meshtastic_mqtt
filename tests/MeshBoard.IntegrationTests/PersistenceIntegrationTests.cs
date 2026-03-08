@@ -2363,6 +2363,101 @@ public sealed class PersistenceIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task TopicDiscovery_ShouldIsolateObservedTopicsPerWorkspace()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                await using var scopeA = providerA.CreateAsyncScope();
+                var profilesA = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var discoveryA = scopeA.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+                var ingestionA = scopeA.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
+
+                var profileA = await profilesA.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Shared broker A",
+                        Host = "mqtt-shared.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await using var scopeB = providerB.CreateAsyncScope();
+                var profilesB = scopeB.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var discoveryB = scopeB.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+
+                await profilesB.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Shared broker B",
+                        Host = "mqtt-shared.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await ingestionA.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        WorkspaceId = "workspace-a",
+                        BrokerServer = profileA.ServerAddress,
+                        Topic = "msh/EU_433/2/e/Fr_Balise/!abc12345",
+                        PacketType = "Text Message",
+                        PacketId = 0x00040001,
+                        PayloadPreview = "Workspace A only topic",
+                        FromNodeId = "!abc12345",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 10, 0, 0, TimeSpan.Zero)
+                    });
+
+                var workspaceATopics = await discoveryA.GetDiscoveredTopics();
+                var workspaceBTopics = await discoveryB.GetDiscoveredTopics();
+
+                Assert.Contains(workspaceATopics, topic => topic.TopicPattern == "msh/EU_433/2/e/Fr_Balise/#");
+                Assert.DoesNotContain(workspaceBTopics, topic => topic.TopicPattern == "msh/EU_433/2/e/Fr_Balise/#");
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
     private static async Task SeedLegacyDatabaseAsync(string databasePath)
     {
         await using var connection = new SqliteConnection($"Data Source={databasePath}");
