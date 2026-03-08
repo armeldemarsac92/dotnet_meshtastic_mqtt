@@ -24,7 +24,7 @@ public sealed class MeshtasticInboundMessageQueueTests
         Assert.True(firstAccepted);
         Assert.False(secondAccepted);
 
-        var beforeRead = queue.GetSnapshot();
+        var beforeRead = queue.GetSnapshot("workspace-a");
         Assert.Equal(1, beforeRead.CurrentDepth);
         Assert.Equal(1, beforeRead.EnqueuedCount);
         Assert.Equal(0, beforeRead.DequeuedCount);
@@ -38,7 +38,7 @@ public sealed class MeshtasticInboundMessageQueueTests
             items.Add(item);
         }
 
-        var afterRead = queue.GetSnapshot();
+        var afterRead = queue.GetSnapshot("workspace-a");
         Assert.Single(items);
         Assert.Equal("msh/US/2/e/LongFast/#", items[0].InboundMessage.Topic);
         Assert.Equal(0, afterRead.CurrentDepth);

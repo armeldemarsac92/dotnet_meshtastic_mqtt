@@ -24,30 +24,38 @@ public sealed class ProjectionChangeNotifier
             return;
         }
 
-        foreach (var handler in handlers.GetInvocationList().Cast<Func<ProjectionChangeEvent, Task>>())
+        var notifications = handlers.GetInvocationList()
+            .Cast<Func<ProjectionChangeEvent, Task>>()
+            .Select(handler => NotifyHandlerAsync(handler, projectionChange));
+
+        await Task.WhenAll(notifications);
+    }
+
+    private async Task NotifyHandlerAsync(
+        Func<ProjectionChangeEvent, Task> handler,
+        ProjectionChangeEvent projectionChange)
+    {
+        try
         {
-            try
-            {
-                await handler(projectionChange);
-            }
-            catch (ObjectDisposedException)
-            {
-                _logger.LogDebug(
-                    "Skipped projection change handler because the target circuit was already disposed.");
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogDebug(
-                    "Skipped projection change handler because the target circuit cancellation was already requested.");
-            }
-            catch (Exception exception)
-            {
-                _logger.LogWarning(
-                    exception,
-                    "Projection change handler failed while dispatching {ProjectionChangeKind} for workspace {WorkspaceId}.",
-                    projectionChange.Kind,
-                    projectionChange.WorkspaceId);
-            }
+            await handler(projectionChange);
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.LogDebug(
+                "Skipped projection change handler because the target circuit was already disposed.");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug(
+                "Skipped projection change handler because the target circuit cancellation was already requested.");
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Projection change handler failed while dispatching {ProjectionChangeKind} for workspace {WorkspaceId}.",
+                projectionChange.Kind,
+                projectionChange.WorkspaceId);
         }
     }
 }

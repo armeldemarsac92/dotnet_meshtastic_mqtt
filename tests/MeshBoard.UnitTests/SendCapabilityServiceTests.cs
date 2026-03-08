@@ -222,12 +222,12 @@ public sealed class SendCapabilityServiceTests
             throw new NotSupportedException();
         }
 
-        public RuntimePipelineSnapshot GetPipelineSnapshot()
+        public RuntimePipelineSnapshot GetPipelineSnapshot(string workspaceId)
         {
             return new RuntimePipelineSnapshot();
         }
 
-        public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+        public void UpdatePipelineSnapshot(string workspaceId, RuntimePipelineSnapshot snapshot)
         {
             throw new NotSupportedException();
         }

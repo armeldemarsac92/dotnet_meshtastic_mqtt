@@ -2,6 +2,8 @@ namespace MeshBoard.Infrastructure.Persistence.SQL.Responses;
 
 internal sealed class RuntimePipelineStatusSqlResponse
 {
+    public string WorkspaceId { get; set; } = string.Empty;
+
     public int InboundQueueCapacity { get; set; }
 
     public int InboundWorkerCount { get; set; }

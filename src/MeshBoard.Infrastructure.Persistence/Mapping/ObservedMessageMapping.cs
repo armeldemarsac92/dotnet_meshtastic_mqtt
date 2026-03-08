@@ -10,6 +10,7 @@ internal static class ObservedMessageMapping
         return new SaveObservedMessageSqlRequest
         {
             Id = Guid.NewGuid().ToString(),
+            WorkspaceId = request.WorkspaceId,
             BrokerServer = request.BrokerServer,
             Topic = request.Topic,
             PacketType = request.PacketType,

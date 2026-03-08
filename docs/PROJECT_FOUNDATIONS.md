@@ -5,6 +5,7 @@ This document is the working architecture and delivery reference for this reposi
 It exists so future agents can start coding without having to rediscover the core constraints, external facts, and design rules for the project.
 
 For planned remediation and scalability work, see `docs/ARCHITECTURE_REFACTOR_ROADMAP.md`.
+For the secure high-scale refactor that separates public shared feeds from private-key-protected traffic, see `docs/PERFORMANCE_SECURITY_REFACTOR_PLAN.md`.
 For product-direction decisions, see `docs/adr/0001-operating-model.md`.
 
 Historical note:

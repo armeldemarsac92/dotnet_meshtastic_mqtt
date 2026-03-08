@@ -93,6 +93,7 @@ public sealed class BrokerMonitorServiceTests
                 TopicFilters = ["msh/EU_868/2/e/MediumFast/#", "msh/US/2/e/LongFast/#"]
             });
         runtimeRegistry.UpdatePipelineSnapshot(
+            "workspace-tests",
             new RuntimePipelineSnapshot
             {
                 InboundQueueCapacity = 2048,
@@ -244,7 +245,7 @@ public sealed class BrokerMonitorServiceTests
             ActiveServerAddress = "mqtt.meshtastic.org:1883",
             TopicFilters = []
         };
-        private RuntimePipelineSnapshot _pipelineSnapshot = new();
+        private readonly Dictionary<string, RuntimePipelineSnapshot> _pipelineSnapshotsByWorkspace = new(StringComparer.Ordinal);
 
         public BrokerRuntimeSnapshot GetSnapshot(string workspaceId)
         {
@@ -272,24 +273,29 @@ public sealed class BrokerMonitorServiceTests
             };
         }
 
-        public RuntimePipelineSnapshot GetPipelineSnapshot()
+        public RuntimePipelineSnapshot GetPipelineSnapshot(string workspaceId)
         {
+            if (!_pipelineSnapshotsByWorkspace.TryGetValue(workspaceId, out var snapshot))
+            {
+                return new RuntimePipelineSnapshot();
+            }
+
             return new RuntimePipelineSnapshot
             {
-                InboundQueueCapacity = _pipelineSnapshot.InboundQueueCapacity,
-                InboundWorkerCount = _pipelineSnapshot.InboundWorkerCount,
-                InboundQueueDepth = _pipelineSnapshot.InboundQueueDepth,
-                InboundOldestMessageAgeMilliseconds = _pipelineSnapshot.InboundOldestMessageAgeMilliseconds,
-                InboundEnqueuedCount = _pipelineSnapshot.InboundEnqueuedCount,
-                InboundDequeuedCount = _pipelineSnapshot.InboundDequeuedCount,
-                InboundDroppedCount = _pipelineSnapshot.InboundDroppedCount,
-                UpdatedAtUtc = _pipelineSnapshot.UpdatedAtUtc
+                InboundQueueCapacity = snapshot.InboundQueueCapacity,
+                InboundWorkerCount = snapshot.InboundWorkerCount,
+                InboundQueueDepth = snapshot.InboundQueueDepth,
+                InboundOldestMessageAgeMilliseconds = snapshot.InboundOldestMessageAgeMilliseconds,
+                InboundEnqueuedCount = snapshot.InboundEnqueuedCount,
+                InboundDequeuedCount = snapshot.InboundDequeuedCount,
+                InboundDroppedCount = snapshot.InboundDroppedCount,
+                UpdatedAtUtc = snapshot.UpdatedAtUtc
             };
         }
 
-        public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+        public void UpdatePipelineSnapshot(string workspaceId, RuntimePipelineSnapshot snapshot)
         {
-            _pipelineSnapshot = new RuntimePipelineSnapshot
+            _pipelineSnapshotsByWorkspace[workspaceId] = new RuntimePipelineSnapshot
             {
                 InboundQueueCapacity = snapshot.InboundQueueCapacity,
                 InboundWorkerCount = snapshot.InboundWorkerCount,

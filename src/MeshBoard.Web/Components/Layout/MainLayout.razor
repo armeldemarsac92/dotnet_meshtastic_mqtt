@@ -1,10 +1,12 @@
 ﻿@using MeshBoard.Application.Services
 @using MeshBoard.Contracts.Configuration
+@using MeshBoard.Contracts.Exceptions
 @using MeshBoard.Web.State
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject IBrokerServerProfileService BrokerServerProfileService
 @inject IBrokerMonitorService BrokerMonitorService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject ServerSelectionNotifier ServerSelectionNotifier
 
 <div class="liquid-stage min-h-screen text-cinder-950">
@@ -45,6 +47,7 @@
                 else
                 {
                     <select class="liquid-input mt-2 w-full rounded-2xl px-3 py-2 text-xs text-cinder-950"
+                            @key="_serverPickerKey"
                             value="@_activeServerIdText"
                             @onchange="OnServerSelectionChangedAsync">
                         @foreach (var profile in _serverProfiles)
@@ -94,6 +97,7 @@
     private string? _activeServerIdText;
     private string? _activeServerName;
     private bool _isLoadingServers = true;
+    private string _serverPickerKey = "none";
     private IReadOnlyCollection<BrokerServerProfile> _serverProfiles = [];
 
     protected override async Task OnInitializedAsync()
@@ -109,15 +113,24 @@
         try
         {
             _serverProfiles = await BrokerServerProfileService.GetServerProfiles();
-            var activeProfile = _serverProfiles.FirstOrDefault(profile => profile.IsActive);
+            _serverPickerKey = BuildServerPickerKey(_serverProfiles);
 
-            if (activeProfile is null)
+            BrokerServerProfile? activeProfile = _serverProfiles.FirstOrDefault(profile => profile.IsActive);
+
+            if (activeProfile is null && _serverProfiles.Count > 0)
             {
                 activeProfile = await BrokerServerProfileService.GetActiveServerProfile();
             }
 
-            _activeServerIdText = activeProfile.Id.ToString();
-            _activeServerName = activeProfile.Name;
+            _activeServerIdText = activeProfile?.Id.ToString();
+            _activeServerName = activeProfile?.Name;
+        }
+        catch (NotFoundException)
+        {
+            _serverProfiles = [];
+            _serverPickerKey = "none";
+            _activeServerIdText = null;
+            _activeServerName = null;
         }
         finally
         {
@@ -137,14 +150,36 @@
             return;
         }
 
-        await BrokerMonitorService.SwitchActiveServerProfile(selectedProfileId);
-        await ServerSelectionNotifier.NotifyChangedAsync();
+        if (_serverProfiles.All(profile => profile.Id != selectedProfileId))
+        {
+            await LoadServersAsync();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            await BrokerMonitorService.SwitchActiveServerProfile(selectedProfileId);
+            await ServerSelectionNotifier.NotifyChangedAsync(WorkspaceContextAccessor.GetWorkspaceId());
+        }
+        catch (NotFoundException)
+        {
+            await LoadServersAsync();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
         await LoadServersAsync();
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task HandleServerSelectionChangedAsync()
+    private async Task HandleServerSelectionChangedAsync(string workspaceId)
     {
+        if (!string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
         await LoadServersAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -152,5 +187,15 @@
     public void Dispose()
     {
         ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
+    }
+
+    private static string BuildServerPickerKey(IReadOnlyCollection<BrokerServerProfile> profiles)
+    {
+        if (profiles.Count == 0)
+        {
+            return "none";
+        }
+
+        return string.Join('|', profiles.Select(profile => profile.Id));
     }
 }

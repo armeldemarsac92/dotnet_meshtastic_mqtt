@@ -10,12 +10,8 @@ internal sealed class MeshtasticInboundMessageQueue
 {
     private readonly Channel<MeshtasticInboundQueueItem> _channel;
     private readonly int _capacity;
-    private readonly ConcurrentQueue<DateTimeOffset> _enqueuedAtUtc = new();
+    private readonly ConcurrentDictionary<string, WorkspaceInboundQueueMetrics> _metricsByWorkspace = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
-    private long _currentDepth;
-    private long _dequeuedCount;
-    private long _droppedCount;
-    private long _enqueuedCount;
 
     public MeshtasticInboundMessageQueue(
         IOptions<MeshtasticRuntimeOptions> runtimeOptions,
@@ -39,19 +35,19 @@ internal sealed class MeshtasticInboundMessageQueue
     public bool TryEnqueue(MqttInboundMessage inboundMessage)
     {
         ArgumentNullException.ThrowIfNull(inboundMessage);
+        var workspaceId = NormalizeWorkspaceId(inboundMessage.WorkspaceId);
+        var metrics = _metricsByWorkspace.GetOrAdd(workspaceId, static key => new WorkspaceInboundQueueMetrics(key));
 
         if (!_channel.Writer.TryWrite(
                 new MeshtasticInboundQueueItem(
                     inboundMessage,
                     _timeProvider.GetUtcNow())))
         {
-            Interlocked.Increment(ref _droppedCount);
+            metrics.OnDropped();
             return false;
         }
 
-        _enqueuedAtUtc.Enqueue(_timeProvider.GetUtcNow());
-        Interlocked.Increment(ref _enqueuedCount);
-        Interlocked.Increment(ref _currentDepth);
+        metrics.OnEnqueued(_timeProvider.GetUtcNow());
         return true;
     }
 
@@ -60,9 +56,9 @@ internal sealed class MeshtasticInboundMessageQueue
     {
         await foreach (var item in _channel.Reader.ReadAllAsync(cancellationToken))
         {
-            _enqueuedAtUtc.TryDequeue(out _);
-            Interlocked.Decrement(ref _currentDepth);
-            Interlocked.Increment(ref _dequeuedCount);
+            var workspaceId = NormalizeWorkspaceId(item.InboundMessage.WorkspaceId);
+            var metrics = _metricsByWorkspace.GetOrAdd(workspaceId, static key => new WorkspaceInboundQueueMetrics(key));
+            metrics.OnDequeued();
             yield return item;
         }
     }
@@ -72,21 +68,31 @@ internal sealed class MeshtasticInboundMessageQueue
         _channel.Writer.TryComplete();
     }
 
-    public MeshtasticInboundQueueSnapshot GetSnapshot()
+    public MeshtasticInboundQueueSnapshot GetSnapshot(string workspaceId)
     {
-        var hasOldest = _enqueuedAtUtc.TryPeek(out var oldestEnqueuedAtUtc);
-
-        return new MeshtasticInboundQueueSnapshot
+        var normalizedWorkspaceId = NormalizeWorkspaceId(workspaceId);
+        if (!_metricsByWorkspace.TryGetValue(normalizedWorkspaceId, out var metrics))
         {
-            Capacity = _capacity,
-            CurrentDepth = Interlocked.Read(ref _currentDepth),
-            EnqueuedCount = Interlocked.Read(ref _enqueuedCount),
-            DequeuedCount = Interlocked.Read(ref _dequeuedCount),
-            DroppedCount = Interlocked.Read(ref _droppedCount),
-            OldestMessageAgeMilliseconds = hasOldest
-                ? Math.Max(0, (long)(_timeProvider.GetUtcNow() - oldestEnqueuedAtUtc).TotalMilliseconds)
-                : 0
-        };
+            return new MeshtasticInboundQueueSnapshot
+            {
+                WorkspaceId = normalizedWorkspaceId,
+                Capacity = _capacity
+            };
+        }
+
+        return metrics.CreateSnapshot(_capacity, _timeProvider);
+    }
+
+    public IReadOnlyCollection<MeshtasticInboundQueueSnapshot> GetSnapshots()
+    {
+        return _metricsByWorkspace.Values
+            .Select(metrics => metrics.CreateSnapshot(_capacity, _timeProvider))
+            .ToList();
+    }
+
+    private static string NormalizeWorkspaceId(string workspaceId)
+    {
+        return string.IsNullOrWhiteSpace(workspaceId) ? string.Empty : workspaceId.Trim();
     }
 }
 
@@ -96,6 +102,8 @@ internal sealed record MeshtasticInboundQueueItem(
 
 internal sealed class MeshtasticInboundQueueSnapshot
 {
+    public string WorkspaceId { get; init; } = string.Empty;
+
     public int Capacity { get; init; }
 
     public long CurrentDepth { get; init; }
@@ -107,4 +115,57 @@ internal sealed class MeshtasticInboundQueueSnapshot
     public long DroppedCount { get; init; }
 
     public long OldestMessageAgeMilliseconds { get; init; }
+}
+
+internal sealed class WorkspaceInboundQueueMetrics
+{
+    private readonly ConcurrentQueue<DateTimeOffset> _enqueuedAtUtc = new();
+    private long _currentDepth;
+    private long _dequeuedCount;
+    private long _droppedCount;
+    private long _enqueuedCount;
+
+    public WorkspaceInboundQueueMetrics(string workspaceId)
+    {
+        WorkspaceId = workspaceId;
+    }
+
+    public string WorkspaceId { get; }
+
+    public void OnEnqueued(DateTimeOffset enqueuedAtUtc)
+    {
+        _enqueuedAtUtc.Enqueue(enqueuedAtUtc);
+        Interlocked.Increment(ref _enqueuedCount);
+        Interlocked.Increment(ref _currentDepth);
+    }
+
+    public void OnDequeued()
+    {
+        _enqueuedAtUtc.TryDequeue(out _);
+        Interlocked.Decrement(ref _currentDepth);
+        Interlocked.Increment(ref _dequeuedCount);
+    }
+
+    public void OnDropped()
+    {
+        Interlocked.Increment(ref _droppedCount);
+    }
+
+    public MeshtasticInboundQueueSnapshot CreateSnapshot(int capacity, TimeProvider timeProvider)
+    {
+        var hasOldest = _enqueuedAtUtc.TryPeek(out var oldestEnqueuedAtUtc);
+
+        return new MeshtasticInboundQueueSnapshot
+        {
+            WorkspaceId = WorkspaceId,
+            Capacity = capacity,
+            CurrentDepth = Interlocked.Read(ref _currentDepth),
+            EnqueuedCount = Interlocked.Read(ref _enqueuedCount),
+            DequeuedCount = Interlocked.Read(ref _dequeuedCount),
+            DroppedCount = Interlocked.Read(ref _droppedCount),
+            OldestMessageAgeMilliseconds = hasOldest
+                ? Math.Max(0, (long)(timeProvider.GetUtcNow() - oldestEnqueuedAtUtc).TotalMilliseconds)
+                : 0
+        };
+    }
 }

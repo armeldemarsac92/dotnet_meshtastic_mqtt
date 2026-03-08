@@ -2,6 +2,8 @@ namespace MeshBoard.Infrastructure.Persistence.SQL.Requests;
 
 internal sealed class UpsertObservedNodeSqlRequest
 {
+    public required string WorkspaceId { get; set; }
+
     public required string NodeId { get; set; }
 
     public required string BrokerServer { get; set; }

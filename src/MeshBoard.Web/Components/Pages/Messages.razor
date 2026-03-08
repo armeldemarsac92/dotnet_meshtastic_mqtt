@@ -289,7 +289,9 @@
     private int _pageSize = 50;
     private MessageSummary? _previewMessage;
     private int _refreshDelaySeconds = 30;
-    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
+    private int _realtimeRefreshQueued;
+    private int _realtimeForceRefreshQueued;
+    private Task? _realtimeRefreshTask;
     private Task? _refreshTask;
     private string? _selectedChannel;
     private string? _selectedNodeId;
@@ -328,14 +330,17 @@
         _cancellationTokenSource.Cancel();
         _filterDebounceCancellationTokenSource?.Cancel();
         _filterDebounceCancellationTokenSource?.Dispose();
-        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
-        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
         _cancellationTokenSource.Dispose();
         return ValueTask.CompletedTask;
     }
 
-    private async Task HandleServerSelectionChangedAsync()
+    private async Task HandleServerSelectionChangedAsync(string workspaceId)
     {
+        if (!string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return;
+        }
+
         _currentPage = 1;
         await LoadAsync(_cancellationTokenSource.Token, forceRefresh: true);
         await InvokeAsync(StateHasChanged);
@@ -405,29 +410,43 @@
 
     private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)
     {
-        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
-        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        if (forceRefresh)
+        {
+            Interlocked.Exchange(ref _realtimeForceRefreshQueued, 1);
+        }
 
-        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
-        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+        Interlocked.Exchange(ref _realtimeRefreshQueued, 1);
 
+        if (_realtimeRefreshTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        _realtimeRefreshTask = ProcessQueuedRealtimeRefreshesAsync();
+        await _realtimeRefreshTask;
+    }
+
+    private async Task ProcessQueuedRealtimeRefreshesAsync()
+    {
         try
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await LoadAsync(debounceCancellationTokenSource.Token, forceRefresh);
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            while (!_cancellationTokenSource.IsCancellationRequested)
             {
-                _realtimeRefreshDebounceCancellationTokenSource = null;
-            }
+                Interlocked.Exchange(ref _realtimeRefreshQueued, 0);
+                var forceRefresh = Interlocked.Exchange(ref _realtimeForceRefreshQueued, 0) == 1;
 
-            debounceCancellationTokenSource.Dispose();
+                await Task.Delay(TimeSpan.FromMilliseconds(300), _cancellationTokenSource.Token);
+                await LoadAsync(_cancellationTokenSource.Token, forceRefresh);
+                await InvokeAsync(StateHasChanged);
+
+                if (Volatile.Read(ref _realtimeRefreshQueued) == 0)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
+        {
         }
     }
 

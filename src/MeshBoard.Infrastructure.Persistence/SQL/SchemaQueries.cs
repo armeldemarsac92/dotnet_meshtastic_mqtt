@@ -133,7 +133,7 @@ internal static class SchemaQueries
             ON projection_change_log(workspace_id, id);
 
         CREATE TABLE IF NOT EXISTS runtime_pipeline_status (
-            id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL PRIMARY KEY,
             inbound_queue_capacity INTEGER NOT NULL,
             inbound_worker_count INTEGER NOT NULL,
             inbound_queue_depth INTEGER NOT NULL,
@@ -145,20 +145,22 @@ internal static class SchemaQueries
         );
 
         CREATE TABLE IF NOT EXISTS discovered_topics (
+            workspace_id TEXT NOT NULL,
             broker_server TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
             region TEXT NOT NULL,
             channel TEXT NOT NULL,
             first_observed_at_utc TEXT NOT NULL,
             last_observed_at_utc TEXT NOT NULL,
-            PRIMARY KEY (broker_server, topic_pattern)
+            PRIMARY KEY (workspace_id, broker_server, topic_pattern)
         );
 
         CREATE INDEX IF NOT EXISTS ix_discovered_topics_last_observed_at_utc
-            ON discovered_topics(broker_server, last_observed_at_utc DESC);
+            ON discovered_topics(workspace_id, broker_server, last_observed_at_utc DESC);
 
         CREATE TABLE IF NOT EXISTS nodes (
-            node_id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            node_id TEXT NOT NULL,
             broker_server TEXT NULL,
             short_name TEXT NULL,
             long_name TEXT NULL,
@@ -174,14 +176,13 @@ internal static class SchemaQueries
             uptime_seconds INTEGER NULL,
             temperature_celsius REAL NULL,
             relative_humidity REAL NULL,
-            barometric_pressure REAL NULL
+            barometric_pressure REAL NULL,
+            PRIMARY KEY (workspace_id, node_id)
         );
-
-        CREATE INDEX IF NOT EXISTS ix_nodes_last_heard_at_utc
-            ON nodes(last_heard_at_utc DESC);
 
         CREATE TABLE IF NOT EXISTS message_history (
             id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
             topic TEXT NOT NULL,
             broker_server TEXT NULL,
             packet_type TEXT NOT NULL,
@@ -192,15 +193,6 @@ internal static class SchemaQueries
             is_private INTEGER NOT NULL,
             received_at_utc TEXT NOT NULL
         );
-
-        CREATE INDEX IF NOT EXISTS ix_message_history_received_at_utc
-            ON message_history(received_at_utc DESC);
-
-        CREATE INDEX IF NOT EXISTS ix_message_history_from_node_id_received_at_utc
-            ON message_history(from_node_id, received_at_utc DESC);
-
-        CREATE INDEX IF NOT EXISTS ix_message_history_topic_received_at_utc
-            ON message_history(topic, received_at_utc DESC);
         """;
 
     public static string DeleteExpiredMessages =>
@@ -219,10 +211,40 @@ internal static class SchemaQueries
         PRAGMA table_info(projection_change_log);
         """;
 
+    public static string GetRuntimePipelineStatusColumns =>
+        """
+        PRAGMA table_info(runtime_pipeline_status);
+        """;
+
     public static string AddProjectionChangeLogEntityKeyColumn =>
         """
         ALTER TABLE projection_change_log
         ADD COLUMN entity_key TEXT NULL;
+        """;
+
+    public static string DropRuntimePipelineStatusLegacyTable =>
+        """
+        DROP TABLE IF EXISTS runtime_pipeline_status_legacy;
+        """;
+
+    public static string RenameRuntimePipelineStatusToLegacy =>
+        """
+        ALTER TABLE runtime_pipeline_status RENAME TO runtime_pipeline_status_legacy;
+        """;
+
+    public static string RecreateRuntimePipelineStatusWithWorkspace =>
+        """
+        CREATE TABLE IF NOT EXISTS runtime_pipeline_status (
+            workspace_id TEXT NOT NULL PRIMARY KEY,
+            inbound_queue_capacity INTEGER NOT NULL,
+            inbound_worker_count INTEGER NOT NULL,
+            inbound_queue_depth INTEGER NOT NULL,
+            inbound_oldest_message_age_ms INTEGER NOT NULL,
+            inbound_enqueued_count INTEGER NOT NULL,
+            inbound_dequeued_count INTEGER NOT NULL,
+            inbound_dropped_count INTEGER NOT NULL,
+            updated_at_utc TEXT NOT NULL
+        );
         """;
 
     public static string AddMessageHistoryPacketTypeColumn =>
@@ -241,6 +263,12 @@ internal static class SchemaQueries
         """
         ALTER TABLE message_history
         ADD COLUMN broker_server TEXT NULL;
+        """;
+
+    public static string AddMessageHistoryWorkspaceIdColumn =>
+        """
+        ALTER TABLE message_history
+        ADD COLUMN workspace_id TEXT NULL;
         """;
 
     public static string BackfillMessageHistoryPacketType =>
@@ -272,16 +300,66 @@ internal static class SchemaQueries
         WHERE broker_server IS NULL OR broker_server = '';
         """;
 
-    public static string CreateMessageHistoryMessageKeyIndex =>
+    public static string BackfillMessageHistoryWorkspaceId =>
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_message_history_message_key
-            ON message_history(message_key);
+        UPDATE message_history
+        SET workspace_id = @WorkspaceId
+        WHERE workspace_id IS NULL OR workspace_id = '';
         """;
 
-    public static string CreateMessageHistoryBrokerServerReceivedAtIndex =>
+    public static string DropMessageHistoryLegacyMessageKeyIndex =>
         """
-        CREATE INDEX IF NOT EXISTS ix_message_history_broker_server_received_at_utc
-            ON message_history(broker_server, received_at_utc DESC);
+        DROP INDEX IF EXISTS ux_message_history_message_key;
+        """;
+
+    public static string DropMessageHistoryLegacyReceivedAtIndex =>
+        """
+        DROP INDEX IF EXISTS ix_message_history_received_at_utc;
+        """;
+
+    public static string DropMessageHistoryLegacyFromNodeIndex =>
+        """
+        DROP INDEX IF EXISTS ix_message_history_from_node_id_received_at_utc;
+        """;
+
+    public static string DropMessageHistoryLegacyTopicIndex =>
+        """
+        DROP INDEX IF EXISTS ix_message_history_topic_received_at_utc;
+        """;
+
+    public static string DropMessageHistoryLegacyBrokerServerReceivedAtIndex =>
+        """
+        DROP INDEX IF EXISTS ix_message_history_broker_server_received_at_utc;
+        """;
+
+    public static string CreateMessageHistoryWorkspaceMessageKeyIndex =>
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_message_history_workspace_message_key
+            ON message_history(workspace_id, message_key);
+        """;
+
+    public static string CreateMessageHistoryWorkspaceReceivedAtIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_message_history_workspace_received_at_utc
+            ON message_history(workspace_id, received_at_utc DESC);
+        """;
+
+    public static string CreateMessageHistoryWorkspaceFromNodeIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_message_history_workspace_from_node_id_received_at_utc
+            ON message_history(workspace_id, from_node_id, received_at_utc DESC);
+        """;
+
+    public static string CreateMessageHistoryWorkspaceTopicIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_message_history_workspace_topic_received_at_utc
+            ON message_history(workspace_id, topic, received_at_utc DESC);
+        """;
+
+    public static string CreateMessageHistoryWorkspaceBrokerServerReceivedAtIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_message_history_workspace_broker_server_received_at_utc
+            ON message_history(workspace_id, broker_server, received_at_utc DESC);
         """;
 
     public static string GetNodeColumns =>
@@ -378,25 +456,27 @@ internal static class SchemaQueries
     public static string RecreateDiscoveredTopicsWithBrokerServer =>
         """
         CREATE TABLE IF NOT EXISTS discovered_topics (
+            workspace_id TEXT NOT NULL,
             broker_server TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
             region TEXT NOT NULL,
             channel TEXT NOT NULL,
             first_observed_at_utc TEXT NOT NULL,
             last_observed_at_utc TEXT NOT NULL,
-            PRIMARY KEY (broker_server, topic_pattern)
+            PRIMARY KEY (workspace_id, broker_server, topic_pattern)
         );
         """;
 
     public static string CreateDiscoveredTopicsLastObservedIndex =>
         """
         CREATE INDEX IF NOT EXISTS ix_discovered_topics_last_observed_at_utc
-            ON discovered_topics(broker_server, last_observed_at_utc DESC);
+            ON discovered_topics(workspace_id, broker_server, last_observed_at_utc DESC);
         """;
 
     public static string CopyDiscoveredTopicsFromLegacyWithoutBrokerServer =>
         """
         INSERT INTO discovered_topics (
+            workspace_id,
             broker_server,
             topic_pattern,
             region,
@@ -404,6 +484,7 @@ internal static class SchemaQueries
             first_observed_at_utc,
             last_observed_at_utc)
         SELECT
+            @WorkspaceId AS workspace_id,
             @BrokerServer AS broker_server,
             topic_pattern,
             region,
@@ -416,6 +497,7 @@ internal static class SchemaQueries
     public static string CopyDiscoveredTopicsFromLegacyWithBrokerServer =>
         """
         INSERT INTO discovered_topics (
+            workspace_id,
             broker_server,
             topic_pattern,
             region,
@@ -423,6 +505,7 @@ internal static class SchemaQueries
             first_observed_at_utc,
             last_observed_at_utc)
         SELECT
+            @WorkspaceId AS workspace_id,
             COALESCE(NULLIF(broker_server, ''), @BrokerServer) AS broker_server,
             topic_pattern,
             region,
@@ -539,11 +622,24 @@ internal static class SchemaQueries
         ADD COLUMN broker_server TEXT NULL;
         """;
 
+    public static string AddNodesWorkspaceIdColumn =>
+        """
+        ALTER TABLE nodes
+        ADD COLUMN workspace_id TEXT NULL;
+        """;
+
     public static string BackfillNodesBrokerServer =>
         """
         UPDATE nodes
         SET broker_server = COALESCE(NULLIF(broker_server, ''), 'mqtt.meshtastic.org:1883')
         WHERE broker_server IS NULL OR broker_server = '';
+        """;
+
+    public static string BackfillNodesWorkspaceId =>
+        """
+        UPDATE nodes
+        SET workspace_id = @WorkspaceId
+        WHERE workspace_id IS NULL OR workspace_id = '';
         """;
 
     public static string AddNodesLastHeardChannelColumn =>
@@ -552,9 +648,93 @@ internal static class SchemaQueries
         ADD COLUMN last_heard_channel TEXT NULL;
         """;
 
-    public static string CreateNodesLastHeardChannelIndex =>
+    public static string DropNodesLegacyTable =>
         """
-        CREATE INDEX IF NOT EXISTS ix_nodes_last_heard_channel
-            ON nodes(last_heard_channel);
+        DROP TABLE IF EXISTS nodes_legacy;
+        """;
+
+    public static string RenameNodesToLegacy =>
+        """
+        ALTER TABLE nodes RENAME TO nodes_legacy;
+        """;
+
+    public static string RecreateNodesWithWorkspace =>
+        """
+        CREATE TABLE IF NOT EXISTS nodes (
+            workspace_id TEXT NOT NULL,
+            node_id TEXT NOT NULL,
+            broker_server TEXT NULL,
+            short_name TEXT NULL,
+            long_name TEXT NULL,
+            last_heard_at_utc TEXT NULL,
+            last_heard_channel TEXT NULL,
+            last_text_message_at_utc TEXT NULL,
+            last_known_latitude REAL NULL,
+            last_known_longitude REAL NULL,
+            battery_level_percent INTEGER NULL,
+            voltage REAL NULL,
+            channel_utilization REAL NULL,
+            air_util_tx REAL NULL,
+            uptime_seconds INTEGER NULL,
+            temperature_celsius REAL NULL,
+            relative_humidity REAL NULL,
+            barometric_pressure REAL NULL,
+            PRIMARY KEY (workspace_id, node_id)
+        );
+        """;
+
+    public static string CopyNodesFromLegacy =>
+        """
+        INSERT INTO nodes (
+            workspace_id,
+            node_id,
+            broker_server,
+            short_name,
+            long_name,
+            last_heard_at_utc,
+            last_heard_channel,
+            last_text_message_at_utc,
+            last_known_latitude,
+            last_known_longitude,
+            battery_level_percent,
+            voltage,
+            channel_utilization,
+            air_util_tx,
+            uptime_seconds,
+            temperature_celsius,
+            relative_humidity,
+            barometric_pressure)
+        SELECT
+            workspace_id,
+            node_id,
+            broker_server,
+            short_name,
+            long_name,
+            last_heard_at_utc,
+            last_heard_channel,
+            last_text_message_at_utc,
+            last_known_latitude,
+            last_known_longitude,
+            battery_level_percent,
+            voltage,
+            channel_utilization,
+            air_util_tx,
+            uptime_seconds,
+            temperature_celsius,
+            relative_humidity,
+            barometric_pressure
+        FROM nodes_legacy;
+        """;
+
+    public static string CreateNodesWorkspaceLastHeardAtIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_nodes_workspace_last_heard_at_utc
+            ON nodes(workspace_id, last_heard_at_utc DESC);
+        """;
+
+    public static string CreateNodesWorkspaceLastHeardChannelIndex =>
+        """
+        CREATE INDEX IF NOT EXISTS ix_nodes_workspace_last_heard_channel
+            ON nodes(workspace_id, last_heard_channel);
         """;
 }

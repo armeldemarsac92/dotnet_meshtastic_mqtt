@@ -101,13 +101,16 @@ internal sealed class SqliteBrokerRuntimeRegistry : IBrokerRuntimeRegistry
             });
     }
 
-    public RuntimePipelineSnapshot GetPipelineSnapshot()
+    public RuntimePipelineSnapshot GetPipelineSnapshot(string workspaceId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+
         using var connection = CreateConnection();
         connection.Open();
 
         var response = connection.QueryFirstOrDefault<RuntimePipelineStatusSqlResponse>(
-            RuntimePipelineStatusQueries.GetCurrent);
+            RuntimePipelineStatusQueries.GetByWorkspaceId,
+            new { WorkspaceId = workspaceId });
 
         if (response is null)
         {
@@ -129,8 +132,9 @@ internal sealed class SqliteBrokerRuntimeRegistry : IBrokerRuntimeRegistry
         };
     }
 
-    public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+    public void UpdatePipelineSnapshot(string workspaceId, RuntimePipelineSnapshot snapshot)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
         ArgumentNullException.ThrowIfNull(snapshot);
 
         using var connection = CreateConnection();
@@ -140,6 +144,7 @@ internal sealed class SqliteBrokerRuntimeRegistry : IBrokerRuntimeRegistry
             RuntimePipelineStatusQueries.Upsert,
             new
             {
+                WorkspaceId = workspaceId,
                 snapshot.InboundQueueCapacity,
                 snapshot.InboundWorkerCount,
                 snapshot.InboundQueueDepth,

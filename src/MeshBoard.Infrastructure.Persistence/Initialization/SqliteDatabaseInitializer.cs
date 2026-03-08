@@ -59,6 +59,7 @@ internal sealed class SqliteDatabaseInitializer
         await MigrateDiscoveredTopicsAsync(connection, cancellationToken);
         await MigrateTopicPresetsAsync(connection, cancellationToken);
         await MigrateProjectionChangeLogAsync(connection, cancellationToken);
+        await MigrateRuntimePipelineStatusAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
             SchemaQueries.DeleteExpiredMessages,
@@ -72,24 +73,27 @@ internal sealed class SqliteDatabaseInitializer
 
         await connection.ExecuteAsync(retentionCommand);
 
-        var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
-        await SeedTopicPresetAsync(
-            connection,
-            WorkspaceConstants.DefaultWorkspaceId,
-            fallbackBrokerServer,
-            "US Public Feed",
-            _brokerOptions.DefaultTopicPattern,
-            true,
-            cancellationToken);
-        await SeedTopicPresetAsync(
-            connection,
-            WorkspaceConstants.DefaultWorkspaceId,
-            fallbackBrokerServer,
-            "EU Public Feed",
-            "msh/EU_433/2/e/#",
-            false,
-            cancellationToken);
-        await SeedBrokerServerProfileAsync(connection, cancellationToken);
+        if (_persistenceOptions.SeedLegacyDefaultWorkspace)
+        {
+            var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
+            await SeedTopicPresetAsync(
+                connection,
+                WorkspaceConstants.DefaultWorkspaceId,
+                fallbackBrokerServer,
+                "US Public Feed",
+                _brokerOptions.DefaultTopicPattern,
+                true,
+                cancellationToken);
+            await SeedTopicPresetAsync(
+                connection,
+                WorkspaceConstants.DefaultWorkspaceId,
+                fallbackBrokerServer,
+                "EU Public Feed",
+                "msh/EU_433/2/e/#",
+                false,
+                cancellationToken);
+            await SeedBrokerServerProfileAsync(connection, cancellationToken);
+        }
 
         _logger.LogInformation("Initialized the SQLite database successfully");
     }
@@ -130,6 +134,14 @@ internal sealed class SqliteDatabaseInitializer
                     cancellationToken: cancellationToken));
         }
 
+        if (!columns.Contains("workspace_id"))
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.AddMessageHistoryWorkspaceIdColumn,
+                    cancellationToken: cancellationToken));
+        }
+
         await connection.ExecuteAsync(
             new CommandDefinition(
                 SchemaQueries.BackfillMessageHistoryPacketType,
@@ -147,12 +159,61 @@ internal sealed class SqliteDatabaseInitializer
 
         await connection.ExecuteAsync(
             new CommandDefinition(
-                SchemaQueries.CreateMessageHistoryMessageKeyIndex,
+                SchemaQueries.BackfillMessageHistoryWorkspaceId,
+                new
+                {
+                    WorkspaceId = WorkspaceConstants.DefaultWorkspaceId
+                },
                 cancellationToken: cancellationToken));
 
         await connection.ExecuteAsync(
             new CommandDefinition(
-                SchemaQueries.CreateMessageHistoryBrokerServerReceivedAtIndex,
+                SchemaQueries.DropMessageHistoryLegacyMessageKeyIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropMessageHistoryLegacyReceivedAtIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropMessageHistoryLegacyFromNodeIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropMessageHistoryLegacyTopicIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropMessageHistoryLegacyBrokerServerReceivedAtIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateMessageHistoryWorkspaceMessageKeyIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateMessageHistoryWorkspaceReceivedAtIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateMessageHistoryWorkspaceFromNodeIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateMessageHistoryWorkspaceTopicIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateMessageHistoryWorkspaceBrokerServerReceivedAtIndex,
                 cancellationToken: cancellationToken));
     }
 
@@ -165,19 +226,22 @@ internal sealed class SqliteDatabaseInitializer
             cancellationToken: cancellationToken);
 
         var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand))
+            .ToList();
+        var columnNames = columns
             .Select(column => column.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        await EnsureColumnAsync(connection, columns, "battery_level_percent", SchemaQueries.AddNodesBatteryLevelPercentColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "voltage", SchemaQueries.AddNodesVoltageColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "channel_utilization", SchemaQueries.AddNodesChannelUtilizationColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "air_util_tx", SchemaQueries.AddNodesAirUtilTxColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "uptime_seconds", SchemaQueries.AddNodesUptimeSecondsColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "temperature_celsius", SchemaQueries.AddNodesTemperatureCelsiusColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "relative_humidity", SchemaQueries.AddNodesRelativeHumidityColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "barometric_pressure", SchemaQueries.AddNodesBarometricPressureColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "last_heard_channel", SchemaQueries.AddNodesLastHeardChannelColumn, cancellationToken);
-        await EnsureColumnAsync(connection, columns, "broker_server", SchemaQueries.AddNodesBrokerServerColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "battery_level_percent", SchemaQueries.AddNodesBatteryLevelPercentColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "voltage", SchemaQueries.AddNodesVoltageColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "channel_utilization", SchemaQueries.AddNodesChannelUtilizationColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "air_util_tx", SchemaQueries.AddNodesAirUtilTxColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "uptime_seconds", SchemaQueries.AddNodesUptimeSecondsColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "temperature_celsius", SchemaQueries.AddNodesTemperatureCelsiusColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "relative_humidity", SchemaQueries.AddNodesRelativeHumidityColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "barometric_pressure", SchemaQueries.AddNodesBarometricPressureColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "last_heard_channel", SchemaQueries.AddNodesLastHeardChannelColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "broker_server", SchemaQueries.AddNodesBrokerServerColumn, cancellationToken);
+        await EnsureColumnAsync(connection, columnNames, "workspace_id", SchemaQueries.AddNodesWorkspaceIdColumn, cancellationToken);
 
         await connection.ExecuteAsync(
             new CommandDefinition(
@@ -186,7 +250,53 @@ internal sealed class SqliteDatabaseInitializer
 
         await connection.ExecuteAsync(
             new CommandDefinition(
-                SchemaQueries.CreateNodesLastHeardChannelIndex,
+                SchemaQueries.BackfillNodesWorkspaceId,
+                new
+                {
+                    WorkspaceId = WorkspaceConstants.DefaultWorkspaceId
+                },
+                cancellationToken: cancellationToken));
+
+        var hasCompositePrimaryKey =
+            columns.Any(column => string.Equals(column.Name, "workspace_id", StringComparison.OrdinalIgnoreCase) && column.Pk > 0) &&
+            columns.Any(column => string.Equals(column.Name, "node_id", StringComparison.OrdinalIgnoreCase) && column.Pk > 0);
+
+        if (!hasCompositePrimaryKey)
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.DropNodesLegacyTable,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.RenameNodesToLegacy,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.RecreateNodesWithWorkspace,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.CopyNodesFromLegacy,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.DropNodesLegacyTable,
+                    cancellationToken: cancellationToken));
+        }
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateNodesWorkspaceLastHeardAtIndex,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.CreateNodesWorkspaceLastHeardChannelIndex,
                 cancellationToken: cancellationToken));
     }
 
@@ -247,6 +357,49 @@ internal sealed class SqliteDatabaseInitializer
             "entity_key",
             SchemaQueries.AddProjectionChangeLogEntityKeyColumn,
             cancellationToken);
+    }
+
+    private static async Task MigrateRuntimePipelineStatusAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(
+                new CommandDefinition(
+                    SchemaQueries.GetRuntimePipelineStatusColumns,
+                    cancellationToken: cancellationToken)))
+            .ToList();
+
+        var columnNames = columns
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var hasWorkspaceIdPrimaryKey = columns.Any(
+            column => string.Equals(column.Name, "workspace_id", StringComparison.OrdinalIgnoreCase) && column.Pk > 0);
+
+        if (columnNames.Contains("workspace_id") && hasWorkspaceIdPrimaryKey)
+        {
+            return;
+        }
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropRuntimePipelineStatusLegacyTable,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.RenameRuntimePipelineStatusToLegacy,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.RecreateRuntimePipelineStatusWithWorkspace,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropRuntimePipelineStatusLegacyTable,
+                cancellationToken: cancellationToken));
     }
 
     private static async Task MigrateBrokerServerProfilesAsync(
@@ -314,12 +467,14 @@ internal sealed class SqliteDatabaseInitializer
             .Select(column => column.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        var hasWorkspaceIdColumn = columnNames.Contains("workspace_id");
         var hasBrokerServerColumn = columnNames.Contains("broker_server");
         var hasCompositePrimaryKey =
+            columns.Any(column => string.Equals(column.Name, "workspace_id", StringComparison.OrdinalIgnoreCase) && column.Pk > 0) &&
             columns.Any(column => string.Equals(column.Name, "broker_server", StringComparison.OrdinalIgnoreCase) && column.Pk > 0) &&
             columns.Any(column => string.Equals(column.Name, "topic_pattern", StringComparison.OrdinalIgnoreCase) && column.Pk > 0);
 
-        if (hasBrokerServerColumn && hasCompositePrimaryKey)
+        if (hasWorkspaceIdColumn && hasBrokerServerColumn && hasCompositePrimaryKey)
         {
             await connection.ExecuteAsync(
                 new CommandDefinition(
@@ -352,6 +507,7 @@ internal sealed class SqliteDatabaseInitializer
                 copyQuery,
                 new
                 {
+                    WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                     BrokerServer = fallbackBrokerServer
                 },
                 cancellationToken: cancellationToken));

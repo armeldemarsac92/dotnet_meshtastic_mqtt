@@ -227,8 +227,13 @@
         await messagesTask;
     }
 
-    private Task HandleServerSelectionChangedAsync()
+    private Task HandleServerSelectionChangedAsync(string workspaceId)
     {
+        if (!string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return Task.CompletedTask;
+        }
+
         return InvokeAsync(StateHasChanged);
     }
 

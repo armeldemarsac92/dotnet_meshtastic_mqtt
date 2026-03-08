@@ -9,7 +9,7 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
 {
     private readonly object _sync = new();
     private readonly BrokerRuntimeSnapshot _defaultSnapshot;
-    private RuntimePipelineSnapshot _pipelineSnapshot = new();
+    private readonly Dictionary<string, RuntimePipelineSnapshot> _pipelineSnapshotsByWorkspace = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BrokerRuntimeSnapshot> _snapshotsByWorkspace = new(StringComparer.Ordinal);
 
     public InMemoryBrokerRuntimeRegistry(IOptions<BrokerOptions> brokerOptions)
@@ -48,21 +48,26 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
         }
     }
 
-    public RuntimePipelineSnapshot GetPipelineSnapshot()
+    public RuntimePipelineSnapshot GetPipelineSnapshot(string workspaceId)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
+
         lock (_sync)
         {
-            return Clone(_pipelineSnapshot);
+            return _pipelineSnapshotsByWorkspace.TryGetValue(workspaceId, out var snapshot)
+                ? Clone(snapshot)
+                : new RuntimePipelineSnapshot();
         }
     }
 
-    public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+    public void UpdatePipelineSnapshot(string workspaceId, RuntimePipelineSnapshot snapshot)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
         ArgumentNullException.ThrowIfNull(snapshot);
 
         lock (_sync)
         {
-            _pipelineSnapshot = Clone(snapshot);
+            _pipelineSnapshotsByWorkspace[workspaceId] = Clone(snapshot);
         }
     }
 

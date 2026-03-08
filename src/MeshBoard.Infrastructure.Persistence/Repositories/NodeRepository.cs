@@ -40,12 +40,17 @@ internal sealed class NodeRepository : INodeRepository
     public async Task<NodeSummary?> GetByIdAsync(string nodeId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
 
         _logger.LogDebug("Attempting to fetch node by id {NodeId}", nodeId);
 
         var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
             NodeQueries.SelectNodeById,
-            new { NodeId = nodeId },
+            new
+            {
+                WorkspaceId = workspaceId,
+                NodeId = nodeId
+            },
             cancellationToken);
 
         return sqlResponses.MapToNodes().FirstOrDefault();
@@ -59,10 +64,12 @@ internal sealed class NodeRepository : INodeRepository
         _logger.LogDebug("Attempting to fetch located nodes with take {Take}", take);
 
         var normalizedSearchText = searchText?.Trim() ?? string.Empty;
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
         var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
             NodeQueries.SelectLocatedNodes,
             new
             {
+                WorkspaceId = workspaceId,
                 SearchText = normalizedSearchText,
                 SearchPattern = $"%{normalizedSearchText}%",
                 Take = take
@@ -100,11 +107,20 @@ internal sealed class NodeRepository : INodeRepository
     public async Task UpsertAsync(UpsertObservedNodeRequest request, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Attempting to upsert observed node: {NodeId}", request.NodeId);
+        var workspaceId = ResolveWorkspaceId(request.WorkspaceId);
+        request.WorkspaceId = workspaceId;
 
         await _dbContext.ExecuteAsync(
             NodeQueries.UpsertNode,
             request.ToSqlRequest(),
             cancellationToken);
+    }
+
+    private string ResolveWorkspaceId(string? workspaceId)
+    {
+        return string.IsNullOrWhiteSpace(workspaceId)
+            ? _workspaceContextAccessor.GetWorkspaceId()
+            : workspaceId.Trim();
     }
 
     private static DynamicParameters CreateQueryParameters(NodeQuery query, string workspaceId)

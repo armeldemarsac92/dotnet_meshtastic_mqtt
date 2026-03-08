@@ -69,7 +69,7 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     {
         var workspaceId = GetWorkspaceId();
         var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot(workspaceId);
-        var pipelineSnapshot = _brokerRuntimeRegistry.GetPipelineSnapshot();
+        var pipelineSnapshot = _brokerRuntimeRegistry.GetPipelineSnapshot(workspaceId);
         var activeServerAddress = string.IsNullOrWhiteSpace(runtimeSnapshot.ActiveServerAddress)
             ? $"{_fallbackBrokerOptions.Host}:{_fallbackBrokerOptions.Port}"
             : runtimeSnapshot.ActiveServerAddress;

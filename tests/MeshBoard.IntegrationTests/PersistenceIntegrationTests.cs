@@ -213,6 +213,45 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task Initialization_ShouldNotSeedLegacyDefaultWorkspace_WhenDisabled()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: false,
+                seedLegacyDefaultWorkspace: false);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var profileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+                var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
+
+                var legacyProfiles = await profileRepository.GetAllAsync(WorkspaceConstants.DefaultWorkspaceId);
+                var legacyPresets = await topicPresetRepository.GetAllAsync(
+                    WorkspaceConstants.DefaultWorkspaceId,
+                    "mqtt.meshtastic.org:1883");
+
+                Assert.Empty(legacyProfiles);
+                Assert.Empty(legacyPresets);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task RetentionService_ShouldDeleteMessagesOutsideRetentionWindow()
     {
         var databasePath = CreateTemporaryDatabasePath();
@@ -1278,6 +1317,119 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task MessageAndNodeReadModels_ShouldBeScopedPerWorkspace()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                await using var scopeA = providerA.CreateAsyncScope();
+                var messageRepositoryA = scopeA.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var nodeRepositoryA = scopeA.ServiceProvider.GetRequiredService<INodeRepository>();
+                var messageServiceA = scopeA.ServiceProvider.GetRequiredService<IMessageService>();
+                var nodeServiceA = scopeA.ServiceProvider.GetRequiredService<INodeService>();
+
+                await nodeRepositoryA.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!shared-node",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        ShortName = "WA",
+                        LongName = "Workspace A Node",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 6, 10, 0, 0, TimeSpan.Zero),
+                        LastHeardChannel = "EU_433/Fr_Balise"
+                    });
+
+                var insertedA = await messageRepositoryA.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        MessageKey = "shared-message-key",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        Topic = "msh/EU_433/2/e/Fr_Balise/!shared-node",
+                        PacketType = "Text Message",
+                        FromNodeId = "!shared-node",
+                        PayloadPreview = "Workspace A payload",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 6, 10, 0, 0, TimeSpan.Zero)
+                    });
+
+                await using var scopeB = providerB.CreateAsyncScope();
+                var messageRepositoryB = scopeB.ServiceProvider.GetRequiredService<IMessageRepository>();
+                var nodeRepositoryB = scopeB.ServiceProvider.GetRequiredService<INodeRepository>();
+                var messageServiceB = scopeB.ServiceProvider.GetRequiredService<IMessageService>();
+                var nodeServiceB = scopeB.ServiceProvider.GetRequiredService<INodeService>();
+
+                await nodeRepositoryB.UpsertAsync(
+                    new UpsertObservedNodeRequest
+                    {
+                        NodeId = "!shared-node",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        ShortName = "WB",
+                        LongName = "Workspace B Node",
+                        LastHeardAtUtc = new DateTimeOffset(2026, 3, 6, 11, 0, 0, TimeSpan.Zero),
+                        LastHeardChannel = "EU_433/Fr_Balise"
+                    });
+
+                var insertedB = await messageRepositoryB.AddAsync(
+                    new SaveObservedMessageRequest
+                    {
+                        MessageKey = "shared-message-key",
+                        BrokerServer = "mqtt.shared.example.org:1883",
+                        Topic = "msh/EU_433/2/e/Fr_Balise/!shared-node",
+                        PacketType = "Text Message",
+                        FromNodeId = "!shared-node",
+                        PayloadPreview = "Workspace B payload",
+                        IsPrivate = false,
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 6, 11, 0, 0, TimeSpan.Zero)
+                    });
+
+                Assert.True(insertedA);
+                Assert.True(insertedB);
+
+                var workspaceANode = await nodeServiceA.GetNodeById("!shared-node");
+                var workspaceBNode = await nodeServiceB.GetNodeById("!shared-node");
+                var workspaceAMessages = await messageServiceA.GetRecentMessages(take: 10);
+                var workspaceBMessages = await messageServiceB.GetRecentMessages(take: 10);
+
+                Assert.NotNull(workspaceANode);
+                Assert.NotNull(workspaceBNode);
+                Assert.Equal("WA", workspaceANode!.ShortName);
+                Assert.Equal("WB", workspaceBNode!.ShortName);
+
+                var messageA = Assert.Single(workspaceAMessages);
+                var messageB = Assert.Single(workspaceBMessages);
+                Assert.Equal("Workspace A payload", messageA.PayloadPreview);
+                Assert.Equal("Workspace B payload", messageB.PayloadPreview);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task SubscriptionIntents_ShouldBeScopedByWorkspaceAndProfile()
     {
         var databasePath = CreateTemporaryDatabasePath();
@@ -1784,6 +1936,7 @@ public sealed class PersistenceIntegrationTests
                         TopicFilters = ["msh/EU_868/2/e/MediumFast/#"]
                     });
                 runtimeRegistryA.UpdatePipelineSnapshot(
+                    "workspace-a",
                     new RuntimePipelineSnapshot
                     {
                         InboundQueueCapacity = 2048,
@@ -1798,7 +1951,8 @@ public sealed class PersistenceIntegrationTests
 
                 var workspaceAStatus = runtimeRegistryB.GetSnapshot("workspace-a");
                 var workspaceBStatus = runtimeRegistryB.GetSnapshot("workspace-b");
-                var pipelineStatus = runtimeRegistryB.GetPipelineSnapshot();
+                var pipelineStatusA = runtimeRegistryB.GetPipelineSnapshot("workspace-a");
+                var pipelineStatusB = runtimeRegistryB.GetPipelineSnapshot("workspace-b");
 
                 Assert.Equal(activeProfileId, workspaceAStatus.ActiveServerProfileId);
                 Assert.Equal("Workspace A runtime", workspaceAStatus.ActiveServerName);
@@ -1814,13 +1968,15 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal("Disconnected", workspaceBStatus.LastStatusMessage);
                 Assert.Equal(["msh/EU_868/2/e/MediumFast/#"], workspaceBStatus.TopicFilters);
 
-                Assert.Equal(2048, pipelineStatus.InboundQueueCapacity);
-                Assert.Equal(2, pipelineStatus.InboundWorkerCount);
-                Assert.Equal(5, pipelineStatus.InboundQueueDepth);
-                Assert.Equal(900, pipelineStatus.InboundOldestMessageAgeMilliseconds);
-                Assert.Equal(80, pipelineStatus.InboundEnqueuedCount);
-                Assert.Equal(75, pipelineStatus.InboundDequeuedCount);
-                Assert.Equal(3, pipelineStatus.InboundDroppedCount);
+                Assert.Equal(2048, pipelineStatusA.InboundQueueCapacity);
+                Assert.Equal(2, pipelineStatusA.InboundWorkerCount);
+                Assert.Equal(5, pipelineStatusA.InboundQueueDepth);
+                Assert.Equal(900, pipelineStatusA.InboundOldestMessageAgeMilliseconds);
+                Assert.Equal(80, pipelineStatusA.InboundEnqueuedCount);
+                Assert.Equal(75, pipelineStatusA.InboundDequeuedCount);
+                Assert.Equal(3, pipelineStatusA.InboundDroppedCount);
+                Assert.Equal(0, pipelineStatusB.InboundQueueCapacity);
+                Assert.Equal(0, pipelineStatusB.InboundQueueDepth);
             }
             finally
             {
@@ -2324,6 +2480,101 @@ public sealed class PersistenceIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task TopicDiscovery_ShouldIsolateObservedTopicsPerWorkspace()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var providerA = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-a");
+            await using var providerB = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true,
+                workspaceId: "workspace-b");
+
+            var hostedServicesA = providerA.GetServices<IHostedService>().ToArray();
+            var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServicesA);
+            await StartHostedServicesAsync(hostedServicesB);
+
+            try
+            {
+                await using var scopeA = providerA.CreateAsyncScope();
+                var profilesA = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var discoveryA = scopeA.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+                var ingestionA = scopeA.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
+
+                var profileA = await profilesA.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Shared broker A",
+                        Host = "mqtt-shared.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await using var scopeB = providerB.CreateAsyncScope();
+                var profilesB = scopeB.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
+                var discoveryB = scopeB.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+
+                await profilesB.SaveServerProfile(
+                    new SaveBrokerServerProfileRequest
+                    {
+                        Name = "Shared broker B",
+                        Host = "mqtt-shared.example.org",
+                        Port = 1883,
+                        UseTls = false,
+                        Username = string.Empty,
+                        Password = string.Empty,
+                        DefaultTopicPattern = "msh/US/2/e/#",
+                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DownlinkTopic = "msh/US/2/json/mqtt/",
+                        EnableSend = true,
+                        IsActive = true
+                    });
+
+                await ingestionA.IngestEnvelope(
+                    new MeshtasticEnvelope
+                    {
+                        WorkspaceId = "workspace-a",
+                        BrokerServer = profileA.ServerAddress,
+                        Topic = "msh/EU_433/2/e/Fr_Balise/!abc12345",
+                        PacketType = "Text Message",
+                        PacketId = 0x00040001,
+                        PayloadPreview = "Workspace A only topic",
+                        FromNodeId = "!abc12345",
+                        ReceivedAtUtc = new DateTimeOffset(2026, 3, 5, 10, 0, 0, TimeSpan.Zero)
+                    });
+
+                var workspaceATopics = await discoveryA.GetDiscoveredTopics();
+                var workspaceBTopics = await discoveryB.GetDiscoveredTopics();
+
+                Assert.Contains(workspaceATopics, topic => topic.TopicPattern == "msh/EU_433/2/e/Fr_Balise/#");
+                Assert.DoesNotContain(workspaceBTopics, topic => topic.TopicPattern == "msh/EU_433/2/e/Fr_Balise/#");
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServicesB);
+                await StopHostedServicesAsync(hostedServicesA);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
     private static async Task SeedLegacyDatabaseAsync(string databasePath)
     {
         await using var connection = new SqliteConnection($"Data Source={databasePath}");
@@ -2397,13 +2648,15 @@ public sealed class PersistenceIntegrationTests
         bool includeApplicationServices,
         int messageRetentionDays = 30,
         TimeProvider? timeProvider = null,
-        string? workspaceId = null)
+        string? workspaceId = null,
+        bool seedLegacyDefaultWorkspace = true)
     {
         var settings = new Dictionary<string, string?>
         {
             [$"{PersistenceOptions.SectionName}:Provider"] = "SQLite",
             [$"{PersistenceOptions.SectionName}:ConnectionString"] = $"Data Source={databasePath}",
             [$"{PersistenceOptions.SectionName}:MessageRetentionDays"] = messageRetentionDays.ToString(),
+            [$"{PersistenceOptions.SectionName}:SeedLegacyDefaultWorkspace"] = seedLegacyDefaultWorkspace.ToString(),
             [$"{BrokerOptions.SectionName}:DefaultTopicPattern"] = "msh/US/2/e/#",
             [$"{BrokerOptions.SectionName}:DownlinkTopic"] = "msh/US/2/json/mqtt/"
         };
