@@ -446,11 +446,27 @@ function maybeFrameCamera(mapState, nodes, fitCameraToNodes) {
     mapState.didAutoFrame = true;
 }
 
-function triggerActivityPulses(mapState, activityNodeIds) {
-    const uniqueNodeIds = [...new Set(activityNodeIds ?? [])];
+function triggerActivityPulses(mapState, activityPulses) {
+    for (const activityPulse of activityPulses ?? []) {
+        const nodeId = activityPulse?.nodeId;
+        const pulseCount = Number.isFinite(Number(activityPulse?.pulseCount))
+            ? Math.max(1, Number(activityPulse.pulseCount))
+            : 1;
 
-    for (const nodeId of uniqueNodeIds) {
-        triggerActivityPulse(mapState, nodeId);
+        if (!nodeId) {
+            continue;
+        }
+
+        for (let pulseIndex = 0; pulseIndex < pulseCount; pulseIndex += 1) {
+            window.setTimeout(() => {
+                const currentState = mapStates.get(mapState.containerId);
+                if (!currentState || currentState.viewer.isDestroyed()) {
+                    return;
+                }
+
+                triggerActivityPulse(currentState, nodeId);
+            }, pulseIndex * 180);
+        }
     }
 }
 
@@ -510,7 +526,7 @@ function triggerActivityPulse(mapState, nodeId) {
     requestAnimationFrame(animatePulse);
 }
 
-export async function renderNodeMap(containerId, nodes, activityNodeIds, fitCameraToNodes, dotNetCallbackRef) {
+export async function renderNodeMap(containerId, nodes, activityPulses, fitCameraToNodes, dotNetCallbackRef) {
     await ensureCesium();
 
     const mapState = getOrCreateMapState(containerId, dotNetCallbackRef);
@@ -522,7 +538,7 @@ export async function renderNodeMap(containerId, nodes, activityNodeIds, fitCame
     syncNodeEntities(mapState, normalizedNodes);
     syncHoverState(mapState);
     maybeFrameCamera(mapState, normalizedNodes, Boolean(fitCameraToNodes));
-    triggerActivityPulses(mapState, activityNodeIds);
+    triggerActivityPulses(mapState, activityPulses);
     mapState.viewer.scene.requestRender();
 }
 

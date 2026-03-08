@@ -37,12 +37,46 @@
             </button>
         </div>
 
-        <div class="self-end space-y-1 text-sm text-cinder-800/82">
+        <div class="space-y-3 self-end text-sm text-cinder-800/82">
             <p>@GetMapSummaryText()</p>
             @if (!string.IsNullOrWhiteSpace(_statusMessage))
             {
                 <p class="text-xs text-cinder-800/72">@_statusMessage</p>
             }
+
+            <div class="space-y-2">
+                <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Visible channels</p>
+
+                @if (_channelLegendEntries.Count == 0)
+                {
+                    <p class="text-xs text-cinder-800/70">No visible channel cohort in the current view.</p>
+                }
+                else
+                {
+                    <div class="flex flex-wrap gap-2">
+                        @foreach (var entry in _channelLegendEntries)
+                        {
+                            <button type="button"
+                                    class="inline-flex cursor-pointer items-center gap-2 rounded-full border border-sand-300/80 bg-sand-100/70 px-3 py-1 text-[0.72rem] font-medium text-cinder-900"
+                                    @onclick="() => OpenChannelDetailsAsync(entry.Channel)">
+                                <span class="h-2.5 w-2.5 rounded-full ring-1 ring-cinder-950/20"
+                                      style="background-color:@entry.ColorCss"></span>
+                                <span>@entry.Channel</span>
+                                <span class="text-cinder-700/75">@entry.NodeCount</span>
+                            </button>
+                        }
+                    </div>
+
+                    @if (_hiddenChannelLegendCount > 0)
+                    {
+                        <p class="text-[0.72rem] text-cinder-800/68">+ @_hiddenChannelLegendCount more channel cohorts in view.</p>
+                    }
+                }
+            </div>
+
+            <p class="text-[0.72rem] text-cinder-800/64">
+                Hover links show shared-channel cohorts, not proven radio paths.
+            </p>
         </div>
     </section>
 
@@ -71,8 +105,10 @@
     private bool _isMapRenderPending;
     private IJSObjectReference? _mapModule;
     private int _locatedNodeCount;
-    private readonly HashSet<string> _pendingActivityNodeIds = new(StringComparer.Ordinal);
-    private IReadOnlyCollection<string> _activityNodeIds = [];
+    private readonly Dictionary<string, int> _pendingActivityPulseCounts = new(StringComparer.Ordinal);
+    private IReadOnlyCollection<MapNodeActivity> _activityPulses = [];
+    private IReadOnlyCollection<ChannelLegendEntry> _channelLegendEntries = [];
+    private int _hiddenChannelLegendCount;
     private bool _shouldFitMapToNodes = true;
     private int _refreshRequestVersion;
     private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
@@ -151,7 +187,8 @@
 
         if (!string.IsNullOrWhiteSpace(change.EntityKey))
         {
-            _pendingActivityNodeIds.Add(change.EntityKey);
+            _pendingActivityPulseCounts.TryGetValue(change.EntityKey, out var pulseCount);
+            _pendingActivityPulseCounts[change.EntityKey] = pulseCount + 1;
         }
 
         return ScheduleRealtimeRefreshAsync();
@@ -275,8 +312,16 @@
             _locatedNodeCount = _nodesWithLocation.Count;
             ApplyMapPoints();
             _shouldFitMapToNodes = fitMapToNodes;
-            _activityNodeIds = _pendingActivityNodeIds.Count == 0 ? [] : _pendingActivityNodeIds.ToArray();
-            _pendingActivityNodeIds.Clear();
+            _activityPulses = _pendingActivityPulseCounts.Count == 0
+                ? []
+                : _pendingActivityPulseCounts
+                    .Select(entry => new MapNodeActivity
+                    {
+                        NodeId = entry.Key,
+                        PulseCount = entry.Value
+                    })
+                    .ToList();
+            _pendingActivityPulseCounts.Clear();
             _statusMessage = string.IsNullOrWhiteSpace(normalizedSearchText)
                 ? $"Loaded {_locatedNodeCount} nodes with coordinates."
                 : $"Loaded {_locatedNodeCount} matching nodes with coordinates.";
@@ -294,7 +339,9 @@
             _nodesWithLocation = [];
             _visibleMapNodes = [];
             _locatedNodeCount = 0;
-            _activityNodeIds = [];
+            _activityPulses = [];
+            _channelLegendEntries = [];
+            _hiddenChannelLegendCount = 0;
             _statusMessage = $"Map load failed: {exception.Message}";
             _isMapRenderPending = true;
         }
@@ -323,7 +370,28 @@
             })
             .ToList();
 
+        ApplyChannelLegend();
         _isMapRenderPending = true;
+    }
+
+    private void ApplyChannelLegend()
+    {
+        var channelEntries = _visibleMapNodes
+            .Where(node => !string.IsNullOrWhiteSpace(node.Channel))
+            .GroupBy(node => node.Channel!, StringComparer.Ordinal)
+            .Select(group => new ChannelLegendEntry
+            {
+                Channel = group.Key,
+                ColorCss = GetChannelColorCss(group.Key),
+                NodeCount = group.Count()
+            })
+            .OrderByDescending(entry => entry.NodeCount)
+            .ThenBy(entry => entry.Channel, StringComparer.Ordinal)
+            .ToList();
+
+        const int maxVisibleLegendEntries = 8;
+        _channelLegendEntries = channelEntries.Take(maxVisibleLegendEntries).ToList();
+        _hiddenChannelLegendCount = Math.Max(channelEntries.Count - maxVisibleLegendEntries, 0);
     }
 
     private async Task RenderMapAsync()
@@ -335,11 +403,11 @@
             "renderNodeMap",
             MapElementId,
             _visibleMapNodes,
-            _activityNodeIds,
+            _activityPulses,
             _shouldFitMapToNodes,
             _mapCallbackReference);
 
-        _activityNodeIds = [];
+        _activityPulses = [];
         _shouldFitMapToNodes = false;
     }
 
@@ -370,6 +438,42 @@
         return string.IsNullOrWhiteSpace(_searchText)
             ? $"Showing {_visibleMapNodes.Count} located nodes."
             : $"Showing {_visibleMapNodes.Count} matching located nodes.";
+    }
+
+    private static string GetChannelColorCss(string channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+        {
+            return "#6bb6ef";
+        }
+
+        var hash = 0;
+
+        foreach (var character in channel)
+        {
+            hash = ((hash << 5) - hash) + character;
+        }
+
+        var hue = Math.Abs(hash % 360);
+        return $"hsl({hue} 72% 58%)";
+    }
+
+    private sealed class ChannelLegendEntry
+    {
+        public required string Channel { get; set; }
+
+        public required string ColorCss { get; set; }
+
+        public required int NodeCount { get; set; }
+    }
+
+    private sealed class MapNodeActivity
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("nodeId")]
+        public required string NodeId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("pulseCount")]
+        public required int PulseCount { get; set; }
     }
 
     private sealed class MapNodePoint
