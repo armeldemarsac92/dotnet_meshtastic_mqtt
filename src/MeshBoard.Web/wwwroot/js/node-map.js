@@ -86,7 +86,7 @@ function resolveBatteryColor(batteryLevelPercent) {
     return { stroke: "#317e49", fill: "#73c98f" };
 }
 
-function createViewer(container, mapOptions) {
+function createViewer(container) {
     const Cesium = window.Cesium;
     const viewer = new Cesium.Viewer(container, {
         animation: false,
@@ -104,7 +104,9 @@ function createViewer(container, mapOptions) {
     });
 
     viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(createImageryProvider(mapOptions));
+    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+        url: "https://tile.openstreetmap.org/"
+    }));
 
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
@@ -129,23 +131,7 @@ function createViewer(container, mapOptions) {
     return viewer;
 }
 
-function createImageryProvider(mapOptions) {
-    const Cesium = window.Cesium;
-
-    if (mapOptions?.isMapboxConfigured) {
-        return new Cesium.MapboxStyleImageryProvider({
-            accessToken: mapOptions.mapboxAccessToken,
-            styleId: mapOptions.mapboxStyleId,
-            username: mapOptions.mapboxUsername
-        });
-    }
-
-    return new Cesium.OpenStreetMapImageryProvider({
-        url: "https://tile.openstreetmap.org/"
-    });
-}
-
-function getOrCreateMapState(containerId, mapOptions, dotNetCallbackRef) {
+function getOrCreateMapState(containerId, dotNetCallbackRef) {
     const existingState = mapStates.get(containerId);
     if (existingState) {
         existingState.dotNetCallbackRef = dotNetCallbackRef;
@@ -157,7 +143,7 @@ function getOrCreateMapState(containerId, mapOptions, dotNetCallbackRef) {
         return null;
     }
 
-    const viewer = createViewer(container, mapOptions);
+    const viewer = createViewer(container);
     const mapState = {
         containerId,
         dotNetCallbackRef,
@@ -542,10 +528,10 @@ function triggerActivityPulse(mapState, nodeId) {
     requestAnimationFrame(animatePulse);
 }
 
-export async function renderNodeMap(containerId, nodes, activityPulses, mapOptions, fitCameraToNodes, dotNetCallbackRef) {
+export async function renderNodeMap(containerId, nodes, activityPulses, fitCameraToNodes, dotNetCallbackRef) {
     await ensureCesium();
 
-    const mapState = getOrCreateMapState(containerId, mapOptions, dotNetCallbackRef);
+    const mapState = getOrCreateMapState(containerId, dotNetCallbackRef);
     if (!mapState) {
         return;
     }

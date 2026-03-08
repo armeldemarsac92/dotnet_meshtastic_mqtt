@@ -1,5 +1,4 @@
 using MeshBoard.Application.DependencyInjection;
-using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Meshtastic.DependencyInjection;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using MeshBoard.Web.Components;
@@ -8,7 +7,6 @@ using Microsoft.AspNetCore.Components.Server.Circuits;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<MapOptions>(builder.Configuration.GetSection("Map"));
 builder.Services.AddApplicationServices();
 builder.Services.AddMeshtasticInfrastructure(builder.Configuration);
 builder.Services.AddPersistenceInfrastructure(builder.Configuration);
