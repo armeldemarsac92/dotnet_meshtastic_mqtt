@@ -74,6 +74,25 @@ public sealed class NodeServiceTests
         Assert.Equal(10_000, repository.LastLocatedTake);
     }
 
+    [Fact]
+    public async Task GetLocatedNodes_ShouldForwardSearchText()
+    {
+        var repository = new FakeNodeRepository(
+        [
+            new NodeSummary
+            {
+                NodeId = "!abc12345",
+                LastKnownLatitude = 48.0,
+                LastKnownLongitude = 2.0
+            }
+        ]);
+        var service = new NodeService(repository, NullLogger<NodeService>.Instance);
+
+        await service.GetLocatedNodes(" Alpha ");
+
+        Assert.Equal(" Alpha ", repository.LastLocatedSearchText);
+    }
+
     private sealed class FakeNodeRepository : INodeRepository
     {
         private readonly IReadOnlyCollection<NodeSummary> _nodes;
@@ -86,6 +105,8 @@ public sealed class NodeServiceTests
         public int LastTake { get; private set; }
 
         public int LastLocatedTake { get; private set; }
+
+        public string? LastLocatedSearchText { get; private set; }
 
         public string? LastNodeId { get; private set; }
 
@@ -105,6 +126,7 @@ public sealed class NodeServiceTests
             int take,
             CancellationToken cancellationToken = default)
         {
+            LastLocatedSearchText = searchText;
             LastLocatedTake = take;
 
             IReadOnlyCollection<NodeSummary> nodes = _nodes

@@ -21,7 +21,7 @@
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search on map</span>
             <input @bind="_searchText"
                    @bind:event="oninput"
-                   @bind:after="ApplyClientFilterAsync"
+                   @bind:after="ScheduleSearchRefreshAsync"
                    class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                    placeholder="Node id, short name, long name, or channel" />
         </label>
@@ -36,7 +36,7 @@
         </div>
 
         <div class="self-end space-y-1 text-sm text-cinder-800/82">
-            <p>Showing @_visibleMapNodes.Count of @_locatedNodeCount located nodes.</p>
+            <p>@GetMapSummaryText()</p>
             @if (!string.IsNullOrWhiteSpace(_statusMessage))
             {
                 <p class="text-xs text-cinder-800/72">@_statusMessage</p>
@@ -63,11 +63,14 @@
 
 @code {
     private const string MapElementId = "meshboard-node-map";
+    private readonly CancellationTokenSource _componentCancellationTokenSource = new();
     private DotNetObjectReference<Map>? _mapCallbackReference;
     private bool _isLoading;
     private bool _isMapRenderPending;
     private IJSObjectReference? _mapModule;
     private int _locatedNodeCount;
+    private int _refreshRequestVersion;
+    private CancellationTokenSource? _searchDebounceCancellationTokenSource;
     private string _searchText = string.Empty;
     private string? _selectedChannel;
     private string? _selectedNodeId;
@@ -97,10 +100,14 @@
 
     public async ValueTask DisposeAsync()
     {
+        _componentCancellationTokenSource.Cancel();
+        _searchDebounceCancellationTokenSource?.Cancel();
+        _searchDebounceCancellationTokenSource?.Dispose();
         _mapCallbackReference?.Dispose();
 
         if (_mapModule is null)
         {
+            _componentCancellationTokenSource.Dispose();
             return;
         }
 
@@ -112,6 +119,10 @@
         catch (JSDisconnectedException)
         {
         }
+        finally
+        {
+            _componentCancellationTokenSource.Dispose();
+        }
     }
 
     [JSInvokable]
@@ -121,10 +132,31 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task ApplyClientFilterAsync()
+    private async Task ScheduleSearchRefreshAsync()
     {
-        ApplyClientFilter();
-        await InvokeAsync(StateHasChanged);
+        _searchDebounceCancellationTokenSource?.Cancel();
+        _searchDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_componentCancellationTokenSource.Token);
+        _searchDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250), debounceCancellationTokenSource.Token);
+            await RefreshNodesAsync();
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_searchDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _searchDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
     }
 
     private async Task CloseChannelDetailsAsync()
@@ -160,18 +192,39 @@
 
     private async Task RefreshNodesAsync()
     {
+        var requestVersion = ++_refreshRequestVersion;
+        var normalizedSearchText = _searchText.Trim();
         _isLoading = true;
         _statusMessage = null;
 
         try
         {
-            _nodesWithLocation = await NodeService.GetLocatedNodes();
+            var nodes = await NodeService.GetLocatedNodes(
+                normalizedSearchText,
+                cancellationToken: _componentCancellationTokenSource.Token);
+
+            if (requestVersion != _refreshRequestVersion)
+            {
+                return;
+            }
+
+            _nodesWithLocation = nodes;
             _locatedNodeCount = _nodesWithLocation.Count;
-            ApplyClientFilter();
-            _statusMessage = $"Loaded {_locatedNodeCount} nodes with coordinates.";
+            ApplyMapPoints();
+            _statusMessage = string.IsNullOrWhiteSpace(normalizedSearchText)
+                ? $"Loaded {_locatedNodeCount} nodes with coordinates."
+                : $"Loaded {_locatedNodeCount} matching nodes with coordinates.";
+        }
+        catch (OperationCanceledException) when (_componentCancellationTokenSource.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
+            if (requestVersion != _refreshRequestVersion)
+            {
+                return;
+            }
+
             _nodesWithLocation = [];
             _visibleMapNodes = [];
             _locatedNodeCount = 0;
@@ -180,25 +233,17 @@
         }
         finally
         {
-            _isLoading = false;
-            await InvokeAsync(StateHasChanged);
+            if (requestVersion == _refreshRequestVersion)
+            {
+                _isLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
-    private void ApplyClientFilter()
+    private void ApplyMapPoints()
     {
-        IEnumerable<NodeSummary> filteredNodes = _nodesWithLocation;
-
-        if (!string.IsNullOrWhiteSpace(_searchText))
-        {
-            filteredNodes = filteredNodes.Where(node =>
-                node.NodeId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
-                (node.ShortName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (node.LongName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (node.LastHeardChannel?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-
-        _visibleMapNodes = filteredNodes
+        _visibleMapNodes = _nodesWithLocation
             .Where(node => node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue)
             .Select(node => new MapNodePoint
             {
@@ -246,6 +291,13 @@
         region = segments[0];
         channel = segments[1];
         return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
+    private string GetMapSummaryText()
+    {
+        return string.IsNullOrWhiteSpace(_searchText)
+            ? $"Showing {_visibleMapNodes.Count} located nodes."
+            : $"Showing {_visibleMapNodes.Count} matching located nodes.";
     }
 
     private sealed class MapNodePoint

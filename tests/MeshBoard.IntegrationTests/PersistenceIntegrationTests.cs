@@ -671,6 +671,7 @@ public sealed class PersistenceIntegrationTests
 
                 var node = await nodeService.GetNodeById("!loc00001");
                 var locatedNodes = await nodeService.GetLocatedNodes();
+                var searchedLocatedNodes = await nodeService.GetLocatedNodes("locator");
 
                 Assert.NotNull(node);
                 Assert.Equal("Locator", node.LongName);
@@ -678,6 +679,8 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal("!loc00001", locatedNode.NodeId);
                 Assert.Equal(48.8566, locatedNode.LastKnownLatitude);
                 Assert.Equal(2.3522, locatedNode.LastKnownLongitude);
+                var searchedLocatedNode = Assert.Single(searchedLocatedNodes);
+                Assert.Equal("!loc00001", searchedLocatedNode.NodeId);
             }
             finally
             {
