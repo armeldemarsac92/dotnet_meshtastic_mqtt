@@ -1,4 +1,6 @@
+using MeshBoard.Application.Caching;
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Contracts.Realtime;
 using Microsoft.Extensions.Hosting;
 
 namespace MeshBoard.Web.State;
@@ -12,16 +14,19 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
     private readonly ILogger<ProjectionChangeDispatchHostedService> _logger;
     private readonly ProjectionChangeNotifier _projectionChangeNotifier;
     private readonly IProjectionChangeRepository _projectionChangeRepository;
+    private readonly IReadModelCacheInvalidator _readModelCacheInvalidator;
     private readonly TimeProvider _timeProvider;
 
     public ProjectionChangeDispatchHostedService(
         IProjectionChangeRepository projectionChangeRepository,
         ProjectionChangeNotifier projectionChangeNotifier,
+        IReadModelCacheInvalidator readModelCacheInvalidator,
         TimeProvider timeProvider,
         ILogger<ProjectionChangeDispatchHostedService> logger)
     {
         _projectionChangeRepository = projectionChangeRepository;
         _projectionChangeNotifier = projectionChangeNotifier;
+        _readModelCacheInvalidator = readModelCacheInvalidator;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -71,6 +76,7 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
 
             foreach (var change in changes)
             {
+                InvalidateReadModelCaches(change);
                 await _projectionChangeNotifier.NotifyChangedAsync(change);
                 lastSeenId = Math.Max(lastSeenId, change.Id);
             }
@@ -79,6 +85,30 @@ internal sealed class ProjectionChangeDispatchHostedService : BackgroundService
             {
                 return lastSeenId;
             }
+        }
+    }
+
+    private void InvalidateReadModelCaches(ProjectionChangeEvent change)
+    {
+        if (string.IsNullOrWhiteSpace(change.WorkspaceId))
+        {
+            return;
+        }
+
+        switch (change.Kind)
+        {
+            case ProjectionChangeKind.MessageAdded:
+                _readModelCacheInvalidator.Invalidate(
+                    change.WorkspaceId,
+                    ReadModelCacheRegion.Dashboard,
+                    ReadModelCacheRegion.MessagePages);
+                break;
+            case ProjectionChangeKind.NodeUpdated:
+            case ProjectionChangeKind.RuntimeStatusChanged:
+                _readModelCacheInvalidator.Invalidate(
+                    change.WorkspaceId,
+                    ReadModelCacheRegion.Dashboard);
+                break;
         }
     }
 }

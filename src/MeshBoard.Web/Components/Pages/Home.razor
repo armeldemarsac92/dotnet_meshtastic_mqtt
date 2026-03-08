@@ -1,15 +1,11 @@
 @page "/"
 @implements IAsyncDisposable
 @inject IBrokerMonitorService BrokerMonitorService
-@inject IFavoriteNodeService FavoriteNodeService
-@inject IMessageService MessageService
-@inject INodeService NodeService
+@inject IHomeDashboardService HomeDashboardService
 @inject IWorkspaceContextAccessor WorkspaceContextAccessor
-@inject IOptions<BrokerOptions> BrokerConfiguration
 @inject IOptions<PersistenceOptions> PersistenceConfiguration
 @inject ProjectionChangeNotifier ProjectionChangeNotifier
 @inject ServerSelectionNotifier ServerSelectionNotifier
-@inject ITopicPresetService TopicPresetService
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -127,21 +123,15 @@
         return ValueTask.CompletedTask;
     }
 
-    private async Task LoadAsync(CancellationToken cancellationToken)
+    private async Task LoadAsync(CancellationToken cancellationToken, bool forceRefresh = false)
     {
-        _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+        var snapshot = await HomeDashboardService.GetSnapshot(forceRefresh, cancellationToken);
 
-        var topicPresetsTask = TopicPresetService.GetTopicPresets(cancellationToken);
-        var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes(cancellationToken);
-        var observedNodeCountTask = NodeService.GetNodesPage(offset: 0, take: 1, cancellationToken: cancellationToken);
-        var messagesTask = MessageService.GetRecentMessages(120, cancellationToken);
-
-        await Task.WhenAll(topicPresetsTask, favoriteNodesTask, observedNodeCountTask, messagesTask);
-
-        _topicPresets = await topicPresetsTask;
-        _favoriteNodes = await favoriteNodesTask;
-        _observedNodeCount = (await observedNodeCountTask).TotalCount;
-        _messages = await messagesTask;
+        _brokerStatus = snapshot.BrokerStatus;
+        _topicPresets = snapshot.TopicPresets;
+        _favoriteNodes = snapshot.FavoriteNodes;
+        _observedNodeCount = snapshot.ObservedNodeCount;
+        _messages = snapshot.Messages;
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -163,7 +153,7 @@
 
     private Task HandleServerSelectionChangedAsync()
     {
-        return ScheduleRealtimeRefreshAsync();
+        return ScheduleRealtimeRefreshAsync(forceRefresh: true);
     }
 
     private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
@@ -186,7 +176,7 @@
         return change.Kind is ProjectionChangeKind.MessageAdded or ProjectionChangeKind.NodeUpdated or ProjectionChangeKind.RuntimeStatusChanged;
     }
 
-    private async Task ScheduleRealtimeRefreshAsync()
+    private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)
     {
         _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
         _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
@@ -197,7 +187,7 @@
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await LoadAsync(debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token, forceRefresh);
             await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)

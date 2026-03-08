@@ -2,7 +2,7 @@
 @implements IAsyncDisposable
 @using MeshBoard.Web.State
 @inject IBrokerMonitorService BrokerMonitorService
-@inject IMessageService MessageService
+@inject ICachedMessagePageService CachedMessagePageService
 @inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject ProjectionChangeNotifier ProjectionChangeNotifier
 @inject ServerSelectionNotifier ServerSelectionNotifier
@@ -337,7 +337,7 @@
     private async Task HandleServerSelectionChangedAsync()
     {
         _currentPage = 1;
-        await LoadAsync(_cancellationTokenSource.Token);
+        await LoadAsync(_cancellationTokenSource.Token, forceRefresh: true);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -403,7 +403,7 @@
         return change.Kind is ProjectionChangeKind.MessageAdded or ProjectionChangeKind.NodeUpdated or ProjectionChangeKind.RuntimeStatusChanged;
     }
 
-    private async Task ScheduleRealtimeRefreshAsync()
+    private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)
     {
         _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
         _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
@@ -414,7 +414,7 @@
         try
         {
             await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await LoadAsync(debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token, forceRefresh);
             await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
@@ -431,7 +431,7 @@
         }
     }
 
-    private async Task LoadAsync(CancellationToken cancellationToken)
+    private async Task LoadAsync(CancellationToken cancellationToken, bool forceRefresh = false)
     {
         _brokerStatus = BrokerMonitorService.GetBrokerStatus();
         var requestVersion = ++_loadRequestVersion;
@@ -448,10 +448,11 @@
                 Visibility = _filters.Visibility
             };
 
-            var page = await MessageService.GetMessagesPage(
+            var page = await CachedMessagePageService.GetMessagesPage(
                 query,
                 offset: (_currentPage - 1) * _pageSize,
                 take: _pageSize,
+                forceRefresh: forceRefresh,
                 cancellationToken: cancellationToken);
 
             if (requestVersion != _loadRequestVersion)
@@ -462,10 +463,11 @@
             if (page.TotalCount > 0 && page.Items.Count == 0 && _currentPage > 1)
             {
                 _currentPage = GetLastPageNumber(page.TotalCount);
-                page = await MessageService.GetMessagesPage(
+                page = await CachedMessagePageService.GetMessagesPage(
                     query,
                     offset: (_currentPage - 1) * _pageSize,
                     take: _pageSize,
+                    forceRefresh: forceRefresh,
                     cancellationToken: cancellationToken);
 
                 if (requestVersion != _loadRequestVersion)
