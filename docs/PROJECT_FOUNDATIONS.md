@@ -4,6 +4,14 @@ This document is the working architecture and delivery reference for this reposi
 
 It exists so future agents can start coding without having to rediscover the core constraints, external facts, and design rules for the project.
 
+For planned remediation and scalability work, see `docs/ARCHITECTURE_REFACTOR_ROADMAP.md`.
+For product-direction decisions, see `docs/adr/0001-operating-model.md`.
+
+Historical note:
+
+- some sections below describe the current implementation or earlier local-first assumptions
+- the ADR and roadmap now define the intended future direction for multi-user web scale
+
 Date of latest verification: 2026-03-04
 
 ## Project Goal
@@ -14,7 +22,7 @@ Build a Blazor application that connects to the Meshtastic MQTT broker at `mqtt.
 - inspect discovered nodes
 - inspect live messages
 - mark nodes as favorites
-- persist user preferences locally
+- persist user or workspace preferences durably
 - send public and private messages when the connected Meshtastic setup supports downlink
 
 ## Verified External Facts
