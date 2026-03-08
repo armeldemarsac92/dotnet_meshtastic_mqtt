@@ -24,6 +24,29 @@ internal static class BrokerServerProfileQueries
         ORDER BY workspace_id COLLATE NOCASE ASC, created_at_utc DESC;
         """;
 
+    public static string GetAllActiveAcrossUserOwnedWorkspaces =>
+        """
+        SELECT
+            broker_server_profiles.workspace_id AS WorkspaceId,
+            broker_server_profiles.id AS Id,
+            broker_server_profiles.name AS Name,
+            broker_server_profiles.host AS Host,
+            broker_server_profiles.port AS Port,
+            broker_server_profiles.use_tls AS UseTls,
+            broker_server_profiles.username AS Username,
+            broker_server_profiles.password AS Password,
+            broker_server_profiles.default_topic_pattern AS DefaultTopicPattern,
+            broker_server_profiles.default_encryption_key_base64 AS DefaultEncryptionKeyBase64,
+            broker_server_profiles.downlink_topic AS DownlinkTopic,
+            broker_server_profiles.enable_send AS EnableSend,
+            broker_server_profiles.is_active AS IsActive,
+            broker_server_profiles.created_at_utc AS CreatedAtUtc
+        FROM broker_server_profiles
+        INNER JOIN users ON users.id = broker_server_profiles.workspace_id
+        WHERE broker_server_profiles.is_active = 1
+        ORDER BY broker_server_profiles.workspace_id COLLATE NOCASE ASC, broker_server_profiles.created_at_utc DESC;
+        """;
+
     public static string GetAll =>
         """
         SELECT

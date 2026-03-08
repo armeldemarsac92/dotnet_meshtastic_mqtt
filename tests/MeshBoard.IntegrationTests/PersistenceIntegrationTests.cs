@@ -1428,6 +1428,60 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task BrokerServerProfiles_ShouldReturnOnlyUserOwnedActiveProfilesForRuntimeBootstrap()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: true);
+
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var profileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+                var userAccountService = scope.ServiceProvider.GetRequiredService<IUserAccountService>();
+
+                var alphaUser = await userAccountService.RegisterAsync(
+                    new RegisterUserRequest
+                    {
+                        Username = "alpha.runtime",
+                        Password = "secret-pass"
+                    });
+
+                var betaUser = await userAccountService.RegisterAsync(
+                    new RegisterUserRequest
+                    {
+                        Username = "beta.runtime",
+                        Password = "secret-pass"
+                    });
+
+                var allActiveProfiles = await profileRepository.GetAllActiveAsync();
+                var runtimeActiveProfiles = await profileRepository.GetAllActiveUserOwnedAsync();
+
+                Assert.Contains(allActiveProfiles, profile => profile.WorkspaceId == WorkspaceConstants.DefaultWorkspaceId);
+                Assert.DoesNotContain(runtimeActiveProfiles, profile => profile.WorkspaceId == WorkspaceConstants.DefaultWorkspaceId);
+
+                Assert.Contains(runtimeActiveProfiles, profile => profile.WorkspaceId == alphaUser.Id);
+                Assert.Contains(runtimeActiveProfiles, profile => profile.WorkspaceId == betaUser.Id);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task RuntimeCommandRepository_ShouldPersistLeaseAndRetryCommandsAcrossServiceProviders()
     {
         var databasePath = CreateTemporaryDatabasePath();

@@ -134,6 +134,12 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
             return Task.FromResult(profiles);
         }
 
+        public Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveUserOwnedAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return GetAllActiveAsync(cancellationToken);
+        }
+
         public Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult<IReadOnlyCollection<BrokerServerProfile>>(

@@ -26,7 +26,7 @@ internal sealed class BrokerRuntimeBootstrapService : IBrokerRuntimeBootstrapSer
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
         var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
-        var activeProfiles = await brokerServerProfileRepository.GetAllActiveAsync(cancellationToken);
+        var activeProfiles = await brokerServerProfileRepository.GetAllActiveUserOwnedAsync(cancellationToken);
 
         foreach (var registration in activeProfiles)
         {

@@ -10,8 +10,13 @@ namespace MeshBoard.UnitTests;
 public sealed class BrokerRuntimeBootstrapServiceTests
 {
     [Fact]
-    public async Task InitializeActiveWorkspacesAsync_ShouldReconcileAllActiveWorkspaces()
+    public async Task InitializeActiveWorkspacesAsync_ShouldReconcileOnlyUserOwnedActiveWorkspaces()
     {
+        var defaultWorkspaceProfile = CreateProfile(
+            "default",
+            "Default Workspace",
+            "mqtt-default.example.org",
+            "msh/US/2/e/Legacy/#");
         var workspaceAProfile = CreateProfile(
             "workspace-a",
             "Workspace A",
@@ -22,7 +27,9 @@ public sealed class BrokerRuntimeBootstrapServiceTests
             "Workspace B",
             "mqtt-b.example.org",
             "msh/EU_868/2/e/MediumFast/#");
-        var profileRepository = new FakeBrokerServerProfileRepository(workspaceAProfile, workspaceBProfile);
+        var profileRepository = new FakeBrokerServerProfileRepository(
+            [defaultWorkspaceProfile, workspaceAProfile, workspaceBProfile],
+            [workspaceAProfile, workspaceBProfile]);
         var runtimeCommandExecutor = new FakeBrokerRuntimeCommandExecutor();
         var service = new BrokerRuntimeBootstrapService(
             CreateScopeFactory(profileRepository),
@@ -68,16 +75,25 @@ public sealed class BrokerRuntimeBootstrapServiceTests
     private sealed class FakeBrokerServerProfileRepository : IBrokerServerProfileRepository
     {
         private readonly Dictionary<string, WorkspaceBrokerServerProfile> _activeProfilesByWorkspace;
+        private readonly Dictionary<string, WorkspaceBrokerServerProfile> _userOwnedActiveProfilesByWorkspace;
         private readonly HashSet<string> _initializedProfiles = new(StringComparer.Ordinal);
 
-        public FakeBrokerServerProfileRepository(params WorkspaceBrokerServerProfile[] profiles)
+        public FakeBrokerServerProfileRepository(
+            IReadOnlyCollection<WorkspaceBrokerServerProfile> activeProfiles,
+            IReadOnlyCollection<WorkspaceBrokerServerProfile> userOwnedActiveProfiles)
         {
-            _activeProfilesByWorkspace = profiles.ToDictionary(profile => profile.WorkspaceId, StringComparer.Ordinal);
+            _activeProfilesByWorkspace = activeProfiles.ToDictionary(profile => profile.WorkspaceId, StringComparer.Ordinal);
+            _userOwnedActiveProfilesByWorkspace = userOwnedActiveProfiles.ToDictionary(profile => profile.WorkspaceId, StringComparer.Ordinal);
         }
 
         public Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveAsync(CancellationToken cancellationToken = default)
         {
             return Task.FromResult<IReadOnlyCollection<WorkspaceBrokerServerProfile>>(_activeProfilesByWorkspace.Values.ToList());
+        }
+
+        public Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveUserOwnedAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<WorkspaceBrokerServerProfile>>(_userOwnedActiveProfilesByWorkspace.Values.ToList());
         }
 
         public Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(string workspaceId, CancellationToken cancellationToken = default)

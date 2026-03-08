@@ -7,6 +7,9 @@ public interface IBrokerServerProfileRepository
     Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveAsync(
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveUserOwnedAsync(
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
         string workspaceId,
         CancellationToken cancellationToken = default);

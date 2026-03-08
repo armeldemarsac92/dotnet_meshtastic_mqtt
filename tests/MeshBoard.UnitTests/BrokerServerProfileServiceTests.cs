@@ -142,6 +142,12 @@ public sealed class BrokerServerProfileServiceTests
             return Task.FromResult<IReadOnlyCollection<WorkspaceBrokerServerProfile>>([]);
         }
 
+        public Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveUserOwnedAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<WorkspaceBrokerServerProfile>>([]);
+        }
+
         public Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
             string workspaceId,
             CancellationToken cancellationToken = default)

@@ -33,6 +33,20 @@ internal sealed class BrokerServerProfileRepository : IBrokerServerProfileReposi
             .ToList();
     }
 
+    public async Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveUserOwnedAsync(
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Attempting to fetch active broker server profiles across user-owned workspaces");
+
+        var responses = await _dbContext.QueryAsync<BrokerServerProfileSqlResponse>(
+            BrokerServerProfileQueries.GetAllActiveAcrossUserOwnedWorkspaces,
+            cancellationToken: cancellationToken);
+
+        return responses
+            .Select(response => response.MapToWorkspaceBrokerServerProfile())
+            .ToList();
+    }
+
     public async Task<IReadOnlyCollection<BrokerServerProfile>> GetAllAsync(
         string workspaceId,
         CancellationToken cancellationToken = default)
