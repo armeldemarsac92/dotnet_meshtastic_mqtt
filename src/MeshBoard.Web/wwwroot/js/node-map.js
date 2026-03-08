@@ -10,6 +10,7 @@ const DEFAULT_CAMERA = {
     height: 22000000
 };
 const HOVER_LINK_LIMIT = 18;
+const MAX_RENDER_RESOLUTION_SCALE = 2;
 const NODE_ENTITY_PREFIX = "node:";
 
 let cesiumLoadPromise = null;
@@ -105,13 +106,27 @@ function createViewer(container) {
 
     viewer.imageryLayers.removeAll();
     viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+        maximumLevel: 19,
         url: "https://tile.openstreetmap.org/"
     }));
 
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.showGroundAtmosphere = true;
-    viewer.scene.skyAtmosphere.show = true;
-    viewer.scene.fog.enabled = true;
+    const baseLayer = viewer.imageryLayers.get(0);
+    if (baseLayer) {
+        baseLayer.alpha = 0.96;
+        baseLayer.brightness = 1.08;
+        baseLayer.contrast = 0.88;
+        baseLayer.gamma = 1.02;
+        baseLayer.saturation = 0.18;
+    }
+
+    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, MAX_RENDER_RESOLUTION_SCALE);
+    viewer.scene.postProcessStages.fxaa.enabled = true;
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#f4f7fb");
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#eef3f8");
+    viewer.scene.globe.enableLighting = false;
+    viewer.scene.globe.showGroundAtmosphere = false;
+    viewer.scene.skyAtmosphere.show = false;
+    viewer.scene.fog.enabled = false;
     viewer.scene.requestRenderMode = true;
     viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 25000;
@@ -199,7 +214,9 @@ function resolvePickedNodeId(pickedObject) {
     const rawId = typeof entity === "string" ? entity : entity.id;
 
     if (typeof rawId !== "string" || !rawId.startsWith(NODE_ENTITY_PREFIX)) {
-        return null;
+        return typeof entity?.meshboardHoverNodeId === "string"
+            ? entity.meshboardHoverNodeId
+            : null;
     }
 
     return rawId.slice(NODE_ENTITY_PREFIX.length);
@@ -354,6 +371,7 @@ function syncHoverState(mapState) {
             }
         });
 
+        linkEntity.meshboardHoverNodeId = hoveredNode.nodeId;
         mapState.linkEntities.push(linkEntity);
     }
 
