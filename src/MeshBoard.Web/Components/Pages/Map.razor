@@ -18,100 +18,119 @@
         </p>
     </header>
 
-    <section class="liquid-panel grid shrink-0 gap-4 overflow-hidden rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_auto_1fr]">
-        <label class="space-y-2">
-            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search on map</span>
-            <input @bind="_searchText"
-                   @bind:event="oninput"
-                   @bind:after="ScheduleSearchRefreshAsync"
-                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
-                   placeholder="Node id, short name, long name, or channel" />
-        </label>
+    <section class="liquid-panel shrink-0 space-y-3 overflow-hidden rounded-[1.6rem] p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 text-sm text-cinder-800/82">
+            <div class="space-y-1">
+                <p>@GetMapSummaryText()</p>
+                <p class="text-[0.72rem] text-cinder-800/64">
+                    Hover links show shared-channel cohorts, not proven radio paths.
+                </p>
+            </div>
 
-        <div class="flex items-end">
-            <button type="button"
-                    class="liquid-button liquid-button-accent cursor-pointer rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
-                    @onclick="RefreshNodesAsync"
-                    disabled="@_isLoading">
-                @(_isLoading ? "Refreshing..." : "Refresh map")
-            </button>
-        </div>
-
-        <div class="space-y-3 self-end text-sm text-cinder-800/82">
-            <p>@GetMapSummaryText()</p>
             @if (!string.IsNullOrWhiteSpace(_statusMessage))
             {
                 <p class="text-xs text-cinder-800/72">@_statusMessage</p>
             }
+        </div>
 
-            @if (!string.IsNullOrWhiteSpace(_focusedChannel))
-            {
-                <div class="liquid-subpanel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
-                    <div class="space-y-1">
-                        <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel focus</p>
-                        <p class="break-words text-sm font-semibold text-cinder-950">@_focusedChannel</p>
-                        <p class="text-[0.72rem] text-cinder-800/72">The globe is currently isolating this shared-channel cohort.</p>
-                    </div>
-
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button"
-                                class="liquid-inline-action liquid-inline-action-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
-                                @onclick="() => OpenChannelDetailsAsync(_focusedChannel!)">
-                            Open channel
-                        </button>
-                        <button type="button"
-                                class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
-                                @onclick="ClearFocusedChannelAsync">
-                            Clear focus
-                        </button>
-                    </div>
+        @if (!string.IsNullOrWhiteSpace(_focusedChannel))
+        {
+            <div class="liquid-subpanel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
+                <div class="space-y-1">
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel focus</p>
+                    <p class="break-words text-sm font-semibold text-cinder-950">@_focusedChannel</p>
                 </div>
-            }
 
-            <div class="space-y-2">
+                <div class="flex flex-wrap gap-2">
+                    <button type="button"
+                            class="liquid-inline-action liquid-inline-action-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                            @onclick="() => OpenChannelDetailsAsync(_focusedChannel!)">
+                        Open channel
+                    </button>
+                    <button type="button"
+                            class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ClearFocusedChannelAsync">
+                        Clear focus
+                    </button>
+                </div>
+            </div>
+        }
+
+        <div class="space-y-2 text-sm text-cinder-800/82">
+            <div class="flex flex-wrap items-center justify-between gap-2">
                 <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel cohorts</p>
                 <p class="text-[0.72rem] text-cinder-800/68">Click a chip to isolate that cohort on the globe.</p>
-
-                @if (_channelLegendEntries.Count == 0)
-                {
-                    <p class="text-xs text-cinder-800/70">No channel cohort matched the current search.</p>
-                }
-                else
-                {
-                    <div class="flex flex-wrap gap-2">
-                        @foreach (var entry in _channelLegendEntries)
-                        {
-                            var isFocused = string.Equals(_focusedChannel, entry.Channel, StringComparison.Ordinal);
-
-                            <button type="button"
-                                    class="@GetChannelChipClass(isFocused)"
-                                    @onclick="() => ToggleFocusedChannelAsync(entry.Channel)">
-                                <span class="h-2.5 w-2.5 rounded-full ring-1 ring-cinder-950/20"
-                                      style="background-color:@entry.ColorCss"></span>
-                                <span>@entry.Channel</span>
-                                <span class="text-cinder-700/75">@entry.NodeCount</span>
-                            </button>
-                        }
-                    </div>
-
-                    @if (_hiddenChannelLegendCount > 0)
-                    {
-                        <p class="text-[0.72rem] text-cinder-800/68">+ @_hiddenChannelLegendCount more channel cohorts in view.</p>
-                    }
-                }
             </div>
 
-            <p class="text-[0.72rem] text-cinder-800/64">
-                Hover links show shared-channel cohorts, not proven radio paths.
-            </p>
+            @if (_channelLegendEntries.Count == 0)
+            {
+                <p class="text-xs text-cinder-800/70">No channel cohort matched the current search.</p>
+            }
+            else
+            {
+                <div class="flex flex-wrap gap-2">
+                    @foreach (var entry in _channelLegendEntries)
+                    {
+                        var isFocused = string.Equals(_focusedChannel, entry.Channel, StringComparison.Ordinal);
 
-            <div class="liquid-subpanel space-y-3 rounded-2xl p-3">
+                        <button type="button"
+                                class="@GetChannelChipClass(isFocused)"
+                                @onclick="() => ToggleFocusedChannelAsync(entry.Channel)">
+                            <span class="h-2.5 w-2.5 rounded-full ring-1 ring-cinder-950/20"
+                                  style="background-color:@entry.ColorCss"></span>
+                            <span>@entry.Channel</span>
+                            <span class="text-cinder-700/75">@entry.NodeCount</span>
+                        </button>
+                    }
+                </div>
+
+                @if (_hiddenChannelLegendCount > 0)
+                {
+                    <p class="text-[0.72rem] text-cinder-800/68">+ @_hiddenChannelLegendCount more channel cohorts in view.</p>
+                }
+            }
+        </div>
+    </section>
+
+    <section class="liquid-panel relative min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
+        <div id="@MapElementId"
+             class="meshboard-node-map h-full w-full overflow-hidden rounded-[1.25rem] border border-sand-200/80"></div>
+
+        <div class="pointer-events-none absolute inset-x-7 top-7 z-10 flex items-start justify-between gap-3">
+            <div class="pointer-events-auto w-full max-w-md">
+                <label class="relative block">
+                    <span class="sr-only">Search on map</span>
+                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-cinder-800/68">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+                            <path fill-rule="evenodd" d="M9 3.75a5.25 5.25 0 1 0 3.285 9.347l3.809 3.809a.75.75 0 1 0 1.06-1.06l-3.808-3.81A5.25 5.25 0 0 0 9 3.75ZM5.25 9a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0Z" clip-rule="evenodd" />
+                        </svg>
+                    </span>
+                    <input @bind="_searchText"
+                           @bind:event="oninput"
+                           @bind:after="ScheduleSearchRefreshAsync"
+                           class="liquid-input w-full rounded-full px-4 py-3 pl-10 text-sm text-cinder-950 shadow-lg shadow-cinder-950/35"
+                           placeholder="Search node id, name, or channel" />
+                </label>
+            </div>
+
+            <div class="pointer-events-auto shrink-0">
+                <button type="button"
+                        class="liquid-button liquid-button-accent rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35 disabled:cursor-not-allowed disabled:opacity-60"
+                        @onclick="RefreshNodesAsync"
+                        disabled="@_isLoading">
+                    @(_isLoading ? "Refreshing..." : "Refresh map")
+                </button>
+            </div>
+        </div>
+
+        <div class="pointer-events-none absolute bottom-7 right-7 z-10 w-full max-w-sm">
+            <div class="pointer-events-auto liquid-subpanel space-y-3 rounded-[1.35rem] border border-white/60 bg-linear-to-br from-white/96 via-sand-100/90 to-signal-400/70 p-4 shadow-2xl shadow-cinder-950/35">
                 <div class="space-y-1">
                     <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Focused node</p>
 
                     @if (_hoveredMapNode is null)
                     {
-                        <p class="text-xs text-cinder-800/70">Hover a node on the globe to inspect its active channel cohort.</p>
+                        <p class="text-xs leading-6 text-cinder-800/72">Hover a node on the globe to inspect its active channel cohort.</p>
                     }
                     else
                     {
@@ -121,19 +140,19 @@
                         </div>
 
                         <dl class="grid gap-2 text-[0.72rem] text-cinder-800/78 sm:grid-cols-2">
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Channel</dt>
                                 <dd class="mt-1 break-words text-cinder-950">@(_hoveredMapNode.Channel ?? "Unknown")</dd>
                             </div>
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Visible peers</dt>
                                 <dd class="mt-1 text-cinder-950">@_hoveredNodePeerCount</dd>
                             </div>
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Battery</dt>
                                 <dd class="mt-1 text-cinder-950">@(_hoveredMapNode.BatteryLevelPercent?.ToString() ?? "Unknown")</dd>
                             </div>
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/50 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Coordinates</dt>
                                 <dd class="mt-1 text-cinder-950">@GetCoordinateText(_hoveredMapNode)</dd>
                             </div>
@@ -159,11 +178,6 @@
                 </div>
             </div>
         </div>
-    </section>
-
-    <section class="liquid-panel min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
-        <div id="@MapElementId"
-             class="meshboard-node-map h-full w-full overflow-hidden rounded-[1.25rem] border border-sand-200/80"></div>
     </section>
 </div>
 
