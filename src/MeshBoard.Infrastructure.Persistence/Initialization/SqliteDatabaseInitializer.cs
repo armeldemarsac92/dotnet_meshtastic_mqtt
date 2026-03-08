@@ -72,24 +72,27 @@ internal sealed class SqliteDatabaseInitializer
 
         await connection.ExecuteAsync(retentionCommand);
 
-        var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
-        await SeedTopicPresetAsync(
-            connection,
-            WorkspaceConstants.DefaultWorkspaceId,
-            fallbackBrokerServer,
-            "US Public Feed",
-            _brokerOptions.DefaultTopicPattern,
-            true,
-            cancellationToken);
-        await SeedTopicPresetAsync(
-            connection,
-            WorkspaceConstants.DefaultWorkspaceId,
-            fallbackBrokerServer,
-            "EU Public Feed",
-            "msh/EU_433/2/e/#",
-            false,
-            cancellationToken);
-        await SeedBrokerServerProfileAsync(connection, cancellationToken);
+        if (_persistenceOptions.SeedLegacyDefaultWorkspace)
+        {
+            var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
+            await SeedTopicPresetAsync(
+                connection,
+                WorkspaceConstants.DefaultWorkspaceId,
+                fallbackBrokerServer,
+                "US Public Feed",
+                _brokerOptions.DefaultTopicPattern,
+                true,
+                cancellationToken);
+            await SeedTopicPresetAsync(
+                connection,
+                WorkspaceConstants.DefaultWorkspaceId,
+                fallbackBrokerServer,
+                "EU Public Feed",
+                "msh/EU_433/2/e/#",
+                false,
+                cancellationToken);
+            await SeedBrokerServerProfileAsync(connection, cancellationToken);
+        }
 
         _logger.LogInformation("Initialized the SQLite database successfully");
     }

@@ -213,6 +213,45 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
+    public async Task Initialization_ShouldNotSeedLegacyDefaultWorkspace_WhenDisabled()
+    {
+        var databasePath = CreateTemporaryDatabasePath();
+
+        try
+        {
+            await using var provider = CreateServiceProvider(
+                databasePath,
+                includeApplicationServices: false,
+                seedLegacyDefaultWorkspace: false);
+            var hostedServices = provider.GetServices<IHostedService>().ToArray();
+            await StartHostedServicesAsync(hostedServices);
+
+            try
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var profileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+                var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
+
+                var legacyProfiles = await profileRepository.GetAllAsync(WorkspaceConstants.DefaultWorkspaceId);
+                var legacyPresets = await topicPresetRepository.GetAllAsync(
+                    WorkspaceConstants.DefaultWorkspaceId,
+                    "mqtt.meshtastic.org:1883");
+
+                Assert.Empty(legacyProfiles);
+                Assert.Empty(legacyPresets);
+            }
+            finally
+            {
+                await StopHostedServicesAsync(hostedServices);
+            }
+        }
+        finally
+        {
+            DeleteDatabaseFile(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task RetentionService_ShouldDeleteMessagesOutsideRetentionWindow()
     {
         var databasePath = CreateTemporaryDatabasePath();
@@ -2397,13 +2436,15 @@ public sealed class PersistenceIntegrationTests
         bool includeApplicationServices,
         int messageRetentionDays = 30,
         TimeProvider? timeProvider = null,
-        string? workspaceId = null)
+        string? workspaceId = null,
+        bool seedLegacyDefaultWorkspace = true)
     {
         var settings = new Dictionary<string, string?>
         {
             [$"{PersistenceOptions.SectionName}:Provider"] = "SQLite",
             [$"{PersistenceOptions.SectionName}:ConnectionString"] = $"Data Source={databasePath}",
             [$"{PersistenceOptions.SectionName}:MessageRetentionDays"] = messageRetentionDays.ToString(),
+            [$"{PersistenceOptions.SectionName}:SeedLegacyDefaultWorkspace"] = seedLegacyDefaultWorkspace.ToString(),
             [$"{BrokerOptions.SectionName}:DefaultTopicPattern"] = "msh/US/2/e/#",
             [$"{BrokerOptions.SectionName}:DownlinkTopic"] = "msh/US/2/json/mqtt/"
         };

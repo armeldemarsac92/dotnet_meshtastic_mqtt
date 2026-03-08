@@ -9,4 +9,6 @@ public sealed class PersistenceOptions
     public string ConnectionString { get; set; } = "Data Source=meshboard.db";
 
     public int MessageRetentionDays { get; set; } = 30;
+
+    public bool SeedLegacyDefaultWorkspace { get; set; } = true;
 }
