@@ -1,5 +1,8 @@
+using System.Diagnostics;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Caching;
+using MeshBoard.Application.Observability;
+using MeshBoard.Contracts.Diagnostics;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Nodes;
 using Microsoft.Extensions.Caching.Memory;
@@ -31,6 +34,7 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
     private readonly IMemoryCache _memoryCache;
     private readonly INodeService _nodeService;
     private readonly IReadModelCacheInvalidator _readModelCacheInvalidator;
+    private readonly IReadModelMetricsService _readModelMetricsService;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public CachedNodeDetailService(
@@ -39,6 +43,7 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
         INodeService nodeService,
         IWorkspaceContextAccessor workspaceContextAccessor,
         IReadModelCacheInvalidator readModelCacheInvalidator,
+        IReadModelMetricsService readModelMetricsService,
         ILogger<CachedNodeDetailService> logger)
     {
         _messageService = messageService;
@@ -46,6 +51,7 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
         _nodeService = nodeService;
         _workspaceContextAccessor = workspaceContextAccessor;
         _readModelCacheInvalidator = readModelCacheInvalidator;
+        _readModelMetricsService = readModelMetricsService;
         _logger = logger;
     }
 
@@ -66,6 +72,7 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
         if (!forceRefresh &&
             _memoryCache.TryGetValue<NodeSummary?>(cacheKey, out var cachedNode))
         {
+            _readModelMetricsService.RecordCacheHit(ReadModelMetricKind.NodeDetail);
             _logger.LogDebug(
                 "Returning cached node detail for workspace {WorkspaceId} and node {NodeId}",
                 workspaceId,
@@ -73,6 +80,8 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
             return cachedNode;
         }
 
+        _readModelMetricsService.RecordCacheMiss(ReadModelMetricKind.NodeDetail, forceRefresh);
+        var startedAt = Stopwatch.GetTimestamp();
         var node = await _nodeService.GetNodeById(normalizedNodeId, cancellationToken);
 
         _memoryCache.Set(
@@ -83,6 +92,10 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
                 AbsoluteExpirationRelativeToNow = CacheDuration,
                 Size = 1
             });
+
+        _readModelMetricsService.RecordLoadDuration(
+            ReadModelMetricKind.NodeDetail,
+            Stopwatch.GetElapsedTime(startedAt));
 
         return node;
     }
@@ -107,6 +120,7 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
             _memoryCache.TryGetValue<MessagePageResult>(cacheKey, out var cachedPage) &&
             cachedPage is not null)
         {
+            _readModelMetricsService.RecordCacheHit(ReadModelMetricKind.NodeMessagePage);
             _logger.LogDebug(
                 "Returning cached node message page for workspace {WorkspaceId}, node {NodeId}, offset {Offset}, take {Take}",
                 workspaceId,
@@ -116,6 +130,8 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
             return cachedPage;
         }
 
+        _readModelMetricsService.RecordCacheMiss(ReadModelMetricKind.NodeMessagePage, forceRefresh);
+        var startedAt = Stopwatch.GetTimestamp();
         var page = await _messageService.GetMessagesPageBySender(
             normalizedSenderNodeId,
             offset,
@@ -130,6 +146,10 @@ public sealed class CachedNodeDetailService : ICachedNodeDetailService
                 AbsoluteExpirationRelativeToNow = CacheDuration,
                 Size = 1
             });
+
+        _readModelMetricsService.RecordLoadDuration(
+            ReadModelMetricKind.NodeMessagePage,
+            Stopwatch.GetElapsedTime(startedAt));
 
         return page;
     }

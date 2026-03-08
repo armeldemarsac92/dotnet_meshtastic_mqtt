@@ -1,4 +1,5 @@
 @page "/settings"
+@inject MeshBoard.Application.Observability.IReadModelMetricsService ReadModelMetricsService
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IBrokerRuntimeCommandQueryService BrokerRuntimeCommandQueryService
 @inject IMessageRetentionService MessageRetentionService
@@ -125,6 +126,47 @@
             </div>
         }
     </section>
+
+    <section class="liquid-panel rounded-[1.6rem] p-6">
+        <div>
+            <h2 class="font-display text-3xl text-cinder-950">Read model metrics</h2>
+            <p class="mt-2 max-w-3xl text-sm leading-7 text-cinder-800/78">
+                These metrics are per web instance and measure cache hits, misses, forced refreshes, and miss-path load latency.
+            </p>
+        </div>
+
+        <div class="mt-5 overflow-x-auto">
+            <table class="min-w-full text-left text-sm text-cinder-900">
+                <thead class="border-b border-sand-200/80 text-xs uppercase tracking-[0.2em] text-cinder-800/65">
+                    <tr>
+                        <th class="pb-3 pr-4 font-semibold">Read path</th>
+                        <th class="pb-3 pr-4 font-semibold">Hits</th>
+                        <th class="pb-3 pr-4 font-semibold">Misses</th>
+                        <th class="pb-3 pr-4 font-semibold">Forced</th>
+                        <th class="pb-3 pr-4 font-semibold">Loads</th>
+                        <th class="pb-3 pr-4 font-semibold">Avg ms</th>
+                        <th class="pb-3 pr-4 font-semibold">Max ms</th>
+                        <th class="pb-3 pr-4 font-semibold">Last ms</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var metric in _readModelMetrics)
+                    {
+                        <tr class="border-b border-sand-200/60 align-top">
+                            <td class="py-3 pr-4">@FormatReadModelMetricKind(metric.Kind)</td>
+                            <td class="py-3 pr-4">@metric.CacheHitCount</td>
+                            <td class="py-3 pr-4">@metric.CacheMissCount</td>
+                            <td class="py-3 pr-4">@metric.ForcedRefreshCount</td>
+                            <td class="py-3 pr-4">@metric.LoadCount</td>
+                            <td class="py-3 pr-4">@metric.AverageLoadMilliseconds.ToString("0.0")</td>
+                            <td class="py-3 pr-4">@metric.MaxLoadMilliseconds</td>
+                            <td class="py-3 pr-4">@metric.LastLoadMilliseconds</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
 
 @code {
@@ -132,6 +174,7 @@
     private bool _isRefreshingRuntime;
     private bool _isPruningMessages;
     private string? _pruneStatusMessage;
+    private IReadOnlyCollection<ReadModelMetricSnapshot> _readModelMetrics = [];
     private IReadOnlyCollection<BrokerRuntimeCommand> _recentCommands = [];
 
     protected override async Task OnInitializedAsync()
@@ -185,6 +228,9 @@
         {
             _brokerStatus = BrokerMonitorService.GetBrokerStatus();
             _recentCommands = await BrokerRuntimeCommandQueryService.GetRecentCommands(12);
+            _readModelMetrics = ReadModelMetricsService.GetSnapshots()
+                .OrderBy(metric => metric.Kind)
+                .ToArray();
         }
         finally
         {
@@ -224,6 +270,21 @@
             BrokerRuntimeCommandType.SubscribeEphemeral => "Subscribe ephemeral",
             BrokerRuntimeCommandType.UnsubscribeEphemeral => "Unsubscribe ephemeral",
             _ => commandType.ToString()
+        };
+    }
+
+    private static string FormatReadModelMetricKind(ReadModelMetricKind kind)
+    {
+        return kind switch
+        {
+            ReadModelMetricKind.DashboardSnapshot => "Dashboard snapshot",
+            ReadModelMetricKind.MessagePage => "Message stream page",
+            ReadModelMetricKind.NodeDetail => "Node detail",
+            ReadModelMetricKind.NodeMessagePage => "Node message page",
+            ReadModelMetricKind.ChannelSummary => "Channel summary",
+            ReadModelMetricKind.ChannelTopNodes => "Channel top nodes",
+            ReadModelMetricKind.ChannelMessagePage => "Channel message page",
+            _ => kind.ToString()
         };
     }
 }

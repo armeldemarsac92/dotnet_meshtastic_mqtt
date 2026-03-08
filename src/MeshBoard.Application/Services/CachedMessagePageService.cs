@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using MeshBoard.Application.Caching;
 using MeshBoard.Application.Abstractions.Workspaces;
+using MeshBoard.Application.Observability;
 using MeshBoard.Contracts.Messages;
+using MeshBoard.Contracts.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -24,6 +27,7 @@ public sealed class CachedMessagePageService : ICachedMessagePageService
     private readonly IMessageService _messageService;
     private readonly IMemoryCache _memoryCache;
     private readonly IReadModelCacheInvalidator _readModelCacheInvalidator;
+    private readonly IReadModelMetricsService _readModelMetricsService;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public CachedMessagePageService(
@@ -31,12 +35,14 @@ public sealed class CachedMessagePageService : ICachedMessagePageService
         IMemoryCache memoryCache,
         IWorkspaceContextAccessor workspaceContextAccessor,
         IReadModelCacheInvalidator readModelCacheInvalidator,
+        IReadModelMetricsService readModelMetricsService,
         ILogger<CachedMessagePageService> logger)
     {
         _messageService = messageService;
         _memoryCache = memoryCache;
         _workspaceContextAccessor = workspaceContextAccessor;
         _readModelCacheInvalidator = readModelCacheInvalidator;
+        _readModelMetricsService = readModelMetricsService;
         _logger = logger;
     }
 
@@ -56,6 +62,7 @@ public sealed class CachedMessagePageService : ICachedMessagePageService
             _memoryCache.TryGetValue<MessagePageResult>(cacheKey, out var cachedPage) &&
             cachedPage is not null)
         {
+            _readModelMetricsService.RecordCacheHit(ReadModelMetricKind.MessagePage);
             _logger.LogDebug(
                 "Returning cached message page for workspace {WorkspaceId} with offset {Offset} and take {Take}",
                 workspaceId,
@@ -64,6 +71,8 @@ public sealed class CachedMessagePageService : ICachedMessagePageService
             return cachedPage;
         }
 
+        _readModelMetricsService.RecordCacheMiss(ReadModelMetricKind.MessagePage, forceRefresh);
+        var startedAt = Stopwatch.GetTimestamp();
         var page = await _messageService.GetMessagesPage(query, offset, take, cancellationToken);
 
         _memoryCache.Set(
@@ -74,6 +83,10 @@ public sealed class CachedMessagePageService : ICachedMessagePageService
                 AbsoluteExpirationRelativeToNow = CacheDuration,
                 Size = 1
             });
+
+        _readModelMetricsService.RecordLoadDuration(
+            ReadModelMetricKind.MessagePage,
+            Stopwatch.GetElapsedTime(startedAt));
 
         return page;
     }

@@ -1,6 +1,8 @@
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Caching;
+using MeshBoard.Application.Observability;
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Diagnostics;
 using MeshBoard.Contracts.Favorites;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
@@ -23,6 +25,7 @@ public sealed class HomeDashboardServiceTests
         var nodeService = new FakeNodeService();
         var topicPresetService = new FakeTopicPresetService();
         var invalidator = new InMemoryReadModelCacheInvalidator();
+        var metricsService = new InMemoryReadModelMetricsService();
         var service = new HomeDashboardService(
             brokerMonitorService,
             favoriteNodeService,
@@ -32,6 +35,7 @@ public sealed class HomeDashboardServiceTests
             topicPresetService,
             new FakeWorkspaceContextAccessor(),
             invalidator,
+            metricsService,
             NullLogger<HomeDashboardService>.Instance);
 
         var firstSnapshot = await service.GetSnapshot();
@@ -54,6 +58,11 @@ public sealed class HomeDashboardServiceTests
         Assert.Equal(2, nodeService.GetNodesPageCallCount);
         Assert.Equal(2, topicPresetService.GetTopicPresetsCallCount);
         Assert.NotSame(firstSnapshot, thirdSnapshot);
+
+        var snapshot = metricsService.GetSnapshots().Single(metric => metric.Kind == ReadModelMetricKind.DashboardSnapshot);
+        Assert.Equal(1, snapshot.CacheHitCount);
+        Assert.Equal(2, snapshot.CacheMissCount);
+        Assert.Equal(2, snapshot.LoadCount);
     }
 
     [Fact]
@@ -65,6 +74,7 @@ public sealed class HomeDashboardServiceTests
         var messageService = new FakeMessageService();
         var nodeService = new FakeNodeService();
         var topicPresetService = new FakeTopicPresetService();
+        var metricsService = new InMemoryReadModelMetricsService();
         var service = new HomeDashboardService(
             brokerMonitorService,
             favoriteNodeService,
@@ -74,6 +84,7 @@ public sealed class HomeDashboardServiceTests
             topicPresetService,
             new FakeWorkspaceContextAccessor(),
             new InMemoryReadModelCacheInvalidator(),
+            metricsService,
             NullLogger<HomeDashboardService>.Instance);
 
         await service.GetSnapshot();
@@ -84,6 +95,9 @@ public sealed class HomeDashboardServiceTests
         Assert.Equal(2, messageService.GetRecentMessagesCallCount);
         Assert.Equal(2, nodeService.GetNodesPageCallCount);
         Assert.Equal(2, topicPresetService.GetTopicPresetsCallCount);
+
+        var snapshot = metricsService.GetSnapshots().Single(metric => metric.Kind == ReadModelMetricKind.DashboardSnapshot);
+        Assert.Equal(1, snapshot.ForcedRefreshCount);
     }
 
     private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor

@@ -1,5 +1,8 @@
+using System.Diagnostics;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Caching;
+using MeshBoard.Application.Observability;
+using MeshBoard.Contracts.Diagnostics;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Caching.Memory;
@@ -39,6 +42,7 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
     private readonly ILogger<CachedChannelDetailService> _logger;
     private readonly IMemoryCache _memoryCache;
     private readonly IReadModelCacheInvalidator _readModelCacheInvalidator;
+    private readonly IReadModelMetricsService _readModelMetricsService;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public CachedChannelDetailService(
@@ -46,12 +50,14 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
         IMemoryCache memoryCache,
         IWorkspaceContextAccessor workspaceContextAccessor,
         IReadModelCacheInvalidator readModelCacheInvalidator,
+        IReadModelMetricsService readModelMetricsService,
         ILogger<CachedChannelDetailService> logger)
     {
         _channelReadService = channelReadService;
         _memoryCache = memoryCache;
         _workspaceContextAccessor = workspaceContextAccessor;
         _readModelCacheInvalidator = readModelCacheInvalidator;
+        _readModelMetricsService = readModelMetricsService;
         _logger = logger;
     }
 
@@ -77,6 +83,7 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
             _memoryCache.TryGetValue<MessagePageResult>(cacheKey, out var cachedPage) &&
             cachedPage is not null)
         {
+            _readModelMetricsService.RecordCacheHit(ReadModelMetricKind.ChannelMessagePage);
             _logger.LogDebug(
                 "Returning cached channel message page for workspace {WorkspaceId}, region {Region}, channel {Channel}, offset {Offset}, take {Take}",
                 workspaceId,
@@ -87,6 +94,8 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
             return cachedPage;
         }
 
+        _readModelMetricsService.RecordCacheMiss(ReadModelMetricKind.ChannelMessagePage, forceRefresh);
+        var startedAt = Stopwatch.GetTimestamp();
         var page = await _channelReadService.GetMessagesPageByChannel(
             normalizedRegion,
             normalizedChannel,
@@ -102,6 +111,10 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
                 AbsoluteExpirationRelativeToNow = CacheDuration,
                 Size = 1
             });
+
+        _readModelMetricsService.RecordLoadDuration(
+            ReadModelMetricKind.ChannelMessagePage,
+            Stopwatch.GetElapsedTime(startedAt));
 
         return page;
     }
@@ -126,6 +139,7 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
             _memoryCache.TryGetValue<ChannelSummary>(cacheKey, out var cachedSummary) &&
             cachedSummary is not null)
         {
+            _readModelMetricsService.RecordCacheHit(ReadModelMetricKind.ChannelSummary);
             _logger.LogDebug(
                 "Returning cached channel summary for workspace {WorkspaceId}, region {Region}, channel {Channel}",
                 workspaceId,
@@ -134,6 +148,8 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
             return cachedSummary;
         }
 
+        _readModelMetricsService.RecordCacheMiss(ReadModelMetricKind.ChannelSummary, forceRefresh);
+        var startedAt = Stopwatch.GetTimestamp();
         var summary = await _channelReadService.GetChannelSummary(
             normalizedRegion,
             normalizedChannel,
@@ -147,6 +163,10 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
                 AbsoluteExpirationRelativeToNow = CacheDuration,
                 Size = 1
             });
+
+        _readModelMetricsService.RecordLoadDuration(
+            ReadModelMetricKind.ChannelSummary,
+            Stopwatch.GetElapsedTime(startedAt));
 
         return summary;
     }
@@ -172,6 +192,7 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
             _memoryCache.TryGetValue<IReadOnlyCollection<ChannelTopNode>>(cacheKey, out var cachedTopNodes) &&
             cachedTopNodes is not null)
         {
+            _readModelMetricsService.RecordCacheHit(ReadModelMetricKind.ChannelTopNodes);
             _logger.LogDebug(
                 "Returning cached channel top-nodes for workspace {WorkspaceId}, region {Region}, channel {Channel}, take {Take}",
                 workspaceId,
@@ -181,6 +202,8 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
             return cachedTopNodes;
         }
 
+        _readModelMetricsService.RecordCacheMiss(ReadModelMetricKind.ChannelTopNodes, forceRefresh);
+        var startedAt = Stopwatch.GetTimestamp();
         var topNodes = await _channelReadService.GetTopNodesByChannel(
             normalizedRegion,
             normalizedChannel,
@@ -195,6 +218,10 @@ public sealed class CachedChannelDetailService : ICachedChannelDetailService
                 AbsoluteExpirationRelativeToNow = CacheDuration,
                 Size = 1
             });
+
+        _readModelMetricsService.RecordLoadDuration(
+            ReadModelMetricKind.ChannelTopNodes,
+            Stopwatch.GetElapsedTime(startedAt));
 
         return topNodes;
     }

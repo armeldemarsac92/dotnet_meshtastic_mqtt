@@ -1,6 +1,8 @@
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Caching;
+using MeshBoard.Application.Observability;
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Diagnostics;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Caching.Memory;
@@ -15,12 +17,14 @@ public sealed class CachedChannelDetailServiceTests
     {
         using var memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 128 });
         var invalidator = new InMemoryReadModelCacheInvalidator();
+        var metricsService = new InMemoryReadModelMetricsService();
         var innerService = new FakeChannelReadService();
         var service = new CachedChannelDetailService(
             innerService,
             memoryCache,
             new FakeWorkspaceContextAccessor(),
             invalidator,
+            metricsService,
             NullLogger<CachedChannelDetailService>.Instance);
 
         var firstSummary = await service.GetChannelSummary("US", "LongFast");
@@ -49,6 +53,14 @@ public sealed class CachedChannelDetailServiceTests
         Assert.NotSame(firstSummary, thirdSummary);
         Assert.NotSame(firstTopNodes, thirdTopNodes);
         Assert.NotSame(firstPage, thirdPage);
+
+        var snapshots = metricsService.GetSnapshots().ToDictionary(metric => metric.Kind);
+        Assert.Equal(1, snapshots[ReadModelMetricKind.ChannelSummary].CacheHitCount);
+        Assert.Equal(2, snapshots[ReadModelMetricKind.ChannelSummary].CacheMissCount);
+        Assert.Equal(1, snapshots[ReadModelMetricKind.ChannelTopNodes].CacheHitCount);
+        Assert.Equal(2, snapshots[ReadModelMetricKind.ChannelTopNodes].CacheMissCount);
+        Assert.Equal(1, snapshots[ReadModelMetricKind.ChannelMessagePage].CacheHitCount);
+        Assert.Equal(2, snapshots[ReadModelMetricKind.ChannelMessagePage].CacheMissCount);
     }
 
     [Fact]
@@ -56,11 +68,13 @@ public sealed class CachedChannelDetailServiceTests
     {
         using var memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 128 });
         var innerService = new FakeChannelReadService();
+        var metricsService = new InMemoryReadModelMetricsService();
         var service = new CachedChannelDetailService(
             innerService,
             memoryCache,
             new FakeWorkspaceContextAccessor(),
             new InMemoryReadModelCacheInvalidator(),
+            metricsService,
             NullLogger<CachedChannelDetailService>.Instance);
 
         await service.GetChannelSummary("US", "LongFast");
@@ -68,6 +82,9 @@ public sealed class CachedChannelDetailServiceTests
 
         Assert.Equal(2, innerService.GetChannelSummaryCallCount);
         Assert.Equal(20, summary.PacketCount);
+
+        var snapshot = metricsService.GetSnapshots().Single(metric => metric.Kind == ReadModelMetricKind.ChannelSummary);
+        Assert.Equal(1, snapshot.ForcedRefreshCount);
     }
 
     private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor

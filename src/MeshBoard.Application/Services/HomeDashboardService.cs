@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using MeshBoard.Application.Caching;
 using MeshBoard.Application.Abstractions.Workspaces;
+using MeshBoard.Application.Observability;
 using MeshBoard.Contracts.Dashboard;
+using MeshBoard.Contracts.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
@@ -20,6 +23,7 @@ public sealed class HomeDashboardService : IHomeDashboardService
     private readonly IBrokerMonitorService _brokerMonitorService;
     private readonly IFavoriteNodeService _favoriteNodeService;
     private readonly IReadModelCacheInvalidator _readModelCacheInvalidator;
+    private readonly IReadModelMetricsService _readModelMetricsService;
     private readonly ILogger<HomeDashboardService> _logger;
     private readonly IMemoryCache _memoryCache;
     private readonly IMessageService _messageService;
@@ -36,6 +40,7 @@ public sealed class HomeDashboardService : IHomeDashboardService
         ITopicPresetService topicPresetService,
         IWorkspaceContextAccessor workspaceContextAccessor,
         IReadModelCacheInvalidator readModelCacheInvalidator,
+        IReadModelMetricsService readModelMetricsService,
         ILogger<HomeDashboardService> logger)
     {
         _brokerMonitorService = brokerMonitorService;
@@ -46,6 +51,7 @@ public sealed class HomeDashboardService : IHomeDashboardService
         _topicPresetService = topicPresetService;
         _workspaceContextAccessor = workspaceContextAccessor;
         _readModelCacheInvalidator = readModelCacheInvalidator;
+        _readModelMetricsService = readModelMetricsService;
         _logger = logger;
     }
 
@@ -60,11 +66,14 @@ public sealed class HomeDashboardService : IHomeDashboardService
             _memoryCache.TryGetValue<HomeDashboardSnapshot>(cacheKey, out var cachedSnapshot) &&
             cachedSnapshot is not null)
         {
+            _readModelMetricsService.RecordCacheHit(ReadModelMetricKind.DashboardSnapshot);
             _logger.LogDebug("Returning cached dashboard snapshot for workspace {WorkspaceId}", workspaceId);
             return cachedSnapshot;
         }
 
+        _readModelMetricsService.RecordCacheMiss(ReadModelMetricKind.DashboardSnapshot, forceRefresh);
         _logger.LogDebug("Loading dashboard snapshot for workspace {WorkspaceId}", workspaceId);
+        var startedAt = Stopwatch.GetTimestamp();
 
         var brokerStatus = _brokerMonitorService.GetBrokerStatus();
         var topicPresetsTask = _topicPresetService.GetTopicPresets(cancellationToken);
@@ -91,6 +100,10 @@ public sealed class HomeDashboardService : IHomeDashboardService
                 AbsoluteExpirationRelativeToNow = CacheDuration,
                 Size = 1
             });
+
+        _readModelMetricsService.RecordLoadDuration(
+            ReadModelMetricKind.DashboardSnapshot,
+            Stopwatch.GetElapsedTime(startedAt));
 
         return snapshot;
     }

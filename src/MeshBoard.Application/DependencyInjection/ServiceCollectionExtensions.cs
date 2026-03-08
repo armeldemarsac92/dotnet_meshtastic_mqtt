@@ -2,6 +2,7 @@ using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Meshtastic;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Caching;
+using MeshBoard.Application.Observability;
 using MeshBoard.Application.Services;
 using MeshBoard.Application.Workspaces;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,6 +18,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
         services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
         services.TryAddSingleton<IReadModelCacheInvalidator, InMemoryReadModelCacheInvalidator>();
+        services.TryAddSingleton<IReadModelMetricsService, InMemoryReadModelMetricsService>();
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();

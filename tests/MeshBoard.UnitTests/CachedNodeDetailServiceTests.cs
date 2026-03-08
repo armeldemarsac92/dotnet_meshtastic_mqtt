@@ -1,6 +1,8 @@
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Caching;
+using MeshBoard.Application.Observability;
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Diagnostics;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Nodes;
 using Microsoft.Extensions.Caching.Memory;
@@ -15,6 +17,7 @@ public sealed class CachedNodeDetailServiceTests
     {
         using var memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 128 });
         var invalidator = new InMemoryReadModelCacheInvalidator();
+        var metricsService = new InMemoryReadModelMetricsService();
         var messageService = new FakeMessageService();
         var nodeService = new FakeNodeService();
         var service = new CachedNodeDetailService(
@@ -23,6 +26,7 @@ public sealed class CachedNodeDetailServiceTests
             nodeService,
             new FakeWorkspaceContextAccessor(),
             invalidator,
+            metricsService,
             NullLogger<CachedNodeDetailService>.Instance);
 
         var firstNode = await service.GetNodeById("!abc12345");
@@ -44,24 +48,36 @@ public sealed class CachedNodeDetailServiceTests
         Assert.Equal(2, messageService.GetMessagesPageBySenderCallCount);
         Assert.NotSame(firstNode, thirdNode);
         Assert.NotSame(firstPage, thirdPage);
+
+        var nodeSnapshot = metricsService.GetSnapshots().Single(metric => metric.Kind == ReadModelMetricKind.NodeDetail);
+        var messageSnapshot = metricsService.GetSnapshots().Single(metric => metric.Kind == ReadModelMetricKind.NodeMessagePage);
+        Assert.Equal(1, nodeSnapshot.CacheHitCount);
+        Assert.Equal(2, nodeSnapshot.CacheMissCount);
+        Assert.Equal(1, messageSnapshot.CacheHitCount);
+        Assert.Equal(2, messageSnapshot.CacheMissCount);
     }
 
     [Fact]
     public async Task GetMessagesPageBySender_ShouldBypassCache_WhenForceRefreshIsRequested()
     {
         using var memoryCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 128 });
+        var metricsService = new InMemoryReadModelMetricsService();
         var service = new CachedNodeDetailService(
             new FakeMessageService(),
             memoryCache,
             new FakeNodeService(),
             new FakeWorkspaceContextAccessor(),
             new InMemoryReadModelCacheInvalidator(),
+            metricsService,
             NullLogger<CachedNodeDetailService>.Instance);
 
         await service.GetMessagesPageBySender("!abc12345", offset: 0, take: 25);
         var page = await service.GetMessagesPageBySender("!abc12345", offset: 0, take: 25, forceRefresh: true);
 
         Assert.Equal("refresh-2", page.Items.Single().PayloadPreview);
+
+        var snapshot = metricsService.GetSnapshots().Single(metric => metric.Kind == ReadModelMetricKind.NodeMessagePage);
+        Assert.Equal(1, snapshot.ForcedRefreshCount);
     }
 
     private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
