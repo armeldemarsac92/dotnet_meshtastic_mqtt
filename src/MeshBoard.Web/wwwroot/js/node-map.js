@@ -13,7 +13,6 @@ const HOVER_LINK_LIMIT = 18;
 const HOVER_CLEAR_DELAY_MS = 180;
 const MAX_RENDER_RESOLUTION_SCALE = 2;
 const NODE_ENTITY_PREFIX = "node:";
-const LINK_ALTITUDE_METERS = 120;
 const LIGHT_BASEMAP_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer";
 
 let cesiumLoadPromise = null;
@@ -195,7 +194,8 @@ function wireInteractions(mapState) {
     const handler = new Cesium.ScreenSpaceEventHandler(mapState.viewer.scene.canvas);
 
     handler.setInputAction((movement) => {
-        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.endPosition);
+        const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
+        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.endPosition, activeNodeId);
 
         if (nodeId) {
             clearPendingHoverClear(mapState);
@@ -216,7 +216,8 @@ function wireInteractions(mapState) {
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
     handler.setInputAction((movement) => {
-        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.position);
+        const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
+        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.position, activeNodeId);
 
         mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", nodeId);
 
@@ -252,18 +253,36 @@ function getPickResults(scene, position) {
     }
 }
 
-function resolvePickedNodeIdAtPosition(scene, position) {
-    for (const pickedObject of getPickResults(scene, position)) {
-        const nodeId = resolvePickedNodeId(pickedObject);
-        if (nodeId) {
-            return nodeId;
+function resolvePickedNodeIdAtPosition(scene, position, preferredNodeId = null) {
+    const pickResults = getPickResults(scene, position);
+
+    if (preferredNodeId) {
+        for (const pickedObject of pickResults) {
+            const entityInfo = resolvePickedEntityInfo(pickedObject);
+            if (entityInfo?.nodeId === preferredNodeId) {
+                return preferredNodeId;
+            }
+        }
+    }
+
+    for (const pickedObject of pickResults) {
+        const entityInfo = resolvePickedEntityInfo(pickedObject);
+        if (entityInfo?.isDirectNode) {
+            return entityInfo.nodeId;
+        }
+    }
+
+    for (const pickedObject of pickResults) {
+        const entityInfo = resolvePickedEntityInfo(pickedObject);
+        if (entityInfo?.nodeId) {
+            return entityInfo.nodeId;
         }
     }
 
     return null;
 }
 
-function resolvePickedNodeId(pickedObject) {
+function resolvePickedEntityInfo(pickedObject) {
     if (!pickedObject?.id) {
         return null;
     }
@@ -271,13 +290,21 @@ function resolvePickedNodeId(pickedObject) {
     const entity = pickedObject.id;
     const rawId = typeof entity === "string" ? entity : entity.id;
 
-    if (typeof rawId !== "string" || !rawId.startsWith(NODE_ENTITY_PREFIX)) {
-        return typeof entity?.meshboardHoverNodeId === "string"
-            ? entity.meshboardHoverNodeId
-            : null;
+    if (typeof rawId === "string" && rawId.startsWith(NODE_ENTITY_PREFIX)) {
+        return {
+            nodeId: rawId.slice(NODE_ENTITY_PREFIX.length),
+            isDirectNode: true
+        };
     }
 
-    return rawId.slice(NODE_ENTITY_PREFIX.length);
+    if (typeof entity?.meshboardHoverNodeId === "string") {
+        return {
+            nodeId: entity.meshboardHoverNodeId,
+            isDirectNode: false
+        };
+    }
+
+    return null;
 }
 
 function clearPendingHoverClear(mapState) {
@@ -464,14 +491,14 @@ function syncHoverState(mapState) {
         const linkEntity = mapState.viewer.entities.add({
             polyline: {
                 positions: [
-                    Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, LINK_ALTITUDE_METERS),
-                    Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, LINK_ALTITUDE_METERS)
+                    Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 0),
+                    Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 0)
                 ],
-                width: 7,
+                width: 8,
                 arcType: Cesium.ArcType.GEODESIC,
                 material: linkMaterial,
-                depthFailMaterial: linkMaterial,
-                clampToGround: false
+                clampToGround: true,
+                zIndex: 8
             }
         });
 
@@ -602,7 +629,7 @@ function triggerActivityPulse(mapState, nodeId) {
     const Cesium = window.Cesium;
     const pulseState = {
         radius: 2200,
-        pointSize: 20,
+        pointSize: 30,
         alpha: 0.95
     };
 
@@ -632,12 +659,12 @@ function triggerActivityPulse(mapState, nodeId) {
         point: {
             pixelSize: new Cesium.CallbackProperty(() => pulseState.pointSize, false),
             color: new Cesium.CallbackProperty(
-                () => pulseColor.withAlpha(Math.max(pulseState.alpha * 0.9, 0)),
+                () => pulseColor.withAlpha(Math.max(pulseState.alpha, 0)),
                 false),
             outlineColor: new Cesium.CallbackProperty(
                 () => Cesium.Color.WHITE.withAlpha(Math.max(pulseState.alpha * 0.95, 0)),
                 false),
-            outlineWidth: 3,
+            outlineWidth: 4,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY
         }
@@ -654,7 +681,7 @@ function triggerActivityPulse(mapState, nodeId) {
 
         const progress = Math.min(1, (now - startedAt) / durationMilliseconds);
         pulseState.radius = 2200 + (progress * 30000);
-        pulseState.pointSize = 20 + (progress * 34);
+        pulseState.pointSize = 30 + (progress * 42);
         pulseState.alpha = 0.95 * (1 - progress);
         currentState.viewer.scene.requestRender();
 
