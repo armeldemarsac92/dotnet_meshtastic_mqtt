@@ -83,7 +83,7 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
     {
         if (!_inboundMessageQueue.TryEnqueue(inboundMessage))
         {
-            var snapshot = _inboundMessageQueue.GetSnapshot();
+            var snapshot = _inboundMessageQueue.GetSnapshot(inboundMessage.WorkspaceId);
             var shouldLog = snapshot.DroppedCount == 1 || snapshot.DroppedCount % 100 == 0;
 
             if (shouldLog)

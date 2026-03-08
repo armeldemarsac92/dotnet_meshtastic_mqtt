@@ -1936,6 +1936,7 @@ public sealed class PersistenceIntegrationTests
                         TopicFilters = ["msh/EU_868/2/e/MediumFast/#"]
                     });
                 runtimeRegistryA.UpdatePipelineSnapshot(
+                    "workspace-a",
                     new RuntimePipelineSnapshot
                     {
                         InboundQueueCapacity = 2048,
@@ -1950,7 +1951,8 @@ public sealed class PersistenceIntegrationTests
 
                 var workspaceAStatus = runtimeRegistryB.GetSnapshot("workspace-a");
                 var workspaceBStatus = runtimeRegistryB.GetSnapshot("workspace-b");
-                var pipelineStatus = runtimeRegistryB.GetPipelineSnapshot();
+                var pipelineStatusA = runtimeRegistryB.GetPipelineSnapshot("workspace-a");
+                var pipelineStatusB = runtimeRegistryB.GetPipelineSnapshot("workspace-b");
 
                 Assert.Equal(activeProfileId, workspaceAStatus.ActiveServerProfileId);
                 Assert.Equal("Workspace A runtime", workspaceAStatus.ActiveServerName);
@@ -1966,13 +1968,15 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal("Disconnected", workspaceBStatus.LastStatusMessage);
                 Assert.Equal(["msh/EU_868/2/e/MediumFast/#"], workspaceBStatus.TopicFilters);
 
-                Assert.Equal(2048, pipelineStatus.InboundQueueCapacity);
-                Assert.Equal(2, pipelineStatus.InboundWorkerCount);
-                Assert.Equal(5, pipelineStatus.InboundQueueDepth);
-                Assert.Equal(900, pipelineStatus.InboundOldestMessageAgeMilliseconds);
-                Assert.Equal(80, pipelineStatus.InboundEnqueuedCount);
-                Assert.Equal(75, pipelineStatus.InboundDequeuedCount);
-                Assert.Equal(3, pipelineStatus.InboundDroppedCount);
+                Assert.Equal(2048, pipelineStatusA.InboundQueueCapacity);
+                Assert.Equal(2, pipelineStatusA.InboundWorkerCount);
+                Assert.Equal(5, pipelineStatusA.InboundQueueDepth);
+                Assert.Equal(900, pipelineStatusA.InboundOldestMessageAgeMilliseconds);
+                Assert.Equal(80, pipelineStatusA.InboundEnqueuedCount);
+                Assert.Equal(75, pipelineStatusA.InboundDequeuedCount);
+                Assert.Equal(3, pipelineStatusA.InboundDroppedCount);
+                Assert.Equal(0, pipelineStatusB.InboundQueueCapacity);
+                Assert.Equal(0, pipelineStatusB.InboundQueueDepth);
             }
             finally
             {

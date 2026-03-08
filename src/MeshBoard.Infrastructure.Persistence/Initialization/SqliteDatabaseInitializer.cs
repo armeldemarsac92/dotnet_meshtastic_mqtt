@@ -59,6 +59,7 @@ internal sealed class SqliteDatabaseInitializer
         await MigrateDiscoveredTopicsAsync(connection, cancellationToken);
         await MigrateTopicPresetsAsync(connection, cancellationToken);
         await MigrateProjectionChangeLogAsync(connection, cancellationToken);
+        await MigrateRuntimePipelineStatusAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
             SchemaQueries.DeleteExpiredMessages,
@@ -356,6 +357,49 @@ internal sealed class SqliteDatabaseInitializer
             "entity_key",
             SchemaQueries.AddProjectionChangeLogEntityKeyColumn,
             cancellationToken);
+    }
+
+    private static async Task MigrateRuntimePipelineStatusAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(
+                new CommandDefinition(
+                    SchemaQueries.GetRuntimePipelineStatusColumns,
+                    cancellationToken: cancellationToken)))
+            .ToList();
+
+        var columnNames = columns
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var hasWorkspaceIdPrimaryKey = columns.Any(
+            column => string.Equals(column.Name, "workspace_id", StringComparison.OrdinalIgnoreCase) && column.Pk > 0);
+
+        if (columnNames.Contains("workspace_id") && hasWorkspaceIdPrimaryKey)
+        {
+            return;
+        }
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropRuntimePipelineStatusLegacyTable,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.RenameRuntimePipelineStatusToLegacy,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.RecreateRuntimePipelineStatusWithWorkspace,
+                cancellationToken: cancellationToken));
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                SchemaQueries.DropRuntimePipelineStatusLegacyTable,
+                cancellationToken: cancellationToken));
     }
 
     private static async Task MigrateBrokerServerProfilesAsync(

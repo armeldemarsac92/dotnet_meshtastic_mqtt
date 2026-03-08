@@ -133,7 +133,7 @@ internal static class SchemaQueries
             ON projection_change_log(workspace_id, id);
 
         CREATE TABLE IF NOT EXISTS runtime_pipeline_status (
-            id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL PRIMARY KEY,
             inbound_queue_capacity INTEGER NOT NULL,
             inbound_worker_count INTEGER NOT NULL,
             inbound_queue_depth INTEGER NOT NULL,
@@ -211,10 +211,40 @@ internal static class SchemaQueries
         PRAGMA table_info(projection_change_log);
         """;
 
+    public static string GetRuntimePipelineStatusColumns =>
+        """
+        PRAGMA table_info(runtime_pipeline_status);
+        """;
+
     public static string AddProjectionChangeLogEntityKeyColumn =>
         """
         ALTER TABLE projection_change_log
         ADD COLUMN entity_key TEXT NULL;
+        """;
+
+    public static string DropRuntimePipelineStatusLegacyTable =>
+        """
+        DROP TABLE IF EXISTS runtime_pipeline_status_legacy;
+        """;
+
+    public static string RenameRuntimePipelineStatusToLegacy =>
+        """
+        ALTER TABLE runtime_pipeline_status RENAME TO runtime_pipeline_status_legacy;
+        """;
+
+    public static string RecreateRuntimePipelineStatusWithWorkspace =>
+        """
+        CREATE TABLE IF NOT EXISTS runtime_pipeline_status (
+            workspace_id TEXT NOT NULL PRIMARY KEY,
+            inbound_queue_capacity INTEGER NOT NULL,
+            inbound_worker_count INTEGER NOT NULL,
+            inbound_queue_depth INTEGER NOT NULL,
+            inbound_oldest_message_age_ms INTEGER NOT NULL,
+            inbound_enqueued_count INTEGER NOT NULL,
+            inbound_dequeued_count INTEGER NOT NULL,
+            inbound_dropped_count INTEGER NOT NULL,
+            updated_at_utc TEXT NOT NULL
+        );
         """;
 
     public static string AddMessageHistoryPacketTypeColumn =>

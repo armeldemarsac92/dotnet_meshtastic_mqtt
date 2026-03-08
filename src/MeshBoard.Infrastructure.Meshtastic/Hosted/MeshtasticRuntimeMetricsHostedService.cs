@@ -59,20 +59,27 @@ internal sealed class MeshtasticRuntimeMetricsHostedService : BackgroundService
 
     private Task PublishSnapshotAsync()
     {
-        var queueSnapshot = _inboundMessageQueue.GetSnapshot();
-
-        _brokerRuntimeRegistry.UpdatePipelineSnapshot(
-            new RuntimePipelineSnapshot
+        foreach (var queueSnapshot in _inboundMessageQueue.GetSnapshots())
+        {
+            if (string.IsNullOrWhiteSpace(queueSnapshot.WorkspaceId))
             {
-                InboundQueueCapacity = queueSnapshot.Capacity,
-                InboundWorkerCount = Math.Max(1, _runtimeOptions.InboundWorkerCount),
-                InboundQueueDepth = queueSnapshot.CurrentDepth,
-                InboundOldestMessageAgeMilliseconds = queueSnapshot.OldestMessageAgeMilliseconds,
-                InboundEnqueuedCount = queueSnapshot.EnqueuedCount,
-                InboundDequeuedCount = queueSnapshot.DequeuedCount,
-                InboundDroppedCount = queueSnapshot.DroppedCount,
-                UpdatedAtUtc = _timeProvider.GetUtcNow()
-            });
+                continue;
+            }
+
+            _brokerRuntimeRegistry.UpdatePipelineSnapshot(
+                queueSnapshot.WorkspaceId,
+                new RuntimePipelineSnapshot
+                {
+                    InboundQueueCapacity = queueSnapshot.Capacity,
+                    InboundWorkerCount = Math.Max(1, _runtimeOptions.InboundWorkerCount),
+                    InboundQueueDepth = queueSnapshot.CurrentDepth,
+                    InboundOldestMessageAgeMilliseconds = queueSnapshot.OldestMessageAgeMilliseconds,
+                    InboundEnqueuedCount = queueSnapshot.EnqueuedCount,
+                    InboundDequeuedCount = queueSnapshot.DequeuedCount,
+                    InboundDroppedCount = queueSnapshot.DroppedCount,
+                    UpdatedAtUtc = _timeProvider.GetUtcNow()
+                });
+        }
 
         return Task.CompletedTask;
     }
