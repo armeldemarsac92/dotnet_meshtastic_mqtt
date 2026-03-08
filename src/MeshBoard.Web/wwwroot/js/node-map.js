@@ -10,8 +10,10 @@ const DEFAULT_CAMERA = {
     height: 22000000
 };
 const HOVER_LINK_LIMIT = 18;
+const HOVER_CLEAR_DELAY_MS = 90;
 const MAX_RENDER_RESOLUTION_SCALE = 2;
 const NODE_ENTITY_PREFIX = "node:";
+const LIGHT_BASEMAP_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer";
 
 let cesiumLoadPromise = null;
 const mapStates = new Map();
@@ -87,7 +89,19 @@ function resolveBatteryColor(batteryLevelPercent) {
     return { stroke: "#317e49", fill: "#73c98f" };
 }
 
-function createViewer(container) {
+async function createBaseImageryProvider(Cesium) {
+    try {
+        return await Cesium.ArcGisMapServerImageryProvider.fromUrl(LIGHT_BASEMAP_URL);
+    }
+    catch {
+        return new Cesium.OpenStreetMapImageryProvider({
+            maximumLevel: 19,
+            url: "https://tile.openstreetmap.org/"
+        });
+    }
+}
+
+async function createViewer(container) {
     const Cesium = window.Cesium;
     const viewer = new Cesium.Viewer(container, {
         animation: false,
@@ -105,24 +119,21 @@ function createViewer(container) {
     });
 
     viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
-        maximumLevel: 19,
-        url: "https://tile.openstreetmap.org/"
-    }));
+    viewer.imageryLayers.addImageryProvider(await createBaseImageryProvider(Cesium));
 
     const baseLayer = viewer.imageryLayers.get(0);
     if (baseLayer) {
-        baseLayer.alpha = 0.96;
-        baseLayer.brightness = 1.08;
-        baseLayer.contrast = 0.88;
+        baseLayer.alpha = 0.92;
+        baseLayer.brightness = 1.12;
+        baseLayer.contrast = 0.76;
         baseLayer.gamma = 1.02;
-        baseLayer.saturation = 0.18;
+        baseLayer.saturation = 0.05;
     }
 
     viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, MAX_RENDER_RESOLUTION_SCALE);
     viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#f4f7fb");
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#eef3f8");
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#f7f9fc");
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#f2f5f9");
     viewer.scene.globe.enableLighting = false;
     viewer.scene.globe.showGroundAtmosphere = false;
     viewer.scene.skyAtmosphere.show = false;
@@ -146,7 +157,7 @@ function createViewer(container) {
     return viewer;
 }
 
-function getOrCreateMapState(containerId, dotNetCallbackRef) {
+async function getOrCreateMapState(containerId, dotNetCallbackRef) {
     const existingState = mapStates.get(containerId);
     if (existingState) {
         existingState.dotNetCallbackRef = dotNetCallbackRef;
@@ -158,16 +169,18 @@ function getOrCreateMapState(containerId, dotNetCallbackRef) {
         return null;
     }
 
-    const viewer = createViewer(container);
+    const viewer = await createViewer(container);
     const mapState = {
         containerId,
         dotNetCallbackRef,
         viewer,
         interactionHandler: null,
+        hoverClearTimeoutId: null,
         nodeDataById: new Map(),
         nodeEntities: new Map(),
         linkEntities: [],
         hoveredNodeId: null,
+        pinnedNodeId: null,
         didAutoFrame: false
     };
 
@@ -181,9 +194,18 @@ function wireInteractions(mapState) {
     const handler = new Cesium.ScreenSpaceEventHandler(mapState.viewer.scene.canvas);
 
     handler.setInputAction((movement) => {
-        const nodeId = resolvePickedNodeId(mapState.viewer.scene.pick(movement.endPosition));
+        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.endPosition);
+
+        if (nodeId) {
+            clearPendingHoverClear(mapState);
+        }
 
         if (nodeId === mapState.hoveredNodeId) {
+            return;
+        }
+
+        if (!nodeId) {
+            scheduleHoverClear(mapState);
             return;
         }
 
@@ -193,16 +215,45 @@ function wireInteractions(mapState) {
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
     handler.setInputAction((movement) => {
-        const nodeId = resolvePickedNodeId(mapState.viewer.scene.pick(movement.position));
+        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.position);
 
         if (!nodeId) {
             return;
         }
 
+        clearPendingHoverClear(mapState);
+        mapState.hoveredNodeId = nodeId;
+        mapState.pinnedNodeId = nodeId;
+        syncHoverState(mapState);
         mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", nodeId);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     mapState.interactionHandler = handler;
+}
+
+function getPickResults(scene, position) {
+    if (!position) {
+        return [];
+    }
+
+    try {
+        return scene.drillPick(position, 10) ?? [];
+    }
+    catch {
+        const pickedObject = scene.pick(position);
+        return pickedObject ? [pickedObject] : [];
+    }
+}
+
+function resolvePickedNodeIdAtPosition(scene, position) {
+    for (const pickedObject of getPickResults(scene, position)) {
+        const nodeId = resolvePickedNodeId(pickedObject);
+        if (nodeId) {
+            return nodeId;
+        }
+    }
+
+    return null;
 }
 
 function resolvePickedNodeId(pickedObject) {
@@ -220,6 +271,40 @@ function resolvePickedNodeId(pickedObject) {
     }
 
     return rawId.slice(NODE_ENTITY_PREFIX.length);
+}
+
+function clearPendingHoverClear(mapState) {
+    if (!mapState.hoverClearTimeoutId) {
+        return;
+    }
+
+    window.clearTimeout(mapState.hoverClearTimeoutId);
+    mapState.hoverClearTimeoutId = null;
+}
+
+function scheduleHoverClear(mapState) {
+    if (mapState.pinnedNodeId) {
+        mapState.hoveredNodeId = null;
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+        return;
+    }
+
+    clearPendingHoverClear(mapState);
+    mapState.hoverClearTimeoutId = window.setTimeout(() => {
+        mapState.hoverClearTimeoutId = null;
+
+        if (!mapStates.has(mapState.containerId) || mapState.viewer.isDestroyed()) {
+            return;
+        }
+
+        if (mapState.hoveredNodeId === null) {
+            return;
+        }
+
+        mapState.hoveredNodeId = null;
+        syncHoverState(mapState);
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+    }, HOVER_CLEAR_DELAY_MS);
 }
 
 function normalizeNodes(nodes) {
@@ -298,6 +383,10 @@ function syncNodeEntities(mapState, nodes) {
     if (mapState.hoveredNodeId && !mapState.nodeDataById.has(mapState.hoveredNodeId)) {
         mapState.hoveredNodeId = null;
     }
+
+    if (mapState.pinnedNodeId && !mapState.nodeDataById.has(mapState.pinnedNodeId)) {
+        mapState.pinnedNodeId = null;
+    }
 }
 
 function buildNodeLabel(node) {
@@ -321,6 +410,9 @@ function applyNodeAppearance(entity, node, isHovered) {
 
 function syncHoverState(mapState) {
     clearHoverLinks(mapState);
+    clearPendingHoverClear(mapState);
+
+    const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
 
     for (const [nodeId, entity] of mapState.nodeEntities.entries()) {
         const node = mapState.nodeDataById.get(nodeId);
@@ -328,11 +420,11 @@ function syncHoverState(mapState) {
             continue;
         }
 
-        applyNodeAppearance(entity, node, nodeId === mapState.hoveredNodeId);
+        applyNodeAppearance(entity, node, nodeId === activeNodeId);
     }
 
-    const hoveredNode = mapState.hoveredNodeId
-        ? mapState.nodeDataById.get(mapState.hoveredNodeId)
+    const hoveredNode = activeNodeId
+        ? mapState.nodeDataById.get(activeNodeId)
         : null;
 
     mapState.viewer.container.style.cursor = hoveredNode ? "pointer" : "grab";
@@ -359,15 +451,16 @@ function syncHoverState(mapState) {
         const linkEntity = mapState.viewer.entities.add({
             polyline: {
                 positions: [
-                    Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 14000),
-                    Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 14000)
+                    Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 32000),
+                    Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 32000)
                 ],
-                width: 3,
+                width: 6,
                 arcType: Cesium.ArcType.GEODESIC,
                 material: new Cesium.PolylineGlowMaterialProperty({
-                    glowPower: 0.2,
+                    glowPower: 0.34,
                     color: linkColor
-                })
+                }),
+                clampToGround: false
             }
         });
 
@@ -549,7 +642,7 @@ function triggerActivityPulse(mapState, nodeId) {
 export async function renderNodeMap(containerId, nodes, activityPulses, fitCameraToNodes, dotNetCallbackRef) {
     await ensureCesium();
 
-    const mapState = getOrCreateMapState(containerId, dotNetCallbackRef);
+    const mapState = await getOrCreateMapState(containerId, dotNetCallbackRef);
     if (!mapState) {
         return;
     }
@@ -562,6 +655,20 @@ export async function renderNodeMap(containerId, nodes, activityPulses, fitCamer
     mapState.viewer.scene.requestRender();
 }
 
+export function setPinnedNode(containerId, nodeId) {
+    const mapState = mapStates.get(containerId);
+    if (!mapState || mapState.viewer.isDestroyed()) {
+        return;
+    }
+
+    mapState.pinnedNodeId = typeof nodeId === "string" && nodeId.length > 0
+        ? nodeId
+        : null;
+
+    syncHoverState(mapState);
+    mapState.viewer.scene.requestRender();
+}
+
 export function disposeNodeMap(containerId) {
     const mapState = mapStates.get(containerId);
     if (!mapState) {
@@ -569,6 +676,7 @@ export function disposeNodeMap(containerId) {
     }
 
     clearHoverLinks(mapState);
+    clearPendingHoverClear(mapState);
     mapState.interactionHandler?.destroy();
 
     if (!mapState.viewer.isDestroyed()) {

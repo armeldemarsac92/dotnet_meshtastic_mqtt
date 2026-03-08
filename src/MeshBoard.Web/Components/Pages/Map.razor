@@ -14,11 +14,11 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
         </div>
         <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
-            Browse all observed nodes on a 3D globe. Click a node to open details, hover to reveal its shared-channel cohort, and watch for echo rings when traffic is heard.
+            Browse all observed nodes on a 3D globe. Click a node to pin focus, hover to reveal its shared-channel cohort, and watch for echo rings when traffic is heard.
         </p>
     </header>
 
-    <section class="shrink-0 space-y-3 overflow-hidden rounded-[1.45rem] border border-white/60 bg-white/76 p-4 shadow-lg shadow-cinder-950/10 backdrop-blur-sm">
+    <section class="liquid-panel shrink-0 space-y-3 overflow-hidden rounded-[1.6rem] p-4">
         <div class="flex flex-wrap items-start justify-between gap-3 text-sm text-cinder-800/82">
             <div class="space-y-1">
                 <p>@GetMapSummaryText()</p>
@@ -35,7 +35,7 @@
 
         @if (!string.IsNullOrWhiteSpace(_focusedChannel))
         {
-            <div class="flex flex-wrap items-center justify-between gap-3 rounded-[1.2rem] border border-white/65 bg-white/72 px-3 py-2.5 shadow-lg shadow-cinder-950/8 backdrop-blur-sm">
+            <div class="liquid-subpanel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
                 <div class="space-y-1">
                     <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel focus</p>
                     <p class="break-words text-sm font-semibold text-cinder-950">@_focusedChannel</p>
@@ -114,63 +114,82 @@
             </div>
 
             <div class="pointer-events-auto shrink-0">
-                        <button type="button"
-                                class="rounded-full border border-white/70 bg-white/80 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-950 shadow-lg shadow-cinder-950/15 backdrop-blur-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-                                @onclick="RefreshNodesAsync"
-                                disabled="@_isLoading">
-                            @(_isLoading ? "Refreshing..." : "Refresh map")
+                <button type="button"
+                        class="liquid-button liquid-button-accent rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35 disabled:cursor-not-allowed disabled:opacity-60"
+                        @onclick="RefreshNodesAsync"
+                        disabled="@_isLoading">
+                    @(_isLoading ? "Refreshing..." : "Refresh map")
                 </button>
             </div>
         </div>
 
         <div class="pointer-events-none absolute bottom-7 right-7 z-10 w-full max-w-sm">
-            <div class="pointer-events-auto space-y-3 rounded-[1.25rem] border border-white/72 bg-white/82 p-4 shadow-lg shadow-cinder-950/18 backdrop-blur-sm">
+            <div class="pointer-events-auto liquid-subpanel space-y-3 rounded-[1.35rem] border border-white/60 bg-linear-to-br from-white/96 via-sand-100/90 to-signal-400/70 p-4 shadow-2xl shadow-cinder-950/35">
                 <div class="space-y-1">
                     <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Focused node</p>
 
-                    @if (_hoveredMapNode is null)
+                    @if (_focusedMapNode is null)
                     {
-                        <p class="text-xs leading-6 text-cinder-800/72">Hover a node on the globe to inspect its active channel cohort.</p>
+                        <p class="text-xs leading-6 text-cinder-800/72">Hover a node on the globe to inspect its active channel cohort, or click one to pin this panel.</p>
                     }
                     else
                     {
                         <div class="space-y-1">
-                            <p class="text-sm font-semibold text-cinder-950">@_hoveredMapNode.DisplayName</p>
-                            <p class="break-words text-[0.72rem] text-cinder-800/72">@_hoveredMapNode.NodeId</p>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <p class="text-sm font-semibold text-cinder-950">@_focusedMapNode.DisplayName</p>
+
+                                @if (!string.IsNullOrWhiteSpace(_pinnedMapNodeId))
+                                {
+                                    <span class="rounded-full border border-signal-500/35 bg-signal-400/18 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-signal-700">
+                                        Pinned
+                                    </span>
+                                }
+                            </div>
+
+                            <p class="break-words text-[0.72rem] text-cinder-800/72">@_focusedMapNode.NodeId</p>
                         </div>
 
                         <dl class="grid gap-2 text-[0.72rem] text-cinder-800/78 sm:grid-cols-2">
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/62 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Channel</dt>
-                                <dd class="mt-1 break-words text-cinder-950">@(_hoveredMapNode.Channel ?? "Unknown")</dd>
+                                <dd class="mt-1 break-words text-cinder-950">@(_focusedMapNode.Channel ?? "Unknown")</dd>
                             </div>
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/62 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Visible peers</dt>
-                                <dd class="mt-1 text-cinder-950">@_hoveredNodePeerCount</dd>
+                                <dd class="mt-1 text-cinder-950">@_focusedNodePeerCount</dd>
                             </div>
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/62 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Battery</dt>
-                                <dd class="mt-1 text-cinder-950">@(_hoveredMapNode.BatteryLevelPercent?.ToString() ?? "Unknown")</dd>
+                                <dd class="mt-1 text-cinder-950">@(_focusedMapNode.BatteryLevelPercent?.ToString() ?? "Unknown")</dd>
                             </div>
-                            <div class="rounded-2xl border border-sand-200/80 bg-white/62 px-3 py-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
                                 <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Coordinates</dt>
-                                <dd class="mt-1 text-cinder-950">@GetCoordinateText(_hoveredMapNode)</dd>
+                                <dd class="mt-1 text-cinder-950">@GetCoordinateText(_focusedMapNode)</dd>
                             </div>
                         </dl>
 
                         <div class="flex flex-wrap gap-2">
                             <button type="button"
                                     class="liquid-inline-action liquid-inline-action-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
-                                    @onclick="() => OpenNodeDetailsAsync(_hoveredMapNode.NodeId)">
+                                    @onclick="() => OpenNodeDetailsAsync(_focusedMapNode.NodeId)">
                                 Open node
                             </button>
 
-                            @if (!string.IsNullOrWhiteSpace(_hoveredMapNode.Channel))
+                            @if (!string.IsNullOrWhiteSpace(_focusedMapNode.Channel))
                             {
                                 <button type="button"
                                         class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
-                                        @onclick="() => OpenChannelDetailsAsync(_hoveredMapNode.Channel!)">
+                                        @onclick="() => OpenChannelDetailsAsync(_focusedMapNode.Channel!)">
                                     Open channel
+                                </button>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(_pinnedMapNodeId))
+                            {
+                                <button type="button"
+                                        class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="ReleasePinnedNodeFocusAsync">
+                                    Release pin
                                 </button>
                             }
                         </div>
@@ -212,8 +231,9 @@
     private string? _focusedChannel;
     private string? _selectedChannel;
     private string? _hoveredMapNodeId;
-    private MapNodePoint? _hoveredMapNode;
-    private int _hoveredNodePeerCount;
+    private string? _pinnedMapNodeId;
+    private MapNodePoint? _focusedMapNode;
+    private int _focusedNodePeerCount;
     private string? _selectedNodeId;
     private string? _selectedRegion;
     private string? _statusMessage;
@@ -274,7 +294,8 @@
     [JSInvokable]
     public async Task OnNodeSelectedFromMap(string nodeId)
     {
-        _selectedNodeId = nodeId;
+        _pinnedMapNodeId = string.IsNullOrWhiteSpace(nodeId) ? null : nodeId;
+        RefreshFocusedMapNode();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -282,7 +303,7 @@
     public async Task OnNodeHoveredFromMap(string? nodeId)
     {
         _hoveredMapNodeId = string.IsNullOrWhiteSpace(nodeId) ? null : nodeId;
-        RefreshHoveredMapNode();
+        RefreshFocusedMapNode();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -479,9 +500,10 @@
             _activityPulses = [];
             _channelLegendEntries = [];
             _hiddenChannelLegendCount = 0;
-            _hoveredMapNode = null;
+            _focusedMapNode = null;
             _hoveredMapNodeId = null;
-            _hoveredNodePeerCount = 0;
+            _pinnedMapNodeId = null;
+            _focusedNodePeerCount = 0;
             _statusMessage = $"Map load failed: {exception.Message}";
             _isMapRenderPending = true;
         }
@@ -523,7 +545,7 @@
                 .ToList();
 
         ApplyChannelLegend();
-        RefreshHoveredMapNode();
+        RefreshFocusedMapNode();
         _isMapRenderPending = true;
     }
 
@@ -600,27 +622,63 @@
         return $"{summary} Focused on {_focusedChannel}.";
     }
 
-    private void RefreshHoveredMapNode()
+    private async Task ReleasePinnedNodeFocusAsync()
     {
-        if (string.IsNullOrWhiteSpace(_hoveredMapNodeId))
+        _pinnedMapNodeId = null;
+        RefreshFocusedMapNode();
+
+        if (_mapModule is not null)
         {
-            _hoveredMapNode = null;
-            _hoveredNodePeerCount = 0;
+            try
+            {
+                await _mapModule.InvokeVoidAsync("setPinnedNode", MapElementId, null);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshFocusedMapNode()
+    {
+        var focusedNodeId = _pinnedMapNodeId ?? _hoveredMapNodeId;
+
+        if (string.IsNullOrWhiteSpace(focusedNodeId))
+        {
+            _focusedMapNode = null;
+            _focusedNodePeerCount = 0;
             return;
         }
 
-        _hoveredMapNode = _visibleMapNodes.FirstOrDefault(node =>
-            string.Equals(node.NodeId, _hoveredMapNodeId, StringComparison.Ordinal));
+        _focusedMapNode = _visibleMapNodes.FirstOrDefault(node =>
+            string.Equals(node.NodeId, focusedNodeId, StringComparison.Ordinal));
 
-        if (_hoveredMapNode is null || string.IsNullOrWhiteSpace(_hoveredMapNode.Channel))
+        if (_focusedMapNode is null && !string.IsNullOrWhiteSpace(_pinnedMapNodeId))
         {
-            _hoveredNodePeerCount = 0;
+            _pinnedMapNodeId = null;
+            focusedNodeId = _hoveredMapNodeId;
+
+            if (string.IsNullOrWhiteSpace(focusedNodeId))
+            {
+                _focusedNodePeerCount = 0;
+                return;
+            }
+
+            _focusedMapNode = _visibleMapNodes.FirstOrDefault(node =>
+                string.Equals(node.NodeId, focusedNodeId, StringComparison.Ordinal));
+        }
+
+        if (_focusedMapNode is null || string.IsNullOrWhiteSpace(_focusedMapNode.Channel))
+        {
+            _focusedNodePeerCount = 0;
             return;
         }
 
-        _hoveredNodePeerCount = _visibleMapNodes.Count(node =>
-            !string.Equals(node.NodeId, _hoveredMapNode.NodeId, StringComparison.Ordinal) &&
-            string.Equals(node.Channel, _hoveredMapNode.Channel, StringComparison.Ordinal));
+        _focusedNodePeerCount = _visibleMapNodes.Count(node =>
+            !string.Equals(node.NodeId, _focusedMapNode.NodeId, StringComparison.Ordinal) &&
+            string.Equals(node.Channel, _focusedMapNode.Channel, StringComparison.Ordinal));
     }
 
     private static string GetCoordinateText(MapNodePoint node)
