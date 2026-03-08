@@ -4,7 +4,14 @@ namespace MeshBoard.Application.Abstractions.Persistence;
 
 public interface ITopicPresetRepository
 {
-    Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(
+        string workspaceId,
+        string brokerServer,
+        CancellationToken cancellationToken = default);
 
-    Task<TopicPreset> UpsertAsync(SaveTopicPresetRequest request, CancellationToken cancellationToken = default);
+    Task<TopicPreset> UpsertAsync(
+        string workspaceId,
+        string brokerServer,
+        SaveTopicPresetRequest request,
+        CancellationToken cancellationToken = default);
 }

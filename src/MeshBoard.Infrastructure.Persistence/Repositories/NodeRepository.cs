@@ -1,6 +1,7 @@
 using System.Text;
 using Dapper;
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Nodes;
 using MeshBoard.Infrastructure.Persistence.Context;
 using MeshBoard.Infrastructure.Persistence.Mapping;
@@ -14,21 +15,61 @@ internal sealed class NodeRepository : INodeRepository
 {
     private readonly IDbContext _dbContext;
     private readonly ILogger<NodeRepository> _logger;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
-    public NodeRepository(IDbContext dbContext, ILogger<NodeRepository> logger)
+    public NodeRepository(
+        IDbContext dbContext,
+        IWorkspaceContextAccessor workspaceContextAccessor,
+        ILogger<NodeRepository> logger)
     {
         _dbContext = dbContext;
+        _workspaceContextAccessor = workspaceContextAccessor;
         _logger = logger;
     }
 
     public Task<int> CountAsync(NodeQuery query, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to count nodes");
+        _logger.LogDebug("Attempting to count nodes");
 
         return _dbContext.QueryFirstOrDefaultAsync<int>(
             NodeQueries.CountNodes,
-            CreateQueryParameters(query),
+            CreateQueryParameters(query, _workspaceContextAccessor.GetWorkspaceId()),
             cancellationToken);
+    }
+
+    public async Task<NodeSummary?> GetByIdAsync(string nodeId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+
+        _logger.LogDebug("Attempting to fetch node by id {NodeId}", nodeId);
+
+        var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
+            NodeQueries.SelectNodeById,
+            new { NodeId = nodeId },
+            cancellationToken);
+
+        return sqlResponses.MapToNodes().FirstOrDefault();
+    }
+
+    public async Task<IReadOnlyCollection<NodeSummary>> GetLocatedAsync(
+        string? searchText,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Attempting to fetch located nodes with take {Take}", take);
+
+        var normalizedSearchText = searchText?.Trim() ?? string.Empty;
+        var sqlResponses = await _dbContext.QueryAsync<NodeSqlResponse>(
+            NodeQueries.SelectLocatedNodes,
+            new
+            {
+                SearchText = normalizedSearchText,
+                SearchPattern = $"%{normalizedSearchText}%",
+                Take = take
+            },
+            cancellationToken);
+
+        return sqlResponses.MapToNodes();
     }
 
     public async Task<IReadOnlyCollection<NodeSummary>> GetPageAsync(
@@ -37,14 +78,14 @@ internal sealed class NodeRepository : INodeRepository
         int take,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to fetch nodes with offset {Offset} and take {Take}", offset, take);
+        _logger.LogDebug("Attempting to fetch nodes with offset {Offset} and take {Take}", offset, take);
 
         var sqlBuilder = new StringBuilder(NodeQueries.SelectNodes)
             .AppendLine()
             .AppendLine(GetOrderByClause(query.SortBy))
             .AppendLine("LIMIT @Take OFFSET @Offset;");
 
-        var parameters = CreateQueryParameters(query);
+        var parameters = CreateQueryParameters(query, _workspaceContextAccessor.GetWorkspaceId());
         parameters.Add("Take", take);
         parameters.Add("Offset", offset);
 
@@ -66,11 +107,12 @@ internal sealed class NodeRepository : INodeRepository
             cancellationToken);
     }
 
-    private static DynamicParameters CreateQueryParameters(NodeQuery query)
+    private static DynamicParameters CreateQueryParameters(NodeQuery query, string workspaceId)
     {
         var parameters = new DynamicParameters();
         var normalizedSearchText = query.SearchText.Trim();
 
+        parameters.Add("WorkspaceId", workspaceId);
         parameters.Add("SearchText", normalizedSearchText);
         parameters.Add("SearchPattern", $"%{normalizedSearchText}%");
         parameters.Add("OnlyFavorites", query.OnlyFavorites ? 1 : 0);

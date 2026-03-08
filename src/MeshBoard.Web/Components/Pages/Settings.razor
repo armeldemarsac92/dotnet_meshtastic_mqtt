@@ -1,7 +1,14 @@
 @page "/settings"
+@implements IAsyncDisposable
+@inject MeshBoard.Application.Observability.IActiveCircuitMetricsService ActiveCircuitMetricsService
+@inject MeshBoard.Application.Observability.IReadModelMetricsService ReadModelMetricsService
+@inject IBrokerMonitorService BrokerMonitorService
+@inject IBrokerRuntimeCommandQueryService BrokerRuntimeCommandQueryService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject IMessageRetentionService MessageRetentionService
-@inject IOptions<BrokerOptions> BrokerConfiguration
 @inject IOptions<PersistenceOptions> PersistenceConfiguration
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
+@inject ServerSelectionNotifier ServerSelectionNotifier
 
 <PageTitle>Settings</PageTitle>
 
@@ -9,26 +16,59 @@
     <header class="space-y-3">
         <div>
             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Configuration</p>
-            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Runtime defaults</h1>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Runtime and persistence settings</h1>
         </div>
         <p class="max-w-5xl text-base leading-8 text-cinder-800">
-            Review current broker and storage settings, then prune expired message history when needed.
+            MQTT server profiles now live in <a href="/topics" class="underline underline-offset-4">Topic explorer</a>.
+            This page focuses on runtime visibility and data maintenance.
         </p>
     </header>
 
     <section class="grid gap-4 xl:grid-cols-2">
         <article class="liquid-panel rounded-[1.6rem] p-6">
-            <h2 class="font-display text-3xl text-cinder-950">Broker</h2>
+            <h2 class="font-display text-3xl text-cinder-950">Active runtime</h2>
             <dl class="mt-5 grid gap-3 sm:grid-cols-[11rem_1fr]">
-                <dt class="text-cinder-800/70">Host</dt>
-                <dd class="font-medium text-cinder-950">@BrokerConfiguration.Value.Host</dd>
-                <dt class="text-cinder-800/70">Port</dt>
-                <dd class="font-medium text-cinder-950">@BrokerConfiguration.Value.Port</dd>
-                <dt class="text-cinder-800/70">Default topic</dt>
-                <dd class="font-medium text-cinder-950"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@BrokerConfiguration.Value.DefaultTopicPattern</code></dd>
-                <dt class="text-cinder-800/70">Send enabled</dt>
-                <dd class="font-medium text-cinder-950">@BrokerConfiguration.Value.EnableSend</dd>
+                <dt class="text-cinder-800/70">Server</dt>
+                <dd class="font-medium text-cinder-950">@(_brokerStatus.ActiveServerName ?? "Unknown")</dd>
+                <dt class="text-cinder-800/70">Endpoint</dt>
+                <dd class="font-medium text-cinder-950">@(_brokerStatus.ActiveServerAddress ?? "Unknown")</dd>
+                <dt class="text-cinder-800/70">Connection</dt>
+                <dd class="font-medium text-cinder-950">@(_brokerStatus.IsConnected ? "Connected" : "Disconnected")</dd>
+                <dt class="text-cinder-800/70">Queue depth</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundQueueDepth / @_brokerStatus.InboundQueueCapacity</dd>
+                <dt class="text-cinder-800/70">Workers</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundWorkerCount</dd>
+                <dt class="text-cinder-800/70">Oldest queued</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundOldestMessageAgeMilliseconds ms</dd>
+                <dt class="text-cinder-800/70">Dropped</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundDroppedCount</dd>
             </dl>
+            @if (!string.IsNullOrWhiteSpace(_brokerStatus.LastStatusMessage))
+            {
+                <p class="mt-4 text-sm text-cinder-800/82">@_brokerStatus.LastStatusMessage</p>
+            }
+            @if (_brokerStatus.RuntimeMetricsUpdatedAtUtc.HasValue)
+            {
+                <p class="mt-2 text-xs text-cinder-800/68">Metrics updated @_brokerStatus.RuntimeMetricsUpdatedAtUtc.Value.ToString("u")</p>
+            }
+        </article>
+
+        <article class="liquid-panel rounded-[1.6rem] p-6">
+            <h2 class="font-display text-3xl text-cinder-950">Web app</h2>
+            <dl class="mt-5 grid gap-3 sm:grid-cols-[11rem_1fr]">
+                <dt class="text-cinder-800/70">Active circuits</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.ActiveCircuitCount</dd>
+                <dt class="text-cinder-800/70">Peak circuits</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.PeakActiveCircuitCount</dd>
+                <dt class="text-cinder-800/70">Opened</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.OpenedCircuitCount</dd>
+                <dt class="text-cinder-800/70">Closed</dt>
+                <dd class="font-medium text-cinder-950">@_activeCircuitMetrics.ClosedCircuitCount</dd>
+            </dl>
+            @if (_activeCircuitMetrics.LastChangedAtUtc.HasValue)
+            {
+                <p class="mt-2 text-xs text-cinder-800/68">Circuit metrics updated @_activeCircuitMetrics.LastChangedAtUtc.Value.ToString("u")</p>
+            }
         </article>
 
         <article class="liquid-panel rounded-[1.6rem] p-6">
@@ -55,11 +95,131 @@
             </div>
         </article>
     </section>
+
+    <section class="liquid-panel rounded-[1.6rem] p-6">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h2 class="font-display text-3xl text-cinder-950">Runtime commands</h2>
+                <p class="mt-2 max-w-3xl text-sm leading-7 text-cinder-800/78">
+                    This is the durable command queue between the web app and the runtime worker.
+                </p>
+            </div>
+            <button type="button"
+                    class="liquid-button inline-flex items-center rounded-full px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+                    @onclick="RefreshRuntimeViewAsync"
+                    disabled="@_isRefreshingRuntime">
+                @(_isRefreshingRuntime ? "Refreshing..." : "Refresh runtime view")
+            </button>
+        </div>
+
+        @if (_recentCommands.Count == 0)
+        {
+            <p class="mt-5 text-sm text-cinder-800/78">No runtime commands have been recorded for this workspace yet.</p>
+        }
+        else
+        {
+            <div class="mt-5 overflow-x-auto">
+                <table class="min-w-full text-left text-sm text-cinder-900">
+                    <thead class="border-b border-sand-200/80 text-xs uppercase tracking-[0.2em] text-cinder-800/65">
+                        <tr>
+                            <th class="pb-3 pr-4 font-semibold">Created</th>
+                            <th class="pb-3 pr-4 font-semibold">Type</th>
+                            <th class="pb-3 pr-4 font-semibold">Status</th>
+                            <th class="pb-3 pr-4 font-semibold">Target</th>
+                            <th class="pb-3 pr-4 font-semibold">Attempts</th>
+                            <th class="pb-3 pr-4 font-semibold">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var command in _recentCommands)
+                        {
+                            <tr class="border-b border-sand-200/60 align-top">
+                                <td class="py-3 pr-4 whitespace-nowrap">@command.CreatedAtUtc.ToString("u")</td>
+                                <td class="py-3 pr-4">@FormatCommandType(command.CommandType)</td>
+                                <td class="py-3 pr-4">@FormatCommandStatus(command.Status)</td>
+                                <td class="py-3 pr-4">
+                                    <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@DescribeCommandTarget(command)</code>
+                                </td>
+                                <td class="py-3 pr-4">@command.AttemptCount</td>
+                                <td class="py-3 pr-4 text-cinder-800/78">@(string.IsNullOrWhiteSpace(command.LastError) ? "-" : command.LastError)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="liquid-panel rounded-[1.6rem] p-6">
+        <div>
+            <h2 class="font-display text-3xl text-cinder-950">Read model metrics</h2>
+            <p class="mt-2 max-w-3xl text-sm leading-7 text-cinder-800/78">
+                These metrics are per web instance and measure cache hits, misses, forced refreshes, and miss-path load latency.
+            </p>
+        </div>
+
+        <div class="mt-5 overflow-x-auto">
+            <table class="min-w-full text-left text-sm text-cinder-900">
+                <thead class="border-b border-sand-200/80 text-xs uppercase tracking-[0.2em] text-cinder-800/65">
+                    <tr>
+                        <th class="pb-3 pr-4 font-semibold">Read path</th>
+                        <th class="pb-3 pr-4 font-semibold">Hits</th>
+                        <th class="pb-3 pr-4 font-semibold">Misses</th>
+                        <th class="pb-3 pr-4 font-semibold">Forced</th>
+                        <th class="pb-3 pr-4 font-semibold">Loads</th>
+                        <th class="pb-3 pr-4 font-semibold">Avg ms</th>
+                        <th class="pb-3 pr-4 font-semibold">Max ms</th>
+                        <th class="pb-3 pr-4 font-semibold">Last ms</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var metric in _readModelMetrics)
+                    {
+                        <tr class="border-b border-sand-200/60 align-top">
+                            <td class="py-3 pr-4">@FormatReadModelMetricKind(metric.Kind)</td>
+                            <td class="py-3 pr-4">@metric.CacheHitCount</td>
+                            <td class="py-3 pr-4">@metric.CacheMissCount</td>
+                            <td class="py-3 pr-4">@metric.ForcedRefreshCount</td>
+                            <td class="py-3 pr-4">@metric.LoadCount</td>
+                            <td class="py-3 pr-4">@metric.AverageLoadMilliseconds.ToString("0.0")</td>
+                            <td class="py-3 pr-4">@metric.MaxLoadMilliseconds</td>
+                            <td class="py-3 pr-4">@metric.LastLoadMilliseconds</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
 
 @code {
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private ActiveCircuitMetricSnapshot _activeCircuitMetrics = new();
+    private BrokerStatus _brokerStatus = new();
+    private bool _isRefreshingRuntime;
     private bool _isPruningMessages;
     private string? _pruneStatusMessage;
+    private IReadOnlyCollection<ReadModelMetricSnapshot> _readModelMetrics = [];
+    private IReadOnlyCollection<BrokerRuntimeCommand> _recentCommands = [];
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
+        await LoadRuntimeViewAsync(_cancellationTokenSource.Token);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
+    }
 
     private async Task PruneMessageHistory()
     {
@@ -77,6 +237,7 @@
             var noun = deletedCount == 1 ? "message" : "messages";
             var timestamp = DateTimeOffset.UtcNow.ToString("u");
             _pruneStatusMessage = $"Pruned {deletedCount} expired {noun} at {timestamp}.";
+            await LoadRuntimeViewAsync(_cancellationTokenSource.Token);
         }
         catch (Exception exception)
         {
@@ -86,5 +247,140 @@
         {
             _isPruningMessages = false;
         }
+    }
+
+    private async Task RefreshRuntimeViewAsync()
+    {
+        if (_isRefreshingRuntime)
+        {
+            return;
+        }
+
+        await LoadRuntimeViewAsync(_cancellationTokenSource.Token);
+    }
+
+    private Task HandleServerSelectionChangedAsync()
+    {
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return change.Kind is ProjectionChangeKind.RuntimeStatusChanged or ProjectionChangeKind.RuntimeCommandChanged;
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadRuntimeViewAsync(debounceCancellationTokenSource.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task LoadRuntimeViewAsync(CancellationToken cancellationToken = default)
+    {
+        _isRefreshingRuntime = true;
+
+        try
+        {
+            _activeCircuitMetrics = ActiveCircuitMetricsService.GetSnapshot();
+            _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+            _recentCommands = await BrokerRuntimeCommandQueryService.GetRecentCommands(12, cancellationToken);
+            _readModelMetrics = ReadModelMetricsService.GetSnapshots()
+                .OrderBy(metric => metric.Kind)
+                .ToArray();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _isRefreshingRuntime = false;
+        }
+    }
+
+    private static string DescribeCommandTarget(BrokerRuntimeCommand command)
+    {
+        return !string.IsNullOrWhiteSpace(command.Topic)
+            ? command.Topic
+            : !string.IsNullOrWhiteSpace(command.TopicFilter)
+                ? command.TopicFilter
+                : "workspace runtime";
+    }
+
+    private static string FormatCommandStatus(BrokerRuntimeCommandStatus status)
+    {
+        return status switch
+        {
+            BrokerRuntimeCommandStatus.Pending => "Queued",
+            BrokerRuntimeCommandStatus.Leased => "Running",
+            BrokerRuntimeCommandStatus.Completed => "Completed",
+            BrokerRuntimeCommandStatus.Failed => "Failed",
+            _ => status.ToString()
+        };
+    }
+
+    private static string FormatCommandType(BrokerRuntimeCommandType commandType)
+    {
+        return commandType switch
+        {
+            BrokerRuntimeCommandType.EnsureConnected => "Ensure connected",
+            BrokerRuntimeCommandType.ReconcileActiveProfile => "Reconcile profile",
+            BrokerRuntimeCommandType.ResetAndReconnectActiveProfile => "Reset and reconnect",
+            BrokerRuntimeCommandType.Publish => "Publish",
+            BrokerRuntimeCommandType.SubscribeEphemeral => "Subscribe ephemeral",
+            BrokerRuntimeCommandType.UnsubscribeEphemeral => "Unsubscribe ephemeral",
+            _ => commandType.ToString()
+        };
+    }
+
+    private static string FormatReadModelMetricKind(ReadModelMetricKind kind)
+    {
+        return kind switch
+        {
+            ReadModelMetricKind.DashboardSnapshot => "Dashboard snapshot",
+            ReadModelMetricKind.MessagePage => "Message stream page",
+            ReadModelMetricKind.NodeDetail => "Node detail",
+            ReadModelMetricKind.NodeMessagePage => "Node message page",
+            ReadModelMetricKind.ChannelSummary => "Channel summary",
+            ReadModelMetricKind.ChannelTopNodes => "Channel top nodes",
+            ReadModelMetricKind.ChannelMessagePage => "Channel message page",
+            _ => kind.ToString()
+        };
     }
 }

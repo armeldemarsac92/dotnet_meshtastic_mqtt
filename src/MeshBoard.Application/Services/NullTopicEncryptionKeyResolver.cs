@@ -10,6 +10,7 @@ internal sealed class NullTopicEncryptionKeyResolver : ITopicEncryptionKeyResolv
     }
 
     public Task<IReadOnlyCollection<byte[]>> ResolveCandidateKeysAsync(
+        string workspaceId,
         string topic,
         CancellationToken cancellationToken = default)
     {

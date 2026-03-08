@@ -52,7 +52,7 @@ public static class TopicEncryptionKey
     {
         try
         {
-            var decodedBytes = Convert.FromBase64String(value);
+            var decodedBytes = Convert.FromBase64String(NormalizeBase64Value(value));
 
             if (decodedBytes.Length == 1)
             {
@@ -82,6 +82,23 @@ public static class TopicEncryptionKey
             keyBytes = [];
             return false;
         }
+    }
+
+    private static string NormalizeBase64Value(string value)
+    {
+        var normalized = value
+            .Trim()
+            .Replace('-', '+')
+            .Replace('_', '/');
+
+        var remainder = normalized.Length % 4;
+
+        if (remainder == 0)
+        {
+            return normalized;
+        }
+
+        return normalized.PadRight(normalized.Length + (4 - remainder), '=');
     }
 
     private static bool TryParseHex(string value, out byte[] keyBytes)

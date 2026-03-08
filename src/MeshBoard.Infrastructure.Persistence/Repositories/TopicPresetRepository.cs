@@ -19,29 +19,51 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
         _logger = logger;
     }
 
-    public async Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(
+        string workspaceId,
+        string brokerServer,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Attempting to fetch topic presets");
+        _logger.LogDebug(
+            "Attempting to fetch topic presets for workspace {WorkspaceId} and broker {BrokerServer}",
+            workspaceId,
+            brokerServer);
 
         var topicPresets = await _dbContext.QueryAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresets,
+            new
+            {
+                WorkspaceId = workspaceId,
+                BrokerServer = brokerServer
+            },
             cancellationToken: cancellationToken);
 
         return topicPresets.Select(x => x.MapToTopicPreset()).ToList();
     }
 
     public async Task<TopicPreset> UpsertAsync(
+        string workspaceId,
+        string brokerServer,
         SaveTopicPresetRequest request,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to upsert topic preset: {TopicPattern}", request.TopicPattern);
+        _logger.LogInformation(
+            "Attempting to upsert topic preset: {TopicPattern} for workspace {WorkspaceId} and broker {BrokerServer}",
+            request.TopicPattern,
+            workspaceId,
+            brokerServer);
 
-        var sqlRequest = request.ToSqlRequest();
+        var sqlRequest = request.ToSqlRequest(workspaceId, brokerServer);
 
         if (sqlRequest.IsDefault == 1)
         {
             await _dbContext.ExecuteAsync(
                 TopicPresetQueries.ClearDefaultTopicPresets,
+                new
+                {
+                    WorkspaceId = workspaceId,
+                    BrokerServer = brokerServer
+                },
                 cancellationToken: cancellationToken);
         }
 
@@ -52,7 +74,12 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
 
         var topicPreset = await _dbContext.QueryFirstOrDefaultAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresetByTopicPattern,
-            new { sqlRequest.TopicPattern },
+            new
+            {
+                WorkspaceId = workspaceId,
+                BrokerServer = brokerServer,
+                sqlRequest.TopicPattern
+            },
             cancellationToken);
 
         if (topicPreset is null)

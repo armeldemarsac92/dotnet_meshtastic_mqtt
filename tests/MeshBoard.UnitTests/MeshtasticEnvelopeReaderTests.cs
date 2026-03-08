@@ -37,7 +37,7 @@ public sealed class MeshtasticEnvelopeReaderTests
             }
         };
 
-        var envelope = await reader.Read("msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
 
         Assert.NotNull(envelope);
         Assert.Equal("Telemetry", envelope.PacketType);
@@ -78,7 +78,7 @@ public sealed class MeshtasticEnvelopeReaderTests
             }
         };
 
-        var envelope = await reader.Read("msh/US/2/e/Test/!87654321", meshPacket.ToByteArray());
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!87654321", meshPacket.ToByteArray());
 
         Assert.NotNull(envelope);
         Assert.Equal("Telemetry", envelope.PacketType);
@@ -107,7 +107,7 @@ public sealed class MeshtasticEnvelopeReaderTests
                           }
                           """;
 
-        var envelope = await reader.Read("msh/EU_868/2/json/LongFast/!1234abcd", Encoding.UTF8.GetBytes(jsonPayload));
+        var envelope = await reader.Read("workspace-tests", "msh/EU_868/2/json/LongFast/!1234abcd", Encoding.UTF8.GetBytes(jsonPayload));
 
         Assert.NotNull(envelope);
         Assert.Equal("Text Message", envelope.PacketType);
@@ -135,7 +135,7 @@ public sealed class MeshtasticEnvelopeReaderTests
                             }
                             """;
 
-        var envelope = await reader.Read("msh/US/2/json/MediumFast/!9abcdef0", Encoding.UTF8.GetBytes(jsonPayload));
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/json/MediumFast/!9abcdef0", Encoding.UTF8.GetBytes(jsonPayload));
 
         Assert.NotNull(envelope);
         Assert.Equal("Text Message", envelope.PacketType);
@@ -160,12 +160,57 @@ public sealed class MeshtasticEnvelopeReaderTests
                     "kiDV39nDDsi8AON+Czei6zUpy+F/7E+lyIpicxJR40KXBFmPkqFUEnobI5voQadha+s="))
         };
 
-        var envelope = await reader.Read("msh/US/2/e/LongFast/!fa8165a4", meshPacket.ToByteArray());
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/LongFast/!fa8165a4", meshPacket.ToByteArray());
 
         Assert.NotNull(envelope);
         Assert.Equal("Node Info", envelope.PacketType);
         Assert.Equal("Meshtastic 65a4", envelope.LongName);
         Assert.Equal("65a4", envelope.ShortName);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeServiceEnvelope_WithNestedMeshPacket()
+    {
+        var reader = CreateReader();
+        var payloadBytes = Encoding.UTF8.GetBytes("hello from service envelope");
+        var serviceEnvelope = new ServiceEnvelope
+        {
+            ChannelId = "LongFast",
+            GatewayId = "!cafebabe",
+            Packet = new MeshPacket
+            {
+                From = 0x11223344,
+                To = uint.MaxValue,
+                Id = 0x55667788,
+                Decoded = new Data
+                {
+                    Portnum = PortNum.TextMessageApp,
+                    Payload = ByteString.CopyFrom(payloadBytes)
+                }
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/LongFast/!11223344", serviceEnvelope.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Text Message", envelope.PacketType);
+        Assert.Equal("hello from service envelope", envelope.PayloadPreview);
+        Assert.Equal("!11223344", envelope.FromNodeId);
+        Assert.Null(envelope.ToNodeId);
+        Assert.Equal((uint)0x55667788, envelope.PacketId);
+    }
+
+    [Fact]
+    public async Task Read_ShouldIgnorePayload_WhenMeshPacketHasNoKnownFields()
+    {
+        var reader = CreateReader();
+
+        // Protobuf field 99 (length-delimited): unknown to MeshPacket and ServiceEnvelope.
+        var payload = new byte[] { 0x9A, 0x06, 0x04, 0x6E, 0x6F, 0x6F, 0x70 };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/LongFast/!11223344", payload);
+
+        Assert.Null(envelope);
     }
 
     private static MeshtasticEnvelopeReader CreateReader()
@@ -182,6 +227,7 @@ public sealed class MeshtasticEnvelopeReaderTests
         }
 
         public Task<IReadOnlyCollection<byte[]>> ResolveCandidateKeysAsync(
+            string workspaceId,
             string topic,
             CancellationToken cancellationToken = default)
         {

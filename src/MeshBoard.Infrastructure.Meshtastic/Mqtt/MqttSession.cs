@@ -11,18 +11,24 @@ namespace MeshBoard.Infrastructure.Meshtastic.Mqtt;
 
 internal sealed class MqttSession : IMqttSession
 {
-    private readonly BrokerOptions _brokerOptions;
-    private readonly string _clientId;
+    private readonly BrokerOptions _fallbackBrokerOptions;
+    private readonly MqttSessionConnectionSettings _connectionSettings;
     private readonly IMqttClient _mqttClient;
     private readonly ILogger<MqttSession> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly ConcurrentDictionary<string, byte> _topicFilters = new(StringComparer.Ordinal);
+    private string _connectedBrokerServer = "unknown";
+    private string _currentClientId = "meshboard";
     private string? _lastStatusMessage;
 
-    public MqttSession(IOptions<BrokerOptions> brokerOptions, ILogger<MqttSession> logger)
+    public MqttSession(
+        MqttSessionConnectionSettings connectionSettings,
+        IOptions<BrokerOptions> brokerOptions,
+        ILogger<MqttSession> logger)
     {
-        _brokerOptions = brokerOptions.Value;
-        _clientId = CreateClientId(_brokerOptions.ClientId);
+        _connectionSettings = connectionSettings;
+        _fallbackBrokerOptions = brokerOptions.Value;
+        _currentClientId = CreateClientId(_fallbackBrokerOptions.ClientId);
         _logger = logger;
 
         var factory = new MqttClientFactory();
@@ -53,22 +59,24 @@ internal sealed class MqttSession : IMqttSession
                 return;
             }
 
+            _currentClientId = CreateClientId(_fallbackBrokerOptions.ClientId);
+
             _logger.LogInformation(
                 "Attempting to connect to MQTT broker: {Host}:{Port}",
-                _brokerOptions.Host,
-                _brokerOptions.Port);
+                _connectionSettings.Host,
+                _connectionSettings.Port);
 
             var builder = new MqttClientOptionsBuilder()
-                .WithClientId(_clientId)
-                .WithTcpServer(_brokerOptions.Host, _brokerOptions.Port)
+                .WithClientId(_currentClientId)
+                .WithTcpServer(_connectionSettings.Host, _connectionSettings.Port)
                 .WithCleanSession();
 
-            if (!string.IsNullOrWhiteSpace(_brokerOptions.Username))
+            if (!string.IsNullOrWhiteSpace(_connectionSettings.Username))
             {
-                builder.WithCredentials(_brokerOptions.Username, _brokerOptions.Password);
+                builder.WithCredentials(_connectionSettings.Username, _connectionSettings.Password);
             }
 
-            if (_brokerOptions.UseTls)
+            if (_connectionSettings.UseTls)
             {
                 builder.WithTlsOptions(_ => _.UseTls());
             }
@@ -85,7 +93,8 @@ internal sealed class MqttSession : IMqttSession
                 return;
             }
 
-            _lastStatusMessage = $"Connected as {_clientId}.";
+            _connectedBrokerServer = _connectionSettings.ServerAddress;
+            _lastStatusMessage = $"Connected to {_connectedBrokerServer} as {_currentClientId}.";
 
             foreach (var topicFilter in _topicFilters.Keys)
             {
@@ -231,6 +240,8 @@ internal sealed class MqttSession : IMqttSession
 
         return handler.Invoke(new MqttInboundMessage
         {
+            WorkspaceId = _connectionSettings.WorkspaceId,
+            BrokerServer = _connectedBrokerServer,
             Topic = eventArgs.ApplicationMessage.Topic,
             Payload = payloadBytes,
             ReceivedAtUtc = DateTimeOffset.UtcNow
@@ -240,7 +251,7 @@ internal sealed class MqttSession : IMqttSession
     private Task OnConnectedAsync(MqttClientConnectedEventArgs eventArgs)
     {
         _logger.LogInformation("Connected to the MQTT broker successfully");
-        _lastStatusMessage = $"Connected as {_clientId}.";
+        _lastStatusMessage = $"Connected to {_connectedBrokerServer} as {_currentClientId}.";
 
         var handler = ConnectionStateChanged;
 
@@ -312,4 +323,5 @@ internal sealed class MqttSession : IMqttSession
             ? $"Publish failed: {reasonCode}."
             : $"Publish failed: {reasonCode} ({reasonString}).";
     }
+
 }

@@ -19,24 +19,31 @@ internal sealed class FavoriteNodeRepository : IFavoriteNodeRepository
         _logger = logger;
     }
 
-    public async Task<IReadOnlyCollection<FavoriteNode>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<FavoriteNode>> GetAllAsync(
+        string workspaceId,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to fetch favorite nodes");
+        _logger.LogDebug("Attempting to fetch favorite nodes for workspace {WorkspaceId}", workspaceId);
 
         var favoriteNodes = await _dbContext.QueryAsync<FavoriteNodeSqlResponse>(
             FavoriteNodeQueries.GetFavoriteNodes,
+            new { WorkspaceId = workspaceId },
             cancellationToken: cancellationToken);
 
         return favoriteNodes.Select(x => x.MapToFavoriteNode()).ToList();
     }
 
     public async Task<FavoriteNode> UpsertAsync(
+        string workspaceId,
         SaveFavoriteNodeRequest request,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to upsert favorite node: {NodeId}", request.NodeId);
+        _logger.LogInformation(
+            "Attempting to upsert favorite node: {NodeId} for workspace {WorkspaceId}",
+            request.NodeId,
+            workspaceId);
 
-        var sqlRequest = request.ToSqlRequest();
+        var sqlRequest = request.ToSqlRequest(workspaceId);
 
         await _dbContext.ExecuteAsync(
             FavoriteNodeQueries.UpsertFavoriteNode,
@@ -45,7 +52,11 @@ internal sealed class FavoriteNodeRepository : IFavoriteNodeRepository
 
         var favoriteNode = await _dbContext.QueryFirstOrDefaultAsync<FavoriteNodeSqlResponse>(
             FavoriteNodeQueries.GetFavoriteNodeByNodeId,
-            new { sqlRequest.NodeId },
+            new
+            {
+                WorkspaceId = workspaceId,
+                sqlRequest.NodeId
+            },
             cancellationToken);
 
         if (favoriteNode is null)
@@ -56,13 +67,23 @@ internal sealed class FavoriteNodeRepository : IFavoriteNodeRepository
         return favoriteNode.MapToFavoriteNode();
     }
 
-    public async Task<bool> DeleteAsync(string nodeId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(
+        string workspaceId,
+        string nodeId,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to delete favorite node: {NodeId}", nodeId);
+        _logger.LogInformation(
+            "Attempting to delete favorite node: {NodeId} for workspace {WorkspaceId}",
+            nodeId,
+            workspaceId);
 
         var affectedRows = await _dbContext.ExecuteAsync(
             FavoriteNodeQueries.DeleteFavoriteNode,
-            new { NodeId = nodeId },
+            new
+            {
+                WorkspaceId = workspaceId,
+                NodeId = nodeId
+            },
             cancellationToken);
 
         return affectedRows > 0;

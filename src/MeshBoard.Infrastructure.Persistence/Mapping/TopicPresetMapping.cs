@@ -9,11 +9,16 @@ namespace MeshBoard.Infrastructure.Persistence.Mapping;
 
 internal static class TopicPresetMapping
 {
-    public static UpsertTopicPresetSqlRequest ToSqlRequest(this SaveTopicPresetRequest request)
+    public static UpsertTopicPresetSqlRequest ToSqlRequest(
+        this SaveTopicPresetRequest request,
+        string workspaceId,
+        string brokerServer)
     {
         return new UpsertTopicPresetSqlRequest
         {
             Id = Guid.NewGuid().ToString(),
+            WorkspaceId = workspaceId,
+            BrokerServer = brokerServer,
             Name = request.Name,
             TopicPattern = request.TopicPattern,
             EncryptionKeyBase64 = request.EncryptionKeyBase64,

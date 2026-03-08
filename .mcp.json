@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "csharp": {
+      "command": "./scripts/run-csharp-lsp-mcp.sh"
+    }
+  }
+}

@@ -1,43 +1,37 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
-using MeshBoard.Application.Services;
-using MeshBoard.Contracts.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+using MeshBoard.Infrastructure.Meshtastic.Runtime;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace MeshBoard.Infrastructure.Meshtastic.Hosted;
 
 internal sealed class MeshtasticMqttHostedService : IHostedService
 {
     private readonly IHostApplicationLifetime _applicationLifetime;
-    private readonly BrokerOptions _brokerOptions;
-    private readonly IMeshtasticEnvelopeReader _envelopeReader;
+    private readonly IBrokerRuntimeBootstrapService _brokerRuntimeBootstrapService;
+    private readonly MeshtasticInboundMessageQueue _inboundMessageQueue;
+    private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
     private readonly ILogger<MeshtasticMqttHostedService> _logger;
-    private readonly IMqttSession _mqttSession;
-    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly CancellationTokenSource _stoppingTokenSource = new();
     private Task? _startupTask;
 
     public MeshtasticMqttHostedService(
-        IMqttSession mqttSession,
-        IMeshtasticEnvelopeReader envelopeReader,
-        IServiceScopeFactory serviceScopeFactory,
+        IBrokerRuntimeBootstrapService brokerRuntimeBootstrapService,
+        MeshtasticInboundMessageQueue inboundMessageQueue,
+        IWorkspaceBrokerSessionManager brokerSessionManager,
         IHostApplicationLifetime applicationLifetime,
-        IOptions<BrokerOptions> brokerOptions,
         ILogger<MeshtasticMqttHostedService> logger)
     {
-        _mqttSession = mqttSession;
-        _envelopeReader = envelopeReader;
-        _serviceScopeFactory = serviceScopeFactory;
+        _brokerRuntimeBootstrapService = brokerRuntimeBootstrapService;
+        _inboundMessageQueue = inboundMessageQueue;
+        _brokerSessionManager = brokerSessionManager;
         _applicationLifetime = applicationLifetime;
-        _brokerOptions = brokerOptions.Value;
         _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _mqttSession.MessageReceived += OnMessageReceived;
+        _brokerSessionManager.MessageReceived += OnMessageReceived;
 
         _applicationLifetime.ApplicationStarted.Register(
             () => _startupTask = Task.Run(() => ConnectAndSubscribeAsync(_stoppingTokenSource.Token), CancellationToken.None));
@@ -48,7 +42,8 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _stoppingTokenSource.Cancel();
-        _mqttSession.MessageReceived -= OnMessageReceived;
+        _brokerSessionManager.MessageReceived -= OnMessageReceived;
+        _inboundMessageQueue.Complete();
 
         if (_startupTask is not null)
         {
@@ -61,7 +56,7 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
             }
         }
 
-        await _mqttSession.DisconnectAsync(cancellationToken);
+        await _brokerSessionManager.DisconnectAllAsync(cancellationToken);
         _stoppingTokenSource.Dispose();
     }
 
@@ -71,11 +66,7 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
         try
         {
-            using var scope = _serviceScopeFactory.CreateScope();
-            var brokerMonitorService = scope.ServiceProvider.GetRequiredService<IBrokerMonitorService>();
-
-            await brokerMonitorService.EnsureConnected(cancellationToken);
-            await brokerMonitorService.SubscribeToTopic(_brokerOptions.DefaultTopicPattern, cancellationToken);
+            await _brokerRuntimeBootstrapService.InitializeActiveWorkspacesAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -88,23 +79,23 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
         }
     }
 
-    private async Task OnMessageReceived(MeshBoard.Contracts.Meshtastic.MqttInboundMessage inboundMessage)
+    private Task OnMessageReceived(MeshBoard.Contracts.Meshtastic.MqttInboundMessage inboundMessage)
     {
-        var envelope = await _envelopeReader.Read(inboundMessage.Topic, inboundMessage.Payload);
-
-        if (envelope is null)
+        if (!_inboundMessageQueue.TryEnqueue(inboundMessage))
         {
-            return;
+            var snapshot = _inboundMessageQueue.GetSnapshot();
+            var shouldLog = snapshot.DroppedCount == 1 || snapshot.DroppedCount % 100 == 0;
+
+            if (shouldLog)
+            {
+                _logger.LogWarning(
+                    "Dropping Meshtastic inbound message for workspace {WorkspaceId} because the inbound queue is full. Depth: {QueueDepth}; Dropped: {DroppedCount}",
+                    inboundMessage.WorkspaceId,
+                    snapshot.CurrentDepth,
+                    snapshot.DroppedCount);
+            }
         }
 
-        if (envelope.ReceivedAtUtc == default)
-        {
-            envelope.ReceivedAtUtc = inboundMessage.ReceivedAtUtc;
-        }
-
-        using var scope = _serviceScopeFactory.CreateScope();
-        var ingestionService = scope.ServiceProvider.GetRequiredService<IMeshtasticIngestionService>();
-
-        await ingestionService.IngestEnvelope(envelope);
+        return Task.CompletedTask;
     }
 }

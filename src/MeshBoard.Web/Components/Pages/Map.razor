@@ -2,6 +2,8 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 @inject INodeService NodeService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
 
 <PageTitle>Map</PageTitle>
 
@@ -12,41 +14,173 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
         </div>
         <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
-            Browse all observed nodes with coordinates. Click a marker to open node details.
+            Browse all observed nodes on a 3D globe. Click a node to pin focus, click the globe again to release it, hover to reveal its shared-channel cohort, and watch for echo rings when traffic is heard.
         </p>
     </header>
 
-    <section class="liquid-panel grid shrink-0 gap-4 overflow-hidden rounded-[1.6rem] p-5 lg:grid-cols-[1.4fr_auto_1fr]">
-        <label class="space-y-2">
-            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search on map</span>
-            <input @bind="_searchText"
-                   @bind:event="oninput"
-                   @bind:after="ApplyClientFilterAsync"
-                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
-                   placeholder="Node id, short name, long name, or channel" />
-        </label>
+    <section class="liquid-panel shrink-0 space-y-3 overflow-hidden rounded-[1.6rem] p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 text-sm text-cinder-800/82">
+            <div class="space-y-1">
+                <p>@GetMapSummaryText()</p>
+                <p class="text-[0.72rem] text-cinder-800/62">
+                    Hover links show shared-channel cohorts, not proven radio paths.
+                </p>
+            </div>
 
-        <div class="flex items-end">
-            <button type="button"
-                    class="liquid-button liquid-button-accent cursor-pointer rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
-                    @onclick="RefreshNodesAsync"
-                    disabled="@_isLoading">
-                @(_isLoading ? "Refreshing..." : "Refresh map")
-            </button>
-        </div>
-
-        <div class="self-end space-y-1 text-sm text-cinder-800/82">
-            <p>Showing @_visibleMapNodes.Count of @_locatedNodeCount located nodes.</p>
             @if (!string.IsNullOrWhiteSpace(_statusMessage))
             {
                 <p class="text-xs text-cinder-800/72">@_statusMessage</p>
             }
         </div>
+
+        @if (!string.IsNullOrWhiteSpace(_focusedChannel))
+        {
+            <div class="liquid-subpanel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
+                <div class="space-y-1">
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel focus</p>
+                    <p class="break-words text-sm font-semibold text-cinder-950">@_focusedChannel</p>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button type="button"
+                            class="liquid-inline-action liquid-inline-action-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                            @onclick="() => OpenChannelDetailsAsync(_focusedChannel!)">
+                        Open channel
+                    </button>
+                    <button type="button"
+                            class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ClearFocusedChannelAsync">
+                        Clear focus
+                    </button>
+                </div>
+            </div>
+        }
+
+        <div class="space-y-2 text-sm text-cinder-800/82">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel cohorts</p>
+                <p class="text-[0.72rem] text-cinder-800/66">Click a chip to isolate that cohort on the globe.</p>
+            </div>
+
+            @if (_channelLegendEntries.Count == 0)
+            {
+                <p class="text-xs text-cinder-800/70">No channel cohort matched the current search.</p>
+            }
+            else
+            {
+                <div class="flex flex-wrap gap-2">
+                    @foreach (var entry in _channelLegendEntries)
+                    {
+                        var isFocused = string.Equals(_focusedChannel, entry.Channel, StringComparison.Ordinal);
+
+                        <button type="button"
+                                class="@GetChannelChipClass(isFocused)"
+                                @onclick="() => ToggleFocusedChannelAsync(entry.Channel)">
+                            <span class="h-2.5 w-2.5 rounded-full ring-1 ring-cinder-950/20"
+                                  style="background-color:@entry.ColorCss"></span>
+                            <span>@entry.Channel</span>
+                            <span class="text-cinder-700/75">@entry.NodeCount</span>
+                        </button>
+                    }
+                </div>
+
+                @if (_hiddenChannelLegendCount > 0)
+                {
+                    <p class="text-[0.72rem] text-cinder-800/68">+ @_hiddenChannelLegendCount more channel cohorts in view.</p>
+                }
+            }
+        </div>
     </section>
 
-    <section class="liquid-panel min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
+    <section class="liquid-panel relative min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
         <div id="@MapElementId"
              class="meshboard-node-map h-full w-full overflow-hidden rounded-[1.25rem] border border-sand-200/80"></div>
+
+        <div class="pointer-events-none absolute inset-x-7 top-7 z-10 flex items-start justify-between gap-3">
+            <div class="pointer-events-auto w-full max-w-md">
+                <label class="relative block">
+                    <span class="sr-only">Search on map</span>
+                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-cinder-800/68">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+                            <path fill-rule="evenodd" d="M9 3.75a5.25 5.25 0 1 0 3.285 9.347l3.809 3.809a.75.75 0 1 0 1.06-1.06l-3.808-3.81A5.25 5.25 0 0 0 9 3.75ZM5.25 9a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0Z" clip-rule="evenodd" />
+                        </svg>
+                    </span>
+                    <input @bind="_searchText"
+                           @bind:event="oninput"
+                           @bind:after="ScheduleSearchRefreshAsync"
+                           class="liquid-input w-full rounded-full px-4 py-3 pl-10 text-sm text-cinder-950 shadow-lg shadow-cinder-950/35"
+                           placeholder="Search node id, name, or channel" />
+                </label>
+            </div>
+
+            <div class="pointer-events-auto shrink-0">
+                <button type="button"
+                        class="liquid-button liquid-button-accent rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35 disabled:cursor-not-allowed disabled:opacity-60"
+                        @onclick="RefreshNodesAsync"
+                        disabled="@_isLoading">
+                    @(_isLoading ? "Refreshing..." : "Refresh map")
+                </button>
+            </div>
+        </div>
+
+        <div class="pointer-events-none absolute bottom-7 right-7 z-10 w-full max-w-sm">
+            <div class="pointer-events-auto liquid-subpanel space-y-3 rounded-[1.35rem] border border-white/60 bg-linear-to-br from-white/96 via-sand-100/90 to-signal-400/70 p-4 shadow-2xl shadow-cinder-950/35">
+                <div class="space-y-1">
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Focused node</p>
+
+                    @if (_focusedMapNode is null)
+                    {
+                        <p class="text-xs leading-6 text-cinder-800/72">Hover a node on the globe to inspect its active channel cohort, or click one to pin this panel.</p>
+                    }
+                    else
+                    {
+                        <div class="space-y-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <p class="text-sm font-semibold text-cinder-950">@_focusedMapNode.DisplayName</p>
+                            </div>
+
+                            <p class="break-words text-[0.72rem] text-cinder-800/72">@_focusedMapNode.NodeId</p>
+                        </div>
+
+                        <dl class="grid gap-2 text-[0.72rem] text-cinder-800/78 sm:grid-cols-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Channel</dt>
+                                <dd class="mt-1 break-words text-cinder-950">@(_focusedMapNode.Channel ?? "Unknown")</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Visible peers</dt>
+                                <dd class="mt-1 text-cinder-950">@_focusedNodePeerCount</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Battery</dt>
+                                <dd class="mt-1 text-cinder-950">@(_focusedMapNode.BatteryLevelPercent?.ToString() ?? "Unknown")</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/55 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Coordinates</dt>
+                                <dd class="mt-1 text-cinder-950">@GetCoordinateText(_focusedMapNode)</dd>
+                            </div>
+                        </dl>
+
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button"
+                                    class="liquid-inline-action liquid-inline-action-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                    @onclick="() => OpenNodeDetailsAsync(_focusedMapNode.NodeId)">
+                                Open node
+                            </button>
+
+                            @if (!string.IsNullOrWhiteSpace(_focusedMapNode.Channel))
+                            {
+                                <button type="button"
+                                        class="liquid-inline-action rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="() => OpenChannelDetailsAsync(_focusedMapNode.Channel!)">
+                                    Open channel
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
     </section>
 </div>
 
@@ -63,22 +197,39 @@
 
 @code {
     private const string MapElementId = "meshboard-node-map";
-    private readonly NodeQuery _nodeQuery = new() { OnlyWithLocation = true };
+    private const int MaxLocatedNodeCount = 5_000;
+    private readonly CancellationTokenSource _componentCancellationTokenSource = new();
     private DotNetObjectReference<Map>? _mapCallbackReference;
     private bool _isLoading;
     private bool _isMapRenderPending;
     private IJSObjectReference? _mapModule;
     private int _locatedNodeCount;
+    private readonly Dictionary<string, int> _pendingActivityPulseCounts = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _pendingNodeRefreshIds = new(StringComparer.Ordinal);
+    private IReadOnlyCollection<MapNodeActivity> _activityPulses = [];
+    private IReadOnlyCollection<ChannelLegendEntry> _channelLegendEntries = [];
+    private int _hiddenChannelLegendCount;
+    private bool _shouldFitMapToNodes = true;
+    private int _refreshRequestVersion;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
+    private CancellationTokenSource? _searchDebounceCancellationTokenSource;
     private string _searchText = string.Empty;
+    private string? _focusedChannel;
     private string? _selectedChannel;
+    private string? _hoveredMapNodeId;
+    private string? _pinnedMapNodeId;
+    private MapNodePoint? _focusedMapNode;
+    private int _focusedNodePeerCount;
     private string? _selectedNodeId;
     private string? _selectedRegion;
     private string? _statusMessage;
+    private IReadOnlyCollection<MapNodePoint> _allMapNodes = [];
     private IReadOnlyCollection<NodeSummary> _nodesWithLocation = [];
     private IReadOnlyCollection<MapNodePoint> _visibleMapNodes = [];
 
     protected override async Task OnInitializedAsync()
     {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
         await RefreshNodesAsync();
     }
 
@@ -98,10 +249,17 @@
 
     public async ValueTask DisposeAsync()
     {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        _componentCancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _searchDebounceCancellationTokenSource?.Cancel();
+        _searchDebounceCancellationTokenSource?.Dispose();
         _mapCallbackReference?.Dispose();
 
         if (_mapModule is null)
         {
+            _componentCancellationTokenSource.Dispose();
             return;
         }
 
@@ -113,19 +271,190 @@
         catch (JSDisconnectedException)
         {
         }
+        finally
+        {
+            _componentCancellationTokenSource.Dispose();
+        }
     }
 
     [JSInvokable]
-    public async Task OnNodeSelectedFromMap(string nodeId)
+    public async Task OnNodeSelectedFromMap(string? nodeId)
     {
-        _selectedNodeId = nodeId;
+        _pinnedMapNodeId = string.IsNullOrWhiteSpace(nodeId)
+            ? null
+            : string.Equals(_pinnedMapNodeId, nodeId, StringComparison.Ordinal)
+                ? null
+                : nodeId;
+        RefreshFocusedMapNode();
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task ApplyClientFilterAsync()
+    [JSInvokable]
+    public async Task OnNodeHoveredFromMap(string? nodeId)
     {
-        ApplyClientFilter();
+        _hoveredMapNodeId = string.IsNullOrWhiteSpace(nodeId) ? null : nodeId;
+        RefreshFocusedMapNode();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!string.IsNullOrWhiteSpace(change.EntityKey))
+        {
+            _pendingActivityPulseCounts.TryGetValue(change.EntityKey, out var pulseCount);
+            _pendingActivityPulseCounts[change.EntityKey] = pulseCount + 1;
+            _pendingNodeRefreshIds.Add(change.EntityKey);
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        return string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal) &&
+            change.Kind == ProjectionChangeKind.NodeUpdated;
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        CancellationTokenSource debounceCancellationTokenSource;
+
+        try
+        {
+            if (_componentCancellationTokenSource.IsCancellationRequested)
+            {
+                return;
+            }
+
+            debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_componentCancellationTokenSource.Token);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await ApplyPendingNodeUpdatesAsync(debounceCancellationTokenSource.Token);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task ApplyPendingNodeUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingNodeRefreshIds.Count == 0)
+        {
+            if (_pendingActivityPulseCounts.Count > 0)
+            {
+                _activityPulses = _pendingActivityPulseCounts
+                    .Select(entry => new MapNodeActivity
+                    {
+                        NodeId = entry.Key,
+                        PulseCount = entry.Value
+                    })
+                    .ToList();
+                _pendingActivityPulseCounts.Clear();
+                _isMapRenderPending = true;
+                await InvokeAsync(StateHasChanged);
+            }
+
+            return;
+        }
+
+        var nodeIds = _pendingNodeRefreshIds.ToArray();
+        _pendingNodeRefreshIds.Clear();
+
+        var updatedNodes = await Task.WhenAll(nodeIds.Select(nodeId =>
+            NodeService.GetNodeById(nodeId, cancellationToken)));
+
+        var nodesById = _nodesWithLocation
+            .GroupBy(node => node.NodeId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+
+        foreach (var updatedNode in updatedNodes)
+        {
+            if (updatedNode is null || !MatchesLocatedNodeQuery(updatedNode))
+            {
+                if (updatedNode is not null)
+                {
+                    nodesById.Remove(updatedNode.NodeId);
+                }
+
+                continue;
+            }
+
+            nodesById[updatedNode.NodeId] = updatedNode;
+        }
+
+        _nodesWithLocation = nodesById.Values
+            .OrderByDescending(node => node.LastHeardAtUtc ?? DateTimeOffset.MinValue)
+            .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxLocatedNodeCount)
+            .ToList();
+
+        _locatedNodeCount = _nodesWithLocation.Count;
+        ApplyMapPoints();
+        _shouldFitMapToNodes = false;
+        _activityPulses = _pendingActivityPulseCounts.Count == 0
+            ? []
+            : _pendingActivityPulseCounts
+                .Select(entry => new MapNodeActivity
+                {
+                    NodeId = entry.Key,
+                    PulseCount = entry.Value
+                })
+                .ToList();
+        _pendingActivityPulseCounts.Clear();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ScheduleSearchRefreshAsync()
+    {
+        _searchDebounceCancellationTokenSource?.Cancel();
+        _searchDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_componentCancellationTokenSource.Token);
+        _searchDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250), debounceCancellationTokenSource.Token);
+            await RefreshNodesAsync();
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_searchDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _searchDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
     }
 
     private async Task CloseChannelDetailsAsync()
@@ -139,6 +468,19 @@
     {
         _selectedNodeId = null;
         await InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearFocusedChannelAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_focusedChannel))
+        {
+            return Task.CompletedTask;
+        }
+
+        _focusedChannel = null;
+        ApplyMapPoints();
+        _shouldFitMapToNodes = true;
+        return InvokeAsync(StateHasChanged);
     }
 
     private Task OpenNodeDetailsAsync(string nodeId)
@@ -159,47 +501,100 @@
         return InvokeAsync(StateHasChanged);
     }
 
+    private Task ToggleFocusedChannelAsync(string channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+        {
+            return Task.CompletedTask;
+        }
+
+        _focusedChannel = string.Equals(_focusedChannel, channel, StringComparison.Ordinal)
+            ? null
+            : channel;
+
+        ApplyMapPoints();
+        _shouldFitMapToNodes = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private async Task RefreshNodesAsync()
     {
+        await RefreshNodesAsync(fitMapToNodes: true);
+    }
+
+    private async Task RefreshNodesAsync(bool fitMapToNodes)
+    {
+        var requestVersion = ++_refreshRequestVersion;
+        var normalizedSearchText = _searchText.Trim();
         _isLoading = true;
         _statusMessage = null;
 
         try
         {
-            _nodesWithLocation = await LoadAllLocatedNodesAsync();
+            var nodes = await NodeService.GetLocatedNodes(
+                normalizedSearchText,
+                take: MaxLocatedNodeCount,
+                cancellationToken: _componentCancellationTokenSource.Token);
+
+            if (requestVersion != _refreshRequestVersion)
+            {
+                return;
+            }
+
+            _nodesWithLocation = nodes;
             _locatedNodeCount = _nodesWithLocation.Count;
-            ApplyClientFilter();
-            _statusMessage = $"Loaded {_locatedNodeCount} nodes with coordinates.";
+            ApplyMapPoints();
+            _shouldFitMapToNodes = fitMapToNodes;
+            _activityPulses = _pendingActivityPulseCounts.Count == 0
+                ? []
+                : _pendingActivityPulseCounts
+                    .Select(entry => new MapNodeActivity
+                    {
+                        NodeId = entry.Key,
+                        PulseCount = entry.Value
+                    })
+                    .ToList();
+            _pendingActivityPulseCounts.Clear();
+            _statusMessage = string.IsNullOrWhiteSpace(normalizedSearchText)
+                ? $"Loaded {_locatedNodeCount} nodes with coordinates."
+                : $"Loaded {_locatedNodeCount} matching nodes with coordinates.";
+        }
+        catch (OperationCanceledException) when (_componentCancellationTokenSource.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
+            if (requestVersion != _refreshRequestVersion)
+            {
+                return;
+            }
+
             _nodesWithLocation = [];
             _visibleMapNodes = [];
             _locatedNodeCount = 0;
+            _activityPulses = [];
+            _channelLegendEntries = [];
+            _hiddenChannelLegendCount = 0;
+            _focusedMapNode = null;
+            _hoveredMapNodeId = null;
+            _pinnedMapNodeId = null;
+            _focusedNodePeerCount = 0;
             _statusMessage = $"Map load failed: {exception.Message}";
             _isMapRenderPending = true;
         }
         finally
         {
-            _isLoading = false;
-            await InvokeAsync(StateHasChanged);
+            if (requestVersion == _refreshRequestVersion)
+            {
+                _isLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
-    private void ApplyClientFilter()
+    private void ApplyMapPoints()
     {
-        IEnumerable<NodeSummary> filteredNodes = _nodesWithLocation;
-
-        if (!string.IsNullOrWhiteSpace(_searchText))
-        {
-            filteredNodes = filteredNodes.Where(node =>
-                node.NodeId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
-                (node.ShortName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (node.LongName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                (node.LastHeardChannel?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-
-        _visibleMapNodes = filteredNodes
+        _allMapNodes = _nodesWithLocation
             .Where(node => node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue)
             .Select(node => new MapNodePoint
             {
@@ -212,7 +607,41 @@
             })
             .ToList();
 
+        if (!string.IsNullOrWhiteSpace(_focusedChannel) &&
+            !_allMapNodes.Any(node => string.Equals(node.Channel, _focusedChannel, StringComparison.Ordinal)))
+        {
+            _focusedChannel = null;
+        }
+
+        _visibleMapNodes = string.IsNullOrWhiteSpace(_focusedChannel)
+            ? _allMapNodes
+            : _allMapNodes
+                .Where(node => string.Equals(node.Channel, _focusedChannel, StringComparison.Ordinal))
+                .ToList();
+
+        ApplyChannelLegend();
+        RefreshFocusedMapNode();
         _isMapRenderPending = true;
+    }
+
+    private void ApplyChannelLegend()
+    {
+        var channelEntries = _allMapNodes
+            .Where(node => !string.IsNullOrWhiteSpace(node.Channel))
+            .GroupBy(node => node.Channel!, StringComparer.Ordinal)
+            .Select(group => new ChannelLegendEntry
+            {
+                Channel = group.Key,
+                ColorCss = GetChannelColorCss(group.Key),
+                NodeCount = group.Count()
+            })
+            .OrderByDescending(entry => entry.NodeCount)
+            .ThenBy(entry => entry.Channel, StringComparer.Ordinal)
+            .ToList();
+
+        const int maxVisibleLegendEntries = 8;
+        _channelLegendEntries = channelEntries.Take(maxVisibleLegendEntries).ToList();
+        _hiddenChannelLegendCount = Math.Max(channelEntries.Count - maxVisibleLegendEntries, 0);
     }
 
     private async Task RenderMapAsync()
@@ -224,36 +653,12 @@
             "renderNodeMap",
             MapElementId,
             _visibleMapNodes,
+            _activityPulses,
+            _shouldFitMapToNodes,
             _mapCallbackReference);
-    }
 
-    private async Task<IReadOnlyCollection<NodeSummary>> LoadAllLocatedNodesAsync()
-    {
-        var allNodes = new List<NodeSummary>();
-        var offset = 0;
-        const int batchSize = 1000;
-
-        while (true)
-        {
-            var page = await NodeService.GetNodesPage(_nodeQuery, offset, batchSize);
-
-            if (page.Items.Count == 0)
-            {
-                break;
-            }
-
-            allNodes.AddRange(page.Items);
-            offset += page.Items.Count;
-
-            if (offset >= page.TotalCount)
-            {
-                break;
-            }
-        }
-
-        return allNodes
-            .DistinctBy(node => node.NodeId, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        _activityPulses = [];
+        _shouldFitMapToNodes = false;
     }
 
     private static bool TrySplitChannelKey(string channelKey, out string region, out string channel)
@@ -276,6 +681,134 @@
         region = segments[0];
         channel = segments[1];
         return !string.IsNullOrWhiteSpace(region) && !string.IsNullOrWhiteSpace(channel);
+    }
+
+    private string GetMapSummaryText()
+    {
+        var summary = string.IsNullOrWhiteSpace(_searchText)
+            ? $"Showing {_visibleMapNodes.Count} located nodes."
+            : $"Showing {_visibleMapNodes.Count} matching located nodes.";
+
+        if (string.IsNullOrWhiteSpace(_focusedChannel))
+        {
+            return summary;
+        }
+
+        return $"{summary} Focused on {_focusedChannel}.";
+    }
+
+    private void RefreshFocusedMapNode()
+    {
+        var focusedNodeId = _pinnedMapNodeId ?? _hoveredMapNodeId;
+
+        if (string.IsNullOrWhiteSpace(focusedNodeId))
+        {
+            _focusedMapNode = null;
+            _focusedNodePeerCount = 0;
+            return;
+        }
+
+        _focusedMapNode = _visibleMapNodes.FirstOrDefault(node =>
+            string.Equals(node.NodeId, focusedNodeId, StringComparison.Ordinal));
+
+        if (_focusedMapNode is null && !string.IsNullOrWhiteSpace(_pinnedMapNodeId))
+        {
+            _pinnedMapNodeId = null;
+            focusedNodeId = _hoveredMapNodeId;
+
+            if (string.IsNullOrWhiteSpace(focusedNodeId))
+            {
+                _focusedNodePeerCount = 0;
+                return;
+            }
+
+            _focusedMapNode = _visibleMapNodes.FirstOrDefault(node =>
+                string.Equals(node.NodeId, focusedNodeId, StringComparison.Ordinal));
+        }
+
+        if (_focusedMapNode is null || string.IsNullOrWhiteSpace(_focusedMapNode.Channel))
+        {
+            _focusedNodePeerCount = 0;
+            return;
+        }
+
+        _focusedNodePeerCount = _visibleMapNodes.Count(node =>
+            !string.Equals(node.NodeId, _focusedMapNode.NodeId, StringComparison.Ordinal) &&
+            string.Equals(node.Channel, _focusedMapNode.Channel, StringComparison.Ordinal));
+    }
+
+    private static string GetCoordinateText(MapNodePoint node)
+    {
+        return $"{node.Latitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}, {node.Longitude.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
+    private bool MatchesLocatedNodeQuery(NodeSummary node)
+    {
+        if (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue)
+        {
+            return false;
+        }
+
+        var normalizedSearchText = _searchText.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalizedSearchText))
+        {
+            return true;
+        }
+
+        return ContainsIgnoreCase(node.NodeId, normalizedSearchText) ||
+            ContainsIgnoreCase(node.ShortName, normalizedSearchText) ||
+            ContainsIgnoreCase(node.LongName, normalizedSearchText) ||
+            ContainsIgnoreCase(node.LastHeardChannel, normalizedSearchText);
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string searchText)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetChannelChipClass(bool isFocused)
+    {
+        return isFocused
+            ? "liquid-inline-action liquid-inline-action-active inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-1 text-[0.72rem] font-medium text-cinder-950"
+            : "inline-flex cursor-pointer items-center gap-2 rounded-full border border-sand-300/80 bg-sand-100/70 px-3 py-1 text-[0.72rem] font-medium text-cinder-900";
+    }
+
+    private static string GetChannelColorCss(string channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+        {
+            return "#6bb6ef";
+        }
+
+        var hash = 0;
+
+        foreach (var character in channel)
+        {
+            hash = ((hash << 5) - hash) + character;
+        }
+
+        var hue = Math.Abs(hash % 360);
+        return $"hsl({hue} 72% 58%)";
+    }
+
+    private sealed class ChannelLegendEntry
+    {
+        public required string Channel { get; set; }
+
+        public required string ColorCss { get; set; }
+
+        public required int NodeCount { get; set; }
+    }
+
+    private sealed class MapNodeActivity
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("nodeId")]
+        public required string NodeId { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("pulseCount")]
+        public required int PulseCount { get; set; }
     }
 
     private sealed class MapNodePoint

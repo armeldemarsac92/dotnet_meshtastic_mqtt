@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
@@ -14,9 +15,9 @@ public sealed class MessageComposerServiceTests
     [Fact]
     public async Task SendTextMessage_ShouldPublishPublicMessage_WhenCapabilityIsEnabled()
     {
-        var mqttSession = new FakeMqttSession();
+        var brokerRuntimeCommandService = new FakeBrokerRuntimeCommandService();
         var service = CreateService(
-            mqttSession,
+            brokerRuntimeCommandService,
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -31,17 +32,17 @@ public sealed class MessageComposerServiceTests
                 Text = "hello mesh"
             });
 
-        Assert.Equal("msh/US/2/json/mqtt/", mqttSession.LastPublishedTopic);
-        Assert.Equal("""{"type":"sendtext","payload":"hello mesh"}""", mqttSession.LastPublishedPayload);
+        Assert.Equal("msh/US/2/json/mqtt/", brokerRuntimeCommandService.LastPublishedTopic);
+        Assert.Equal("""{"type":"sendtext","payload":"hello mesh"}""", brokerRuntimeCommandService.LastPublishedPayload);
         Assert.False(result.IsPrivate);
     }
 
     [Fact]
     public async Task SendTextMessage_ShouldPublishPrivateMessage_WhenToNodeIdProvided()
     {
-        var mqttSession = new FakeMqttSession();
+        var brokerRuntimeCommandService = new FakeBrokerRuntimeCommandService();
         var service = CreateService(
-            mqttSession,
+            brokerRuntimeCommandService,
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -57,8 +58,8 @@ public sealed class MessageComposerServiceTests
                 ToNodeId = "!ABCDEF12"
             });
 
-        Assert.Equal("msh/US/2/json/mqtt/", mqttSession.LastPublishedTopic);
-        Assert.Equal("""{"type":"sendtext","payload":"private ping","to":"!abcdef12"}""", mqttSession.LastPublishedPayload);
+        Assert.Equal("msh/US/2/json/mqtt/", brokerRuntimeCommandService.LastPublishedTopic);
+        Assert.Equal("""{"type":"sendtext","payload":"private ping","to":"!abcdef12"}""", brokerRuntimeCommandService.LastPublishedPayload);
         Assert.True(result.IsPrivate);
         Assert.Equal("!abcdef12", result.ToNodeId);
     }
@@ -67,7 +68,7 @@ public sealed class MessageComposerServiceTests
     public async Task SendTextMessage_ShouldThrowBadRequest_WhenCapabilityIsBlocked()
     {
         var service = CreateService(
-            new FakeMqttSession(),
+            new FakeBrokerRuntimeCommandService(),
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -85,7 +86,7 @@ public sealed class MessageComposerServiceTests
     public async Task SendTextMessage_ShouldThrowBadRequest_WhenNodeIdIsInvalid()
     {
         var service = CreateService(
-            new FakeMqttSession(),
+            new FakeBrokerRuntimeCommandService(),
             new FakeSendCapabilityService(
                 new SendCapabilityStatus
                 {
@@ -103,11 +104,26 @@ public sealed class MessageComposerServiceTests
                 }));
     }
 
-    private static MessageComposerService CreateService(IMqttSession mqttSession, ISendCapabilityService sendCapabilityService)
+    private static MessageComposerService CreateService(
+        IBrokerRuntimeCommandService brokerRuntimeCommandService,
+        ISendCapabilityService sendCapabilityService)
     {
         return new MessageComposerService(
-            mqttSession,
+            brokerRuntimeCommandService,
             sendCapabilityService,
+            new FakeBrokerServerProfileService(
+                new BrokerServerProfile
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Active server",
+                    Host = "mqtt.meshtastic.org",
+                    Port = 1883,
+                    DefaultTopicPattern = "msh/US/2/e/LongFast/#",
+                    DownlinkTopic = "msh/US/2/json/mqtt/",
+                    EnableSend = true,
+                    IsActive = true
+                }),
+            new FakeWorkspaceContextAccessor(),
             Options.Create(
                 new BrokerOptions
                 {
@@ -116,51 +132,62 @@ public sealed class MessageComposerServiceTests
             NullLogger<MessageComposerService>.Instance);
     }
 
-#pragma warning disable CS0067
-    private sealed class FakeMqttSession : IMqttSession
+    private sealed class FakeBrokerRuntimeCommandService : IBrokerRuntimeCommandService
     {
-        public bool IsConnected => true;
-
-        public string? LastStatusMessage => null;
-
         public string? LastPublishedPayload { get; private set; }
 
         public string? LastPublishedTopic { get; private set; }
 
-        public IReadOnlyCollection<string> TopicFilters => [];
-
-        public event Func<bool, Task>? ConnectionStateChanged;
-
-        public event Func<MqttInboundMessage, Task>? MessageReceived;
-
-        public Task ConnectAsync(CancellationToken cancellationToken = default)
+        public Task EnsureConnectedAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        public Task ReconcileActiveProfileAsync(string workspaceId, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task PublishAsync(string topic, string payload, CancellationToken cancellationToken = default)
+        public Task ResetAndReconnectActiveProfileAsync(string workspaceId, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task PublishAsync(
+            string workspaceId,
+            string topic,
+            string payload,
+            CancellationToken cancellationToken = default)
         {
             LastPublishedTopic = topic;
             LastPublishedPayload = payload;
             return Task.CompletedTask;
         }
 
-        public Task SubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task SubscribeEphemeralAsync(
+            string workspaceId,
+            string topicFilter,
+            CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
 
-        public Task UnsubscribeAsync(string topicFilter, CancellationToken cancellationToken = default)
+        public Task UnsubscribeEphemeralAsync(
+            string workspaceId,
+            string topicFilter,
+            CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
     }
-#pragma warning restore CS0067
+
+    private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
+    {
+        public string GetWorkspaceId()
+        {
+            return "workspace-tests";
+        }
+    }
 
     private sealed class FakeSendCapabilityService : ISendCapabilityService
     {
@@ -171,9 +198,41 @@ public sealed class MessageComposerServiceTests
             _status = status;
         }
 
-        public SendCapabilityStatus GetStatus()
+        public Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default)
         {
-            return _status;
+            return Task.FromResult(_status);
+        }
+    }
+
+    private sealed class FakeBrokerServerProfileService : IBrokerServerProfileService
+    {
+        private readonly BrokerServerProfile _activeProfile;
+
+        public FakeBrokerServerProfileService(BrokerServerProfile activeProfile)
+        {
+            _activeProfile = activeProfile;
+        }
+
+        public Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyCollection<BrokerServerProfile>>([_activeProfile]);
+        }
+
+        public Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_activeProfile);
+        }
+
+        public Task<BrokerServerProfile> SaveServerProfile(
+            SaveBrokerServerProfileRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BrokerServerProfile> SetActiveServerProfile(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
     }
 }

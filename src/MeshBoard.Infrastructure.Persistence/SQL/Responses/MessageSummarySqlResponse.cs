@@ -4,6 +4,8 @@ internal sealed class MessageSummarySqlResponse
 {
     public required string Id { get; set; }
 
+    public required string BrokerServer { get; set; }
+
     public required string Topic { get; set; }
 
     public required string PacketType { get; set; }

@@ -2,6 +2,10 @@ namespace MeshBoard.Contracts.Meshtastic;
 
 public sealed class MeshtasticEnvelope
 {
+    public string WorkspaceId { get; set; } = string.Empty;
+
+    public string BrokerServer { get; set; } = string.Empty;
+
     public string Topic { get; set; } = string.Empty;
 
     public string PacketType { get; set; } = string.Empty;

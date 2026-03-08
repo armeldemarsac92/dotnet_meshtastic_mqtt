@@ -6,6 +6,13 @@ public interface INodeRepository
 {
     Task<int> CountAsync(NodeQuery query, CancellationToken cancellationToken = default);
 
+    Task<NodeSummary?> GetByIdAsync(string nodeId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<NodeSummary>> GetLocatedAsync(
+        string? searchText,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<NodeSummary>> GetPageAsync(
         NodeQuery query,
         int offset,

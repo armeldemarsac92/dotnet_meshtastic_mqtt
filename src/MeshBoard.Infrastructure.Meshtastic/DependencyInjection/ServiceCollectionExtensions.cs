@@ -3,6 +3,7 @@ using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Meshtastic.Decoding;
 using MeshBoard.Infrastructure.Meshtastic.Hosted;
 using MeshBoard.Infrastructure.Meshtastic.Mqtt;
+using MeshBoard.Infrastructure.Meshtastic.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -17,11 +18,30 @@ public static class ServiceCollectionExtensions
         services
             .AddOptions<BrokerOptions>()
             .Bind(configuration.GetSection(BrokerOptions.SectionName));
+        services
+            .AddOptions<MeshtasticRuntimeOptions>()
+            .Bind(configuration.GetSection(MeshtasticRuntimeOptions.SectionName));
 
         services.AddSingleton<ITopicEncryptionKeyResolver, TopicPresetEncryptionKeyResolver>();
         services.AddSingleton<IMeshtasticEnvelopeReader, MeshtasticEnvelopeReader>();
-        services.AddSingleton<IMqttSession, MqttSession>();
-        services.AddHostedService<MeshtasticMqttHostedService>();
+        services.AddSingleton<MeshtasticInboundMessageQueue>();
+        services.AddSingleton<IMqttSessionFactory, MqttSessionFactory>();
+        services.AddSingleton<IWorkspaceBrokerSessionManager, WorkspaceBrokerSessionManager>();
+        services.AddSingleton<IBrokerRuntimeCommandExecutor, LocalBrokerRuntimeCommandService>();
+        services.AddSingleton<IBrokerRuntimeCommandService, QueuedBrokerRuntimeCommandService>();
+        services.AddSingleton<IBrokerRuntimeBootstrapService, BrokerRuntimeBootstrapService>();
+
+        var runtimeOptions = configuration
+            .GetSection(MeshtasticRuntimeOptions.SectionName)
+            .Get<MeshtasticRuntimeOptions>() ?? new MeshtasticRuntimeOptions();
+
+        if (runtimeOptions.EnableHostedService)
+        {
+            services.AddHostedService<MeshtasticMqttHostedService>();
+            services.AddHostedService<MeshtasticInboundProcessingHostedService>();
+            services.AddHostedService<MeshtasticRuntimeMetricsHostedService>();
+            services.AddHostedService<BrokerRuntimeCommandProcessorHostedService>();
+        }
 
         return services;
     }

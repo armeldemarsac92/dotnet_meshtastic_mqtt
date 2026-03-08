@@ -4,6 +4,8 @@ public sealed class NodeSummary
 {
     public string NodeId { get; set; } = string.Empty;
 
+    public string BrokerServer { get; set; } = string.Empty;
+
     public string? ShortName { get; set; }
 
     public string? LongName { get; set; }

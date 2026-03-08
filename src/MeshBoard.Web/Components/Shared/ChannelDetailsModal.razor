@@ -1,7 +1,11 @@
+@implements IAsyncDisposable
 @inject IBrokerMonitorService BrokerMonitorService
-@inject IMessageService MessageService
+@inject IBrokerServerProfileService BrokerServerProfileService
+@inject ICachedChannelDetailService CachedChannelDetailService
 @inject ITopicPresetService TopicPresetService
-@inject IOptions<BrokerOptions> BrokerOptions
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
+@inject ServerSelectionNotifier ServerSelectionNotifier
 
 @if (IsOpen)
 {
@@ -35,6 +39,13 @@
                             <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
                                 <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@Region</span>
                                 <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@TopicFilter</code>
+                                @if (_observedBrokerServers.Count > 0)
+                                {
+                                    @foreach (var brokerServer in _observedBrokerServers)
+                                    {
+                                        <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">MQTT @brokerServer</span>
+                                    }
+                                }
                             </div>
                         </header>
 
@@ -65,7 +76,7 @@
 
                             <p class="mt-3 text-xs text-cinder-800/78">
                                 Default channel key:
-                                <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@DefaultEncryptionKeyBase64</code>
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] text-cinder-900">@_defaultEncryptionKeyBase64</code>
                             </p>
 
                             @if (!string.IsNullOrWhiteSpace(_statusMessage))
@@ -77,19 +88,19 @@
                         <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Packets</p>
-                                <strong class="mt-2 block text-3xl text-cinder-950">@_channelMessages.Count</strong>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_channelSummary.PacketCount</strong>
                             </article>
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Unique senders</p>
-                                <strong class="mt-2 block text-3xl text-cinder-950">@_uniqueSenderCount</strong>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_channelSummary.UniqueSenderCount</strong>
                             </article>
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Decoded ratio</p>
-                                <strong class="mt-2 block text-3xl text-cinder-950">@_decodedRatio%</strong>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@DecodedRatio%</strong>
                             </article>
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last seen</p>
-                                <strong class="mt-2 block text-sm text-cinder-950">@(_lastSeenAtUtc?.ToString("u") ?? "Unknown")</strong>
+                                <strong class="mt-2 block text-sm text-cinder-950">@(_channelSummary.LastSeenAtUtc?.ToString("u") ?? "Unknown")</strong>
                             </article>
                         </section>
 
@@ -138,7 +149,11 @@
                                 <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
                                     <h3 class="font-display text-3xl text-cinder-950">Recent messages</h3>
                                 </div>
-                                @if (_channelMessages.Count == 0)
+                                @if (_isMessagesLoading && _channelMessagesPage.TotalCount == 0)
+                                {
+                                    <div class="flex flex-1 items-center p-6 text-cinder-800/78">Loading channel messages...</div>
+                                }
+                                else if (_channelMessagesPage.Items.Count == 0)
                                 {
                                     <div class="flex flex-1 items-center p-6 text-cinder-800/78">No recent messages for this channel.</div>
                                 }
@@ -146,7 +161,7 @@
                                 {
                                     <div class="fade-scroll-frame min-h-0 flex-1">
                                         <ul class="fade-scroll-content fade-scroll-content-fill space-y-3 p-5 text-sm text-cinder-900">
-                                            @foreach (var message in _channelMessages.Take(40))
+                                            @foreach (var message in _channelMessagesPage.Items)
                                             {
                                                 <li class="liquid-subpanel rounded-2xl p-3">
                                                     <div class="flex flex-wrap items-center gap-2">
@@ -160,6 +175,28 @@
                                         </ul>
                                     </div>
                                 }
+                                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-sand-100/80 px-5 py-4">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
+                                        @GetMessagePagingSummaryText()
+                                    </p>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <button type="button"
+                                                class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                                                @onclick="GoToPreviousMessagesPageAsync"
+                                                disabled="@(!CanGoToPreviousMessagesPage)">
+                                            Previous
+                                        </button>
+                                        <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">
+                                            Page @_currentMessagesPage of @GetMessagesTotalPages()
+                                        </span>
+                                        <button type="button"
+                                                class="liquid-button liquid-button-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                                                @onclick="GoToNextMessagesPageAsync"
+                                                disabled="@(!CanGoToNextMessagesPage)">
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
                             </article>
                         </section>
                     </div>
@@ -170,6 +207,9 @@
 }
 
 @code {
+    private const int MessagesPageSize = 40;
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+
     [Parameter]
     public bool IsOpen { get; set; }
 
@@ -185,26 +225,44 @@
     [Parameter]
     public EventCallback<string> OnOpenNode { get; set; }
 
-    private IReadOnlyCollection<MessageSummary> _channelMessages = [];
-    private int _decodedRatio;
+    private ChannelSummary _channelSummary = new();
+    private MessagePageResult _channelMessagesPage = new();
+    private int _currentMessagesPage = 1;
     private string _encryptionKeyInput = string.Empty;
-    private DateTimeOffset? _lastSeenAtUtc;
+    private bool _isMessagesLoading;
     private string? _loadedChannelKey;
     private TopicPreset? _matchedPreset;
     private bool _isLoading;
     private string? _statusMessage;
-    private IReadOnlyCollection<TopNodeEntry> _topNodes = [];
-    private int _uniqueSenderCount;
+    private IReadOnlyCollection<ChannelTopNode> _topNodes = [];
+    private string _defaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
 
-    private string DefaultEncryptionKeyBase64 =>
-        string.IsNullOrWhiteSpace(BrokerOptions.Value.DefaultEncryptionKeyBase64)
-            ? TopicEncryptionKey.DefaultKeyBase64
-            : BrokerOptions.Value.DefaultEncryptionKeyBase64;
+    private int DecodedRatio =>
+        _channelSummary.PacketCount == 0
+            ? 0
+            : (int)Math.Round(
+                _channelSummary.DecodedPacketCount * 100d / _channelSummary.PacketCount,
+                MidpointRounding.AwayFromZero);
+
+    private IReadOnlyCollection<string> _observedBrokerServers => _channelSummary.ObservedBrokerServers;
 
     private bool IsSubscribed =>
         BrokerMonitorService.GetBrokerStatus().TopicFilters.Contains(TopicFilter, StringComparer.Ordinal);
 
+    private bool CanGoToNextMessagesPage =>
+        !_isMessagesLoading && !_isLoading && (_currentMessagesPage * MessagesPageSize) < _channelMessagesPage.TotalCount;
+
+    private bool CanGoToPreviousMessagesPage =>
+        !_isMessagesLoading && !_isLoading && _currentMessagesPage > 1;
+
     private string TopicFilter => $"msh/{Region}/2/e/{Channel}/#";
+
+    protected override void OnInitialized()
+    {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -222,63 +280,119 @@
         }
 
         _loadedChannelKey = channelKey;
-        await LoadAsync();
+        _currentMessagesPage = 1;
+        await LoadAsync(_cancellationTokenSource.Token, forceRefresh: true);
     }
 
-    private async Task LoadAsync()
+    public ValueTask DisposeAsync()
+    {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private Task HandleServerSelectionChangedAsync()
+    {
+        if (!IsOpen)
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync(forceRefresh: true);
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (change.Kind == ProjectionChangeKind.RuntimeStatusChanged)
+        {
+            return InvokeAsync(StateHasChanged);
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!IsOpen ||
+            string.IsNullOrWhiteSpace(Region) ||
+            string.IsNullOrWhiteSpace(Channel) ||
+            !string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (change.Kind == ProjectionChangeKind.RuntimeStatusChanged)
+        {
+            return true;
+        }
+
+        return change.Kind == ProjectionChangeKind.ChannelSummaryUpdated &&
+            !string.IsNullOrWhiteSpace(change.EntityKey) &&
+            string.Equals(change.EntityKey, GetChannelEntityKey(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token, forceRefresh);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task LoadAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
         _isLoading = true;
         _statusMessage = null;
 
         try
         {
-            var messagesTask = MessageService.GetRecentMessages(5_000);
-            var presetsTask = TopicPresetService.GetTopicPresets();
+            var channelSummaryTask = CachedChannelDetailService.GetChannelSummary(Region, Channel, forceRefresh, cancellationToken);
+            var topNodesTask = CachedChannelDetailService.GetTopNodesByChannel(Region, Channel, 12, forceRefresh, cancellationToken);
+            var messagesTask = LoadMessagesPageAsync(cancellationToken, forceRefresh);
+            var presetsTask = TopicPresetService.GetTopicPresets(cancellationToken);
+            var activeServerTask = BrokerServerProfileService.GetActiveServerProfile(cancellationToken);
 
-            await Task.WhenAll(messagesTask, presetsTask);
+            await Task.WhenAll(channelSummaryTask, topNodesTask, messagesTask, presetsTask, activeServerTask);
 
-            var messages = await messagesTask;
+            _channelSummary = await channelSummaryTask;
+            _topNodes = await topNodesTask;
             var presets = await presetsTask;
+            var activeServer = await activeServerTask;
 
-            _channelMessages = messages
-                .Where(message => IsTopicInChannel(message.Topic, Region, Channel))
-                .OrderByDescending(message => message.ReceivedAtUtc)
-                .ToList();
-
-            _uniqueSenderCount = _channelMessages
-                .Select(message => message.FromNodeId)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count();
-
-            _lastSeenAtUtc = _channelMessages.FirstOrDefault()?.ReceivedAtUtc;
-            _decodedRatio = _channelMessages.Count == 0
-                ? 0
-                : (int)Math.Round(
-                    _channelMessages.Count(IsDecodedMessage) * 100d / _channelMessages.Count,
-                    MidpointRounding.AwayFromZero);
-
-            _topNodes = _channelMessages
-                .GroupBy(message => message.FromNodeId, StringComparer.OrdinalIgnoreCase)
-                .Select(
-                    group =>
-                    {
-                        var first = group.First();
-                        var displayName = !string.IsNullOrWhiteSpace(first.FromNodeShortName)
-                            ? first.FromNodeShortName
-                            : !string.IsNullOrWhiteSpace(first.FromNodeLongName)
-                                ? first.FromNodeLongName
-                                : group.Key;
-
-                        return new TopNodeEntry
-                        {
-                            NodeId = group.Key,
-                            DisplayName = displayName,
-                            PacketCount = group.Count()
-                        };
-                    })
-                .OrderByDescending(entry => entry.PacketCount)
-                .Take(12)
-                .ToList();
+            _defaultEncryptionKeyBase64 = string.IsNullOrWhiteSpace(activeServer.DefaultEncryptionKeyBase64)
+                ? TopicEncryptionKey.DefaultKeyBase64
+                : activeServer.DefaultEncryptionKeyBase64;
 
             _matchedPreset = presets.FirstOrDefault(
                 preset => string.Equals(
@@ -288,19 +402,78 @@
 
             _encryptionKeyInput = _matchedPreset?.EncryptionKeyBase64 ?? string.Empty;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception exception)
         {
             _statusMessage = exception.Message;
-            _channelMessages = [];
+            _channelSummary = new ChannelSummary();
+            _channelMessagesPage = new MessagePageResult();
             _topNodes = [];
-            _decodedRatio = 0;
-            _uniqueSenderCount = 0;
-            _lastSeenAtUtc = null;
         }
         finally
         {
             _isLoading = false;
         }
+    }
+
+    private async Task LoadMessagesPageAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
+    {
+        _isMessagesLoading = true;
+
+        try
+        {
+            var page = await CachedChannelDetailService.GetMessagesPageByChannel(
+                Region,
+                Channel,
+                offset: (_currentMessagesPage - 1) * MessagesPageSize,
+                take: MessagesPageSize,
+                forceRefresh: forceRefresh,
+                cancellationToken: cancellationToken);
+
+            if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
+            {
+                _currentMessagesPage = GetLastMessagesPageNumber(page.TotalCount);
+                page = await CachedChannelDetailService.GetMessagesPageByChannel(
+                    Region,
+                    Channel,
+                    offset: (_currentMessagesPage - 1) * MessagesPageSize,
+                    take: MessagesPageSize,
+                    forceRefresh: forceRefresh,
+                    cancellationToken: cancellationToken);
+            }
+
+            _channelMessagesPage = page;
+        }
+        finally
+        {
+            _isMessagesLoading = false;
+        }
+    }
+
+    private async Task GoToPreviousMessagesPageAsync()
+    {
+        if (!CanGoToPreviousMessagesPage)
+        {
+            return;
+        }
+
+        _currentMessagesPage--;
+        await LoadMessagesPageAsync();
+    }
+
+    private async Task GoToNextMessagesPageAsync()
+    {
+        if (!CanGoToNextMessagesPage)
+        {
+            return;
+        }
+
+        _currentMessagesPage++;
+        await LoadMessagesPageAsync();
     }
 
     private async Task SaveChannelPresetAsync()
@@ -365,32 +538,6 @@
         await OnOpenNode.InvokeAsync(nodeId);
     }
 
-    private static bool IsDecodedMessage(MessageSummary message)
-    {
-        return message.PacketType is not ("Encrypted Packet" or "Unknown Packet" or "Legacy Packet");
-    }
-
-    private static bool IsTopicInChannel(string topic, string region, string channel)
-    {
-        if (string.IsNullOrWhiteSpace(topic))
-        {
-            return false;
-        }
-
-        var segments = topic.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        if (segments.Length < 5 ||
-            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(segments[1], region, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(segments[4], channel, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return string.Equals(segments[3], "e", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(segments[3], "json", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static string GetSenderDisplayName(MessageSummary message)
     {
         if (!string.IsNullOrWhiteSpace(message.FromNodeShortName))
@@ -404,6 +551,34 @@
         }
 
         return message.FromNodeId;
+    }
+
+    private string GetMessagePagingSummaryText()
+    {
+        if (_isMessagesLoading && _channelMessagesPage.TotalCount == 0)
+        {
+            return "Loading packets";
+        }
+
+        if (_channelMessagesPage.TotalCount == 0)
+        {
+            return "No packets found";
+        }
+
+        var start = ((_currentMessagesPage - 1) * MessagesPageSize) + 1;
+        var end = Math.Min(_currentMessagesPage * MessagesPageSize, _channelMessagesPage.TotalCount);
+
+        return $"Showing {start}-{end} of {_channelMessagesPage.TotalCount} packets";
+    }
+
+    private int GetLastMessagesPageNumber(int totalCount)
+    {
+        return Math.Max(1, (int)Math.Ceiling(totalCount / (double)MessagesPageSize));
+    }
+
+    private int GetMessagesTotalPages()
+    {
+        return _channelMessagesPage.TotalCount == 0 ? 1 : GetLastMessagesPageNumber(_channelMessagesPage.TotalCount);
     }
 
     private static string NormalizeTransportSegment(string topicPattern)
@@ -426,12 +601,8 @@
         return string.Join('/', segments);
     }
 
-    private sealed class TopNodeEntry
+    private string GetChannelEntityKey()
     {
-        public required string DisplayName { get; set; }
-
-        public required string NodeId { get; set; }
-
-        public int PacketCount { get; set; }
+        return $"{Region.Trim()}/{Channel.Trim()}";
     }
 }

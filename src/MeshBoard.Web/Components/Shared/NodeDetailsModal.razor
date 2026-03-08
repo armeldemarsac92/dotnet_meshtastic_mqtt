@@ -1,6 +1,8 @@
-@inject IMessageService MessageService
-@inject INodeService NodeService
+@implements IAsyncDisposable
+@inject ICachedNodeDetailService CachedNodeDetailService
 @inject IFavoriteNodeService FavoriteNodeService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
 
 @if (IsOpen)
 {
@@ -44,6 +46,10 @@
                             </div>
                             <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
                                 <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_node.NodeId</code>
+                                @if (!string.IsNullOrWhiteSpace(_node.BrokerServer))
+                                {
+                                    <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">MQTT @_node.BrokerServer</span>
+                                }
                                 @if (!string.IsNullOrWhiteSpace(_node.LastHeardChannel))
                                 {
                                     <button type="button"
@@ -84,7 +90,7 @@
                             </article>
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Displayed messages</p>
-                                <strong class="mt-2 block text-3xl text-cinder-950">@_relatedMessages.Count</strong>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_relatedMessagesPage.Items.Count</strong>
                             </article>
                             <article class="liquid-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last heard</p>
@@ -112,7 +118,11 @@
                                 <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
                                     <h3 class="font-display text-3xl text-cinder-950">Recent published messages</h3>
                                 </div>
-                                @if (_relatedMessages.Count == 0)
+                                @if (_isMessagesLoading && _relatedMessagesPage.TotalCount == 0)
+                                {
+                                    <div class="flex flex-1 items-center p-6 text-cinder-800/78">Loading node messages...</div>
+                                }
+                                else if (_relatedMessagesPage.Items.Count == 0)
                                 {
                                     <div class="flex flex-1 items-center p-6 text-cinder-800/78">No recent packets published by this node.</div>
                                 }
@@ -121,7 +131,7 @@
                                     <div class="fade-scroll-frame min-h-0 flex-1">
                                         <div class="fade-scroll-content fade-scroll-content-fill">
                                             <ul class="space-y-3 p-5 text-sm text-cinder-900">
-                                                @foreach (var message in _relatedMessages.Take(40))
+                                                @foreach (var message in _relatedMessagesPage.Items)
                                                 {
                                                     <li class="liquid-subpanel rounded-2xl p-3">
                                                         <div class="flex flex-wrap items-center gap-2">
@@ -136,6 +146,28 @@
                                         </div>
                                     </div>
                                 }
+                                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-sand-100/80 px-5 py-4">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
+                                        @GetMessagePagingSummaryText()
+                                    </p>
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <button type="button"
+                                                class="liquid-button cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                                                @onclick="GoToPreviousMessagesPageAsync"
+                                                disabled="@(!CanGoToPreviousMessagesPage)">
+                                            Previous
+                                        </button>
+                                        <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">
+                                            Page @_currentMessagesPage of @GetMessagesTotalPages()
+                                        </span>
+                                        <button type="button"
+                                                class="liquid-button liquid-button-accent cursor-pointer rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60"
+                                                @onclick="GoToNextMessagesPageAsync"
+                                                disabled="@(!CanGoToNextMessagesPage)">
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
                             </article>
 
                             <article class="liquid-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
@@ -162,6 +194,9 @@
 }
 
 @code {
+    private const int MessagesPageSize = 40;
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+
     [Parameter]
     public bool IsOpen { get; set; }
 
@@ -175,14 +210,28 @@
     public EventCallback<string> OnOpenChannel { get; set; }
 
     private bool _isLoading;
+    private bool _isMessagesLoading;
     private bool _isFavorite;
     private bool _isFavoriteActionPending;
     private string? _loadError;
     private string? _favoriteStatusMessage;
     private NodeSummary? _node;
     private int _publishedMessageCount;
-    private IReadOnlyCollection<MessageSummary> _relatedMessages = [];
+    private MessagePageResult _relatedMessagesPage = new();
+    private int _currentMessagesPage = 1;
     private string? _loadedNodeId;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
+
+    private bool CanGoToNextMessagesPage =>
+        !_isMessagesLoading && !_isLoading && (_currentMessagesPage * MessagesPageSize) < _relatedMessagesPage.TotalCount;
+
+    private bool CanGoToPreviousMessagesPage =>
+        !_isMessagesLoading && !_isLoading && _currentMessagesPage > 1;
+
+    protected override void OnInitialized()
+    {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -199,10 +248,75 @@
         }
 
         _loadedNodeId = NodeId;
-        await LoadAsync();
+        _currentMessagesPage = 1;
+        await LoadAsync(_cancellationTokenSource.Token, forceRefresh: true);
     }
 
-    private async Task LoadAsync()
+    public ValueTask DisposeAsync()
+    {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!IsOpen ||
+            string.IsNullOrWhiteSpace(NodeId) ||
+            !string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return change.Kind == ProjectionChangeKind.NodeUpdated &&
+            !string.IsNullOrWhiteSpace(change.EntityKey) &&
+            string.Equals(change.EntityKey, NodeId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await LoadAsync(debounceCancellationTokenSource.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task LoadAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
         _isLoading = true;
         _isFavoriteActionPending = false;
@@ -211,38 +325,35 @@
 
         try
         {
-            var nodesTask = NodeService.GetNodes(new NodeQuery { SearchText = NodeId }, take: 500);
-            var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes();
+            var nodeTask = CachedNodeDetailService.GetNodeById(NodeId, forceRefresh, cancellationToken);
+            var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes(cancellationToken);
 
-            await Task.WhenAll(nodesTask, favoriteNodesTask);
+            await Task.WhenAll(nodeTask, favoriteNodesTask);
 
-            var nodes = await nodesTask;
+            _node = await nodeTask;
             var favoriteNodes = await favoriteNodesTask;
 
-            _node = nodes.FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
             _isFavorite = _node is not null &&
                 favoriteNodes.Any(favoriteNode => string.Equals(favoriteNode.NodeId, _node.NodeId, StringComparison.OrdinalIgnoreCase));
 
             if (_node is null)
             {
-                _relatedMessages = [];
+                _relatedMessagesPage = new MessagePageResult();
                 _publishedMessageCount = 0;
                 _isFavorite = false;
                 return;
             }
 
-            var messages = await MessageService.GetRecentMessagesBySender(_node.NodeId, 1_000);
-            _relatedMessages = messages
-                .OrderByDescending(message => message.ReceivedAtUtc)
-                .ToList();
-
-            _publishedMessageCount = _relatedMessages.Count;
+            await LoadMessagesPageAsync(cancellationToken, forceRefresh);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
             _loadError = exception.Message;
             _node = null;
-            _relatedMessages = [];
+            _relatedMessagesPage = new MessagePageResult();
             _publishedMessageCount = 0;
             _isFavorite = false;
         }
@@ -250,6 +361,70 @@
         {
             _isLoading = false;
         }
+    }
+
+    private async Task LoadMessagesPageAsync(
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
+    {
+        if (_node is null)
+        {
+            _relatedMessagesPage = new MessagePageResult();
+            _publishedMessageCount = 0;
+            return;
+        }
+
+        _isMessagesLoading = true;
+
+        try
+        {
+            var page = await CachedNodeDetailService.GetMessagesPageBySender(
+                _node.NodeId,
+                offset: (_currentMessagesPage - 1) * MessagesPageSize,
+                take: MessagesPageSize,
+                forceRefresh: forceRefresh,
+                cancellationToken: cancellationToken);
+
+            if (page.TotalCount > 0 && page.Items.Count == 0 && _currentMessagesPage > 1)
+            {
+                _currentMessagesPage = GetLastMessagesPageNumber(page.TotalCount);
+                page = await CachedNodeDetailService.GetMessagesPageBySender(
+                    _node.NodeId,
+                    offset: (_currentMessagesPage - 1) * MessagesPageSize,
+                    take: MessagesPageSize,
+                    forceRefresh: forceRefresh,
+                    cancellationToken: cancellationToken);
+            }
+
+            _relatedMessagesPage = page;
+            _publishedMessageCount = page.TotalCount;
+        }
+        finally
+        {
+            _isMessagesLoading = false;
+        }
+    }
+
+    private async Task GoToPreviousMessagesPageAsync()
+    {
+        if (!CanGoToPreviousMessagesPage)
+        {
+            return;
+        }
+
+        _currentMessagesPage--;
+        await LoadMessagesPageAsync();
+    }
+
+    private async Task GoToNextMessagesPageAsync()
+    {
+        if (!CanGoToNextMessagesPage)
+        {
+            return;
+        }
+
+        _currentMessagesPage++;
+        await LoadMessagesPageAsync();
     }
 
     private async Task ToggleFavoriteAsync()
@@ -336,6 +511,34 @@
         mapEmbedUrl =
             $"https://www.openstreetmap.org/export/embed.html?bbox={left.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{bottom.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{right.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{top.ToString(System.Globalization.CultureInfo.InvariantCulture)}&layer=mapnik&marker={latitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}%2C{longitude.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
         return true;
+    }
+
+    private string GetMessagePagingSummaryText()
+    {
+        if (_isMessagesLoading && _relatedMessagesPage.TotalCount == 0)
+        {
+            return "Loading packets";
+        }
+
+        if (_relatedMessagesPage.TotalCount == 0)
+        {
+            return "No packets found";
+        }
+
+        var start = ((_currentMessagesPage - 1) * MessagesPageSize) + 1;
+        var end = Math.Min(_currentMessagesPage * MessagesPageSize, _relatedMessagesPage.TotalCount);
+
+        return $"Showing {start}-{end} of {_relatedMessagesPage.TotalCount} packets";
+    }
+
+    private int GetLastMessagesPageNumber(int totalCount)
+    {
+        return Math.Max(1, (int)Math.Ceiling(totalCount / (double)MessagesPageSize));
+    }
+
+    private int GetMessagesTotalPages()
+    {
+        return _relatedMessagesPage.TotalCount == 0 ? 1 : GetLastMessagesPageNumber(_relatedMessagesPage.TotalCount);
     }
 
     private static string GetBatteryClass(int batteryLevel)

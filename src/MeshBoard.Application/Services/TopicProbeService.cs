@@ -63,7 +63,7 @@ public sealed class TopicProbeService : ITopicProbeService
 
         foreach (var filter in temporaryFilters)
         {
-            await _brokerMonitorService.SubscribeToTopic(filter, cancellationToken);
+            await _brokerMonitorService.SubscribeToEphemeralTopic(filter, cancellationToken);
         }
 
         try
@@ -76,7 +76,7 @@ public sealed class TopicProbeService : ITopicProbeService
             {
                 try
                 {
-                    await _brokerMonitorService.UnsubscribeFromTopic(filter, cancellationToken);
+                    await _brokerMonitorService.UnsubscribeFromEphemeralTopic(filter, cancellationToken);
                 }
                 catch (Exception exception)
                 {

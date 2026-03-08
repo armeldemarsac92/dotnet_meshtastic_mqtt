@@ -46,6 +46,21 @@ public sealed class TopicEncryptionKeyTests
     }
 
     [Fact]
+    public void TryParse_ShouldAcceptUrlSafeBase64WithoutPadding()
+    {
+        var canonical = Convert.ToBase64String(TopicEncryptionKey.DefaultKeyBytes);
+        var urlSafeWithoutPadding = canonical
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
+        var parsed = TopicEncryptionKey.TryParse(urlSafeWithoutPadding, out var keyBytes);
+
+        Assert.True(parsed);
+        Assert.Equal(TopicEncryptionKey.DefaultKeyBytes, keyBytes);
+    }
+
+    [Fact]
     public void TryParse_ShouldRejectUnsupportedByteLength()
     {
         var parsed = TopicEncryptionKey.TryParse("AQI=", out var keyBytes);

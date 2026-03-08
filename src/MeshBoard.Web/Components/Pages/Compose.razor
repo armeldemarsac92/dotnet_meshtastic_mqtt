@@ -2,6 +2,9 @@
 @implements IAsyncDisposable
 @inject IMessageComposerService MessageComposerService
 @inject ISendCapabilityService SendCapabilityService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
+@inject ServerSelectionNotifier ServerSelectionNotifier
 
 <PageTitle>Compose</PageTitle>
 
@@ -93,23 +96,30 @@
 </div>
 
 @code {
+    private static readonly TimeSpan FallbackRefreshInterval = TimeSpan.FromSeconds(60);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private SendCapabilityStatus _capabilityStatus = new();
     private readonly ComposeTextMessageRequest _composeRequest = new();
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private bool _isSending;
     private string? _composeStatusMessage;
     private Task? _refreshTask;
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        RefreshStatus();
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
+        await RefreshStatusAsync();
         _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
-        return Task.CompletedTask;
     }
 
     public ValueTask DisposeAsync()
     {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
         _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
         _cancellationTokenSource.Dispose();
         return ValueTask.CompletedTask;
     }
@@ -118,11 +128,11 @@
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            using var timer = new PeriodicTimer(FallbackRefreshInterval);
 
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                RefreshStatus();
+                await RefreshStatusAsync();
                 await InvokeAsync(StateHasChanged);
             }
         }
@@ -131,9 +141,22 @@
         }
     }
 
-    private void RefreshStatus()
+    private async Task RefreshStatusAsync()
     {
-        _capabilityStatus = SendCapabilityService.GetStatus();
+        try
+        {
+            _capabilityStatus = await SendCapabilityService.GetStatus(_cancellationTokenSource.Token);
+        }
+        catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            _capabilityStatus = new SendCapabilityStatus
+            {
+                BlockingReasons = [$"Failed to load send capability: {exception.Message}"]
+            };
+        }
     }
 
     private string GetCapabilityBadgeClass()
@@ -141,6 +164,55 @@
         return _capabilityStatus.IsEnabled
             ? "bg-signal-500/12 text-signal-600"
             : "bg-cinder-900 text-white";
+    }
+
+    private Task HandleServerSelectionChangedAsync()
+    {
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        return string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal) &&
+            change.Kind == ProjectionChangeKind.RuntimeStatusChanged;
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await RefreshStatusAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
     }
 
     private async Task SendAsync()
@@ -161,7 +233,7 @@
         finally
         {
             _isSending = false;
-            RefreshStatus();
+            await RefreshStatusAsync();
         }
     }
 }

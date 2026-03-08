@@ -2,11 +2,13 @@
 @implements IAsyncDisposable
 @inject IBrokerMonitorService BrokerMonitorService
 @inject IFavoriteNodeService FavoriteNodeService
+@inject IHomeDashboardService HomeDashboardService
 @inject IMessageService MessageService
 @inject INodeService NodeService
-@inject IOptions<BrokerOptions> BrokerConfiguration
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
 @inject IOptions<PersistenceOptions> PersistenceConfiguration
-@inject ITopicPresetService TopicPresetService
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
+@inject ServerSelectionNotifier ServerSelectionNotifier
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -35,6 +37,7 @@
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Broker</p>
                 <strong class="mt-3 block text-lg text-cinder-950">@_brokerStatus.Host:@_brokerStatus.Port</strong>
                 <span class="mt-2 block text-sm text-cinder-800/78">@(_brokerStatus.IsConnected ? "Connected to MQTT" : "Broker offline")</span>
+                <span class="mt-2 block text-sm text-cinder-800/78">Queue @_brokerStatus.InboundQueueDepth/@_brokerStatus.InboundQueueCapacity, dropped @_brokerStatus.InboundDroppedCount</span>
                 @if (!string.IsNullOrWhiteSpace(_brokerStatus.LastStatusMessage))
                 {
                     <span class="mt-3 block text-xs leading-6 text-cinder-800/70">@_brokerStatus.LastStatusMessage</span>
@@ -91,17 +94,25 @@
 </div>
 
 @code {
+    private static readonly TimeSpan FallbackRefreshInterval = TimeSpan.FromSeconds(30);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private BrokerStatus _brokerStatus = new();
     private IReadOnlyCollection<FavoriteNode> _favoriteNodes = [];
     private bool _isLoading = true;
     private IReadOnlyCollection<MessageSummary> _messages = [];
     private int _observedNodeCount;
+    private bool _pendingBrokerStatusRefresh;
+    private bool _pendingFavoritesRefresh;
+    private bool _pendingMessagesRefresh;
+    private bool _pendingObservedNodeCountRefresh;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private Task? _refreshTask;
     private IReadOnlyCollection<TopicPreset> _topicPresets = [];
 
     protected override async Task OnInitializedAsync()
     {
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
         await BrokerMonitorService.EnsureConnected(_cancellationTokenSource.Token);
         await LoadAsync(_cancellationTokenSource.Token);
         _isLoading = false;
@@ -110,33 +121,31 @@
 
     public ValueTask DisposeAsync()
     {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
         _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
         _cancellationTokenSource.Dispose();
         return ValueTask.CompletedTask;
     }
 
-    private async Task LoadAsync(CancellationToken cancellationToken)
+    private async Task LoadAsync(CancellationToken cancellationToken, bool forceRefresh = false)
     {
-        _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+        var snapshot = await HomeDashboardService.GetSnapshot(forceRefresh, cancellationToken);
 
-        var topicPresetsTask = TopicPresetService.GetTopicPresets(cancellationToken);
-        var favoriteNodesTask = FavoriteNodeService.GetFavoriteNodes(cancellationToken);
-        var observedNodeCountTask = NodeService.GetNodesPage(offset: 0, take: 1, cancellationToken: cancellationToken);
-        var messagesTask = MessageService.GetRecentMessages(120, cancellationToken);
-
-        await Task.WhenAll(topicPresetsTask, favoriteNodesTask, observedNodeCountTask, messagesTask);
-
-        _topicPresets = await topicPresetsTask;
-        _favoriteNodes = await favoriteNodesTask;
-        _observedNodeCount = (await observedNodeCountTask).TotalCount;
-        _messages = await messagesTask;
+        _brokerStatus = snapshot.BrokerStatus;
+        _topicPresets = snapshot.TopicPresets;
+        _favoriteNodes = snapshot.FavoriteNodes;
+        _observedNodeCount = snapshot.ObservedNodeCount;
+        _messages = snapshot.Messages;
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+            using var timer = new PeriodicTimer(FallbackRefreshInterval);
 
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
@@ -146,6 +155,104 @@
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+    }
+
+    private Task HandleServerSelectionChangedAsync()
+    {
+        return ScheduleRealtimeRefreshAsync(forceRefresh: true);
+    }
+
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return Task.CompletedTask;
+        }
+
+        switch (change.Kind)
+        {
+            case ProjectionChangeKind.MessageAdded:
+                _pendingMessagesRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
+            case ProjectionChangeKind.NodeUpdated:
+                _pendingObservedNodeCountRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
+            case ProjectionChangeKind.FavoriteNodesChanged:
+                _pendingFavoritesRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
+            case ProjectionChangeKind.RuntimeStatusChanged:
+                _pendingBrokerStatusRefresh = true;
+                return ScheduleRealtimeRefreshAsync();
+            default:
+                return Task.CompletedTask;
+        }
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync(bool forceRefresh = false)
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            if (forceRefresh)
+            {
+                _pendingBrokerStatusRefresh = false;
+                _pendingFavoritesRefresh = false;
+                _pendingMessagesRefresh = false;
+                _pendingObservedNodeCountRefresh = false;
+                await LoadAsync(debounceCancellationTokenSource.Token, true);
+            }
+            else
+            {
+                await ApplyPushUpdatesAsync(debounceCancellationTokenSource.Token);
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task ApplyPushUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingBrokerStatusRefresh)
+        {
+            _brokerStatus = BrokerMonitorService.GetBrokerStatus();
+            _pendingBrokerStatusRefresh = false;
+        }
+
+        if (_pendingFavoritesRefresh)
+        {
+            _favoriteNodes = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
+            _pendingFavoritesRefresh = false;
+        }
+
+        if (_pendingMessagesRefresh)
+        {
+            _messages = await MessageService.GetRecentMessages(120, cancellationToken);
+            _pendingMessagesRefresh = false;
+        }
+
+        if (_pendingObservedNodeCountRefresh)
+        {
+            _observedNodeCount = await NodeService.CountNodes(cancellationToken: cancellationToken);
+            _pendingObservedNodeCountRefresh = false;
         }
     }
 }

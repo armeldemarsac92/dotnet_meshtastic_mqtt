@@ -1,6 +1,9 @@
 @page "/nodes"
+@implements IAsyncDisposable
 @inject IFavoriteNodeService FavoriteNodeService
 @inject INodeService NodeService
+@inject IWorkspaceContextAccessor WorkspaceContextAccessor
+@inject ProjectionChangeNotifier ProjectionChangeNotifier
 
 <PageTitle>Nodes</PageTitle>
 
@@ -20,7 +23,7 @@
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Search</span>
             <input @bind="_query.SearchText"
                    @bind:event="oninput"
-                   @bind:after="RefreshNodesAsync"
+                   @bind:after="@(() => RefreshNodesAsync())"
                    class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                    placeholder="Node id, name, or channel" />
         </label>
@@ -28,7 +31,7 @@
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Sort</span>
             <select @bind="_query.SortBy"
-                    @bind:after="RefreshNodesAsync"
+                    @bind:after="@(() => RefreshNodesAsync())"
                     class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950">
                 <option value="@NodeSortOption.LastHeardDesc">Last heard</option>
                 <option value="@NodeSortOption.NameAsc">Name</option>
@@ -37,24 +40,24 @@
         </label>
 
         <label class="liquid-input flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-cinder-900">
-            <input type="checkbox" @bind="_query.OnlyWithLocation" @bind:after="RefreshNodesAsync" />
+            <input type="checkbox" @bind="_query.OnlyWithLocation" @bind:after="@(() => RefreshNodesAsync())" />
             <span>Only with location</span>
         </label>
 
         <label class="liquid-input flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-cinder-900">
-            <input type="checkbox" @bind="_query.OnlyWithTelemetry" @bind:after="RefreshNodesAsync" />
+            <input type="checkbox" @bind="_query.OnlyWithTelemetry" @bind:after="@(() => RefreshNodesAsync())" />
             <span>Only with telemetry</span>
         </label>
 
         <label class="liquid-input flex items-center gap-3 rounded-2xl px-4 py-3 text-sm text-cinder-900">
-            <input type="checkbox" @bind="_query.OnlyFavorites" @bind:after="RefreshNodesAsync" />
+            <input type="checkbox" @bind="_query.OnlyFavorites" @bind:after="@(() => RefreshNodesAsync())" />
             <span>Only favorites</span>
         </label>
 
         <label class="space-y-2">
             <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Nodes displayed</span>
             <select @bind="_maxDisplayed"
-                    @bind:after="RefreshNodesAsync"
+                    @bind:after="@(() => RefreshNodesAsync())"
                     class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950">
                 <option value="50">50</option>
                 <option value="100">100</option>
@@ -163,8 +166,10 @@
                      OnOpenNode="OpenNodeDetailsAsync" />
 
 @code {
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
     private string? _favoriteActionNodeId;
     private readonly HashSet<string> _favoriteNodeIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pendingNodeRefreshIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<NodeSummary> _nodes = [];
     private string? _favoriteStatusMessage;
     private bool _isLoadingNodes;
@@ -175,11 +180,24 @@
     private string? _selectedNodeId;
     private string? _selectedRegion;
     private int _totalMatchedNodeCount;
+    private bool _pendingFavoriteRefresh;
+    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
     private int DisplayedNodeCount => _nodes.Count;
 
     protected override async Task OnInitializedAsync()
     {
-        await RefreshNodesAsync();
+        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
+        await RefreshNodesAsync(_cancellationTokenSource.Token);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
+        _cancellationTokenSource.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+        _cancellationTokenSource.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     private bool IsFavorite(string nodeId)
@@ -192,9 +210,9 @@
         return node.LongName ?? node.ShortName ?? node.NodeId;
     }
 
-    private async Task RefreshFavoritesAsync()
+    private async Task RefreshFavoritesAsync(CancellationToken cancellationToken = default)
     {
-        var favorites = await FavoriteNodeService.GetFavoriteNodes();
+        var favorites = await FavoriteNodeService.GetFavoriteNodes(cancellationToken);
 
         _favoriteNodeIds.Clear();
 
@@ -204,15 +222,159 @@
         }
     }
 
-    private async Task RefreshNodesAsync()
+    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
+    {
+        if (!IsRelevantProjectionChange(change))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (change.Kind == ProjectionChangeKind.NodeUpdated)
+        {
+            _pendingNodeRefreshIds.Add(change.EntityKey!);
+        }
+        else if (change.Kind == ProjectionChangeKind.FavoriteNodesChanged)
+        {
+            _pendingFavoriteRefresh = true;
+        }
+
+        return ScheduleRealtimeRefreshAsync();
+    }
+
+    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
+    {
+        if (!string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return (change.Kind == ProjectionChangeKind.NodeUpdated && !string.IsNullOrWhiteSpace(change.EntityKey)) ||
+            change.Kind == ProjectionChangeKind.FavoriteNodesChanged;
+    }
+
+    private async Task ScheduleRealtimeRefreshAsync()
+    {
+        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
+        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
+
+        CancellationTokenSource debounceCancellationTokenSource;
+
+        try
+        {
+            if (_cancellationTokenSource.IsCancellationRequested)
+            {
+                return;
+            }
+
+            debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
+            await ApplyPendingRealtimeUpdatesAsync(debounceCancellationTokenSource.Token);
+        }
+        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
+            {
+                _realtimeRefreshDebounceCancellationTokenSource = null;
+            }
+
+            debounceCancellationTokenSource.Dispose();
+        }
+    }
+
+    private async Task ApplyPendingRealtimeUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingFavoriteRefresh)
+        {
+            _pendingFavoriteRefresh = false;
+            await RefreshFavoritesAsync(cancellationToken);
+
+            if (_query.OnlyFavorites)
+            {
+                await RefreshNodesAsync(cancellationToken);
+                return;
+            }
+        }
+
+        await ApplyPendingNodeUpdatesAsync(cancellationToken);
+    }
+
+    private async Task ApplyPendingNodeUpdatesAsync(CancellationToken cancellationToken)
+    {
+        if (_pendingNodeRefreshIds.Count == 0)
+        {
+            if (!_pendingFavoriteRefresh)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+
+            return;
+        }
+
+        var nodeIds = _pendingNodeRefreshIds.ToArray();
+        _pendingNodeRefreshIds.Clear();
+
+        var updatedNodes = await Task.WhenAll(nodeIds.Select(nodeId => NodeService.GetNodeById(nodeId, cancellationToken)));
+        var visibleNodesById = _nodes
+            .Select((node, index) => (node, index))
+            .ToDictionary(entry => entry.node.NodeId, entry => entry.index, StringComparer.OrdinalIgnoreCase);
+        var didChange = false;
+
+        foreach (var updatedNode in updatedNodes)
+        {
+            if (updatedNode is null)
+            {
+                continue;
+            }
+
+            if (!visibleNodesById.TryGetValue(updatedNode.NodeId, out var existingIndex))
+            {
+                continue;
+            }
+
+            if (!MatchesCurrentQuery(updatedNode))
+            {
+                _nodes.RemoveAt(existingIndex);
+                _totalMatchedNodeCount = Math.Max(0, _totalMatchedNodeCount - 1);
+                didChange = true;
+                RebuildVisibleNodeIndex(visibleNodesById);
+                continue;
+            }
+
+            _nodes[existingIndex] = updatedNode;
+            didChange = true;
+        }
+
+        if (!didChange)
+        {
+            return;
+        }
+
+        _nodes.Sort(CompareNodes);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshNodesAsync(CancellationToken cancellationToken = default)
     {
         var requestVersion = System.Threading.Interlocked.Increment(ref _requestVersion);
         _isLoadingNodes = true;
 
         try
         {
-            await RefreshFavoritesAsync();
-            var page = await NodeService.GetNodesPage(_query, 0, _maxDisplayed);
+            await RefreshFavoritesAsync(cancellationToken);
+            var page = await NodeService.GetNodesPage(_query, 0, _maxDisplayed, cancellationToken);
 
             if (requestVersion != _requestVersion)
             {
@@ -222,6 +384,9 @@
             _nodes.Clear();
             _nodes.AddRange(page.Items);
             _totalMatchedNodeCount = page.TotalCount;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
@@ -237,6 +402,100 @@
         }
     }
 
+    private bool MatchesCurrentQuery(NodeSummary node)
+    {
+        if (_query.OnlyFavorites && !_favoriteNodeIds.Contains(node.NodeId))
+        {
+            return false;
+        }
+
+        if (_query.OnlyWithLocation && (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue))
+        {
+            return false;
+        }
+
+        if (_query.OnlyWithTelemetry &&
+            node.BatteryLevelPercent is null &&
+            node.Voltage is null &&
+            node.ChannelUtilization is null &&
+            node.AirUtilTx is null &&
+            node.UptimeSeconds is null &&
+            node.TemperatureCelsius is null &&
+            node.RelativeHumidity is null &&
+            node.BarometricPressure is null)
+        {
+            return false;
+        }
+
+        var searchText = _query.SearchText.Trim();
+
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return true;
+        }
+
+        return ContainsIgnoreCase(node.NodeId, searchText) ||
+            ContainsIgnoreCase(node.ShortName, searchText) ||
+            ContainsIgnoreCase(node.LongName, searchText) ||
+            ContainsIgnoreCase(node.LastHeardChannel, searchText);
+    }
+
+    private int CompareNodes(NodeSummary left, NodeSummary right)
+    {
+        return _query.SortBy switch
+        {
+            NodeSortOption.NameAsc => CompareByName(left, right),
+            NodeSortOption.BatteryDesc => CompareByBattery(left, right),
+            _ => CompareByLastHeard(left, right)
+        };
+    }
+
+    private static int CompareByName(NodeSummary left, NodeSummary right)
+    {
+        var nameComparison = string.Compare(
+            left.LongName ?? left.ShortName ?? left.NodeId,
+            right.LongName ?? right.ShortName ?? right.NodeId,
+            StringComparison.OrdinalIgnoreCase);
+
+        return nameComparison != 0
+            ? nameComparison
+            : string.Compare(left.NodeId, right.NodeId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CompareByBattery(NodeSummary left, NodeSummary right)
+    {
+        var batteryComparison = Nullable.Compare(right.BatteryLevelPercent, left.BatteryLevelPercent);
+
+        return batteryComparison != 0
+            ? batteryComparison
+            : CompareByName(left, right);
+    }
+
+    private static int CompareByLastHeard(NodeSummary left, NodeSummary right)
+    {
+        var heardComparison = Nullable.Compare(right.LastHeardAtUtc, left.LastHeardAtUtc);
+
+        return heardComparison != 0
+            ? heardComparison
+            : CompareByName(left, right);
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string searchText)
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RebuildVisibleNodeIndex(Dictionary<string, int> visibleNodesById)
+    {
+        visibleNodesById.Clear();
+
+        for (var index = 0; index < _nodes.Count; index += 1)
+        {
+            visibleNodesById[_nodes[index].NodeId] = index;
+        }
+    }
+
     private async Task LoadMoreNodesAsync()
     {
         if (_isLoadingNodes || DisplayedNodeCount >= _totalMatchedNodeCount)
@@ -249,7 +508,7 @@
 
         try
         {
-            var page = await NodeService.GetNodesPage(_query, DisplayedNodeCount, _maxDisplayed);
+            var page = await NodeService.GetNodesPage(_query, DisplayedNodeCount, _maxDisplayed, _cancellationTokenSource.Token);
 
             if (requestVersion != _requestVersion)
             {
@@ -283,6 +542,7 @@
             if (IsFavorite(node.NodeId))
             {
                 await FavoriteNodeService.RemoveFavoriteNode(node.NodeId);
+                _favoriteNodeIds.Remove(node.NodeId);
                 _favoriteStatusMessage = $"Removed {node.NodeId} from favorites.";
             }
             else
@@ -294,14 +554,15 @@
                         ShortName = node.ShortName,
                         LongName = node.LongName
                     });
+                _favoriteNodeIds.Add(node.NodeId);
                 _favoriteStatusMessage = $"Saved {node.NodeId} as favorite.";
             }
 
-            await RefreshFavoritesAsync();
-
             if (_query.OnlyFavorites)
             {
-                await RefreshNodesAsync();
+                _nodes.RemoveAll(entry => string.Equals(entry.NodeId, node.NodeId, StringComparison.OrdinalIgnoreCase));
+                _totalMatchedNodeCount = Math.Max(0, _totalMatchedNodeCount - 1);
+                await InvokeAsync(StateHasChanged);
                 return;
             }
 

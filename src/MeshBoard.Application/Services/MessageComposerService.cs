@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Messages;
@@ -18,20 +19,26 @@ public interface IMessageComposerService
 
 public sealed partial class MessageComposerService : IMessageComposerService
 {
-    private readonly BrokerOptions _brokerOptions;
+    private readonly BrokerOptions _fallbackBrokerOptions;
+    private readonly IBrokerServerProfileService _brokerServerProfileService;
+    private readonly IBrokerRuntimeCommandService _brokerRuntimeCommandService;
     private readonly ILogger<MessageComposerService> _logger;
-    private readonly IMqttSession _mqttSession;
     private readonly ISendCapabilityService _sendCapabilityService;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public MessageComposerService(
-        IMqttSession mqttSession,
+        IBrokerRuntimeCommandService brokerRuntimeCommandService,
         ISendCapabilityService sendCapabilityService,
+        IBrokerServerProfileService brokerServerProfileService,
+        IWorkspaceContextAccessor workspaceContextAccessor,
         IOptions<BrokerOptions> brokerOptions,
         ILogger<MessageComposerService> logger)
     {
-        _mqttSession = mqttSession;
+        _brokerRuntimeCommandService = brokerRuntimeCommandService;
         _sendCapabilityService = sendCapabilityService;
-        _brokerOptions = brokerOptions.Value;
+        _brokerServerProfileService = brokerServerProfileService;
+        _workspaceContextAccessor = workspaceContextAccessor;
+        _fallbackBrokerOptions = brokerOptions.Value;
         _logger = logger;
     }
 
@@ -57,7 +64,7 @@ public sealed partial class MessageComposerService : IMessageComposerService
         }
 
         var toNodeId = NormalizeNodeId(request.ToNodeId);
-        var capability = _sendCapabilityService.GetStatus();
+        var capability = await _sendCapabilityService.GetStatus(cancellationToken);
 
         if (!capability.IsEnabled)
         {
@@ -69,22 +76,41 @@ public sealed partial class MessageComposerService : IMessageComposerService
             toNodeId is not null,
             toNodeId);
 
+        var activeServer = await ResolveActiveServerProfile(cancellationToken);
+        var downlinkTopic = activeServer?.DownlinkTopic ?? _fallbackBrokerOptions.DownlinkTopic;
+
         var payload = toNodeId is null
             ? JsonSerializer.Serialize(new { type = "sendtext", payload = messageText })
             : JsonSerializer.Serialize(new { type = "sendtext", payload = messageText, to = toNodeId });
 
-        await _mqttSession.PublishAsync(_brokerOptions.DownlinkTopic, payload, cancellationToken);
+        await _brokerRuntimeCommandService.PublishAsync(
+            _workspaceContextAccessor.GetWorkspaceId(),
+            downlinkTopic,
+            payload,
+            cancellationToken);
 
         return new ComposeTextMessageResult
         {
-            Topic = _brokerOptions.DownlinkTopic,
+            Topic = downlinkTopic,
             IsPrivate = toNodeId is not null,
             ToNodeId = toNodeId,
             SentAtUtc = DateTimeOffset.UtcNow,
             StatusMessage = toNodeId is null
-                ? "Published public send request."
-                : $"Published private send request to {toNodeId}."
+                ? "Queued public send request."
+                : $"Queued private send request to {toNodeId}."
         };
+    }
+
+    private async Task<BrokerServerProfile?> ResolveActiveServerProfile(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        }
+        catch (NotFoundException)
+        {
+            return null;
+        }
     }
 
     private static string? NormalizeNodeId(string? nodeId)

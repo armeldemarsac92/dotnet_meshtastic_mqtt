@@ -13,12 +13,11 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromSeconds(2);
 
     private readonly object _cacheSync = new();
-    private readonly byte[] _defaultKeyBytes;
+    private readonly byte[] _fallbackDefaultKeyBytes;
     private readonly ILogger<TopicPresetEncryptionKeyResolver> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly IServiceScopeFactory _serviceScopeFactory;
-    private DateTimeOffset _cacheUpdatedAtUtc = DateTimeOffset.MinValue;
-    private IReadOnlyCollection<KeyMapping> _mappings = [];
+    private readonly Dictionary<string, WorkspaceKeyCache> _cacheByWorkspace = new(StringComparer.Ordinal);
 
     public TopicPresetEncryptionKeyResolver(
         IServiceScopeFactory serviceScopeFactory,
@@ -27,38 +26,45 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
     {
         _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
-        _defaultKeyBytes = ResolveDefaultKeyBytes(brokerOptions.Value.DefaultEncryptionKeyBase64);
+        _fallbackDefaultKeyBytes = ResolveDefaultKeyBytes(brokerOptions.Value.DefaultEncryptionKeyBase64);
     }
 
     public async Task<IReadOnlyCollection<byte[]>> ResolveCandidateKeysAsync(
+        string workspaceId,
         string topic,
         CancellationToken cancellationToken = default)
     {
-        await EnsureCacheIsFreshAsync(cancellationToken);
+        await EnsureCacheIsFreshAsync(workspaceId, cancellationToken);
 
-        var bestCustomMatch = TryFindBestMatch(topic);
+        var cache = GetWorkspaceCache(workspaceId);
+
+        var bestCustomMatch = TryFindBestMatch(topic, cache.Mappings);
+        var defaultKeyBytes = cache.DefaultKeyBytes;
 
         if (bestCustomMatch is null)
         {
-            return [[.._defaultKeyBytes]];
+            return [[..defaultKeyBytes]];
         }
 
-        if (bestCustomMatch.KeyBytes.SequenceEqual(_defaultKeyBytes))
+        if (bestCustomMatch.KeyBytes.SequenceEqual(defaultKeyBytes))
         {
-            return [[.._defaultKeyBytes]];
+            return [[..defaultKeyBytes]];
         }
 
-        return [[..bestCustomMatch.KeyBytes], [.._defaultKeyBytes]];
+        return [[..bestCustomMatch.KeyBytes], [..defaultKeyBytes]];
     }
 
     public void InvalidateCache()
     {
-        _cacheUpdatedAtUtc = DateTimeOffset.MinValue;
+        lock (_cacheSync)
+        {
+            _cacheByWorkspace.Clear();
+        }
     }
 
-    private async Task EnsureCacheIsFreshAsync(CancellationToken cancellationToken)
+    private async Task EnsureCacheIsFreshAsync(string workspaceId, CancellationToken cancellationToken)
     {
-        if (DateTimeOffset.UtcNow - _cacheUpdatedAtUtc < CacheLifetime)
+        if (IsCacheFresh(workspaceId))
         {
             return;
         }
@@ -67,14 +73,20 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
 
         try
         {
-            if (DateTimeOffset.UtcNow - _cacheUpdatedAtUtc < CacheLifetime)
+            if (IsCacheFresh(workspaceId))
             {
                 return;
             }
 
-            using var scope = _serviceScopeFactory.CreateScope();
+            await using var scope = _serviceScopeFactory.CreateAsyncScope();
             var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
-            var presets = await topicPresetRepository.GetAllAsync(cancellationToken);
+            var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
+            var activeServer = await brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken);
+            var activeServerAddress = activeServer?.ServerAddress;
+            var presets = string.IsNullOrWhiteSpace(activeServerAddress)
+                ? Array.Empty<TopicPreset>()
+                : await topicPresetRepository.GetAllAsync(workspaceId, activeServerAddress, cancellationToken);
+            var defaultKeyBytes = ResolveDefaultKeyBytes(activeServer?.DefaultEncryptionKeyBase64 ?? string.Empty);
 
             var mappings = presets
                 .Select(TryMapPresetToKeyMapping)
@@ -84,8 +96,12 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
 
             lock (_cacheSync)
             {
-                _mappings = mappings;
-                _cacheUpdatedAtUtc = DateTimeOffset.UtcNow;
+                _cacheByWorkspace[workspaceId] = new WorkspaceKeyCache
+                {
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    DefaultKeyBytes = defaultKeyBytes,
+                    Mappings = mappings
+                };
             }
         }
         finally
@@ -94,7 +110,34 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         }
     }
 
-    private KeyMapping? TryFindBestMatch(string topic)
+    private bool IsCacheFresh(string workspaceId)
+    {
+        lock (_cacheSync)
+        {
+            return _cacheByWorkspace.TryGetValue(workspaceId, out var cache) &&
+                DateTimeOffset.UtcNow - cache.UpdatedAtUtc < CacheLifetime;
+        }
+    }
+
+    private WorkspaceKeyCache GetWorkspaceCache(string workspaceId)
+    {
+        lock (_cacheSync)
+        {
+            if (_cacheByWorkspace.TryGetValue(workspaceId, out var cache))
+            {
+                return cache;
+            }
+        }
+
+        return new WorkspaceKeyCache
+        {
+            UpdatedAtUtc = DateTimeOffset.MinValue,
+            DefaultKeyBytes = [.._fallbackDefaultKeyBytes],
+            Mappings = []
+        };
+    }
+
+    private KeyMapping? TryFindBestMatch(string topic, IReadOnlyCollection<KeyMapping> mappings)
     {
         if (string.IsNullOrWhiteSpace(topic))
         {
@@ -102,7 +145,6 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         }
 
         var normalizedTopic = NormalizeTransportSegment(topic);
-        var mappings = _mappings;
         KeyMapping? bestMatch = null;
 
         foreach (var mapping in mappings)
@@ -240,5 +282,14 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         public int MatchScore { get; set; }
 
         public required string NormalizedPattern { get; set; }
+    }
+
+    private sealed class WorkspaceKeyCache
+    {
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+
+        public required byte[] DefaultKeyBytes { get; set; }
+
+        public required IReadOnlyCollection<KeyMapping> Mappings { get; set; }
     }
 }

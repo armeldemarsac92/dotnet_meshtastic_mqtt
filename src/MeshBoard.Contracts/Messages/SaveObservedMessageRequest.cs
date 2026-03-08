@@ -2,6 +2,8 @@ namespace MeshBoard.Contracts.Messages;
 
 public sealed class SaveObservedMessageRequest
 {
+    public string BrokerServer { get; set; } = string.Empty;
+
     public required string Topic { get; set; }
 
     public required string PacketType { get; set; }

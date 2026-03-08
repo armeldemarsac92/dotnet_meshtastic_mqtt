@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+if ! command -v dnx >/dev/null 2>&1; then
+  echo "dnx was not found. Install .NET SDK 10 or newer." >&2
+  exit 1
+fi
+
+exec dnx csharp-ls@0.22.0 --yes -- "$@"

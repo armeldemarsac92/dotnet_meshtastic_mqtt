@@ -10,6 +10,7 @@ internal static class ObservedNodeMapping
         return new UpsertObservedNodeSqlRequest
         {
             NodeId = request.NodeId,
+            BrokerServer = request.BrokerServer,
             ShortName = request.ShortName,
             LongName = request.LongName,
             LastHeardAtUtc = request.LastHeardAtUtc?.ToString("O"),

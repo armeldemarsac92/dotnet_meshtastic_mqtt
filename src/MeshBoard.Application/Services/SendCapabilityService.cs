@@ -1,5 +1,7 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
+using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Meshtastic;
 using Microsoft.Extensions.Options;
 
@@ -7,52 +9,68 @@ namespace MeshBoard.Application.Services;
 
 public interface ISendCapabilityService
 {
-    SendCapabilityStatus GetStatus();
+    Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default);
 }
 
 public sealed class SendCapabilityService : ISendCapabilityService
 {
     private readonly BrokerOptions _brokerOptions;
-    private readonly IMqttSession _mqttSession;
+    private readonly IBrokerServerProfileService _brokerServerProfileService;
+    private readonly IBrokerRuntimeRegistry _brokerRuntimeRegistry;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
-    public SendCapabilityService(IOptions<BrokerOptions> brokerOptions, IMqttSession mqttSession)
+    public SendCapabilityService(
+        IOptions<BrokerOptions> brokerOptions,
+        IBrokerRuntimeRegistry brokerRuntimeRegistry,
+        IBrokerServerProfileService brokerServerProfileService,
+        IWorkspaceContextAccessor workspaceContextAccessor)
     {
         _brokerOptions = brokerOptions.Value;
-        _mqttSession = mqttSession;
+        _brokerRuntimeRegistry = brokerRuntimeRegistry;
+        _brokerServerProfileService = brokerServerProfileService;
+        _workspaceContextAccessor = workspaceContextAccessor;
     }
 
-    public SendCapabilityStatus GetStatus()
+    public async Task<SendCapabilityStatus> GetStatus(CancellationToken cancellationToken = default)
     {
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
+        var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot(workspaceId);
+        var activeServer = await TryGetActiveServerProfile(cancellationToken);
+        var host = activeServer?.Host ?? _brokerOptions.Host;
+        var port = activeServer?.Port ?? _brokerOptions.Port;
+        var downlinkTopic = activeServer?.DownlinkTopic ?? _brokerOptions.DownlinkTopic;
+        var enableSend = activeServer?.EnableSend ?? _brokerOptions.EnableSend;
+
         var status = new SendCapabilityStatus
         {
-            Host = _brokerOptions.Host,
-            Port = _brokerOptions.Port,
-            DownlinkTopic = _brokerOptions.DownlinkTopic,
-            IsBrokerConnected = _mqttSession.IsConnected
+            Host = host,
+            Port = port,
+            DownlinkTopic = downlinkTopic,
+            IsBrokerConnected = runtimeSnapshot.IsConnected
         };
 
-        if (!_brokerOptions.EnableSend)
+        if (!enableSend)
         {
             status.BlockingReasons.Add("Sending is disabled by configuration. Set Broker:EnableSend to true to enable compose.");
         }
 
-        if (!_mqttSession.IsConnected)
+        if (!runtimeSnapshot.IsConnected)
         {
             status.BlockingReasons.Add("The MQTT session is not connected.");
         }
 
-        if (string.IsNullOrWhiteSpace(_brokerOptions.DownlinkTopic))
+        if (string.IsNullOrWhiteSpace(downlinkTopic))
         {
             status.BlockingReasons.Add("No downlink topic is configured. Set Broker:DownlinkTopic.");
         }
 
-        if (!string.IsNullOrWhiteSpace(_brokerOptions.DownlinkTopic) &&
-            !_brokerOptions.DownlinkTopic.StartsWith("msh/", StringComparison.Ordinal))
+        if (!string.IsNullOrWhiteSpace(downlinkTopic) &&
+            !downlinkTopic.StartsWith("msh/", StringComparison.Ordinal))
         {
             status.BlockingReasons.Add("The configured downlink topic does not match expected Meshtastic topic format.");
         }
 
-        if (string.IsNullOrWhiteSpace(_brokerOptions.Host))
+        if (string.IsNullOrWhiteSpace(host))
         {
             status.BlockingReasons.Add("No MQTT broker host is configured.");
         }
@@ -64,5 +82,17 @@ public sealed class SendCapabilityService : ISendCapabilityService
 
         status.IsEnabled = status.BlockingReasons.Count == 0;
         return status;
+    }
+
+    private async Task<BrokerServerProfile?> TryGetActiveServerProfile(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+        }
+        catch (NotFoundException)
+        {
+            return null;
+        }
     }
 }

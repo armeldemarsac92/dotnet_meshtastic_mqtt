@@ -10,6 +10,17 @@
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
+    "split-http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://127.0.0.1:5108",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "MeshtasticRuntime__EnableHostedService": "false",
+        "Persistence__ConnectionString": "Data Source=/tmp/meshboard-test.db"
+      }
+    },
     "https": {
       "commandName": "Project",
       "dotnetRunMessages": true,
@@ -17,6 +28,17 @@
       "applicationUrl": "https://127.0.0.1:7177;http://127.0.0.1:5108",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    },
+    "split-https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "https://127.0.0.1:7177;http://127.0.0.1:5108",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "MeshtasticRuntime__EnableHostedService": "false",
+        "Persistence__ConnectionString": "Data Source=/tmp/meshboard-test.db"
       }
     }
   }

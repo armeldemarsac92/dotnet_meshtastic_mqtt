@@ -2,6 +2,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Messages;
+using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -64,6 +65,11 @@ public sealed class MessageRetentionServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<int> CountAsync(MessageQuery query, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default)
         {
             LastCutoffUtc = cutoffUtc;
@@ -71,7 +77,84 @@ public sealed class MessageRetentionServiceTests
             return Task.FromResult(_rowsDeleted);
         }
 
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageAsync(
+            MessageQuery query,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IReadOnlyCollection<MessageSummary>> GetRecentAsync(
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetRecentByBrokerAsync(
+            string brokerServer,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ChannelSummary> GetChannelSummaryAsync(
+            string region,
+            string channel,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<int> CountByChannelAsync(
+            string region,
+            string channel,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<int> CountBySenderAsync(
+            string senderNodeId,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<ChannelTopNode>> GetTopNodesByChannelAsync(
+            string region,
+            string channel,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageByChannelAsync(
+            string region,
+            string channel,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetPageBySenderAsync(
+            string senderNodeId,
+            int offset,
+            int take,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyCollection<MessageSummary>> GetRecentByChannelAsync(
+            string region,
+            string channel,
             int take,
             CancellationToken cancellationToken = default)
         {

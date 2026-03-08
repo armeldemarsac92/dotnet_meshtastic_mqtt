@@ -36,12 +36,45 @@ npm run tailwind:watch
 
 Run that in a second terminal while running the app.
 
+## MCP Integration
+
+This repo includes a project-scoped `.mcp.json` entry for [`csharp-lsp-mcp`](https://github.com/HYMMA/csharp-lsp-mcp).
+
+It launches through `scripts/run-csharp-lsp-mcp.sh`, which uses `dnx` to run:
+
+- `CSharpLspMcp@1.0.0`
+- `csharp-ls@0.22.0`
+
+Requirements:
+
+- .NET SDK 10.x or newer
+- An MCP client that supports project-level `.mcp.json` files, such as Claude Code
+
+On first launch, `dnx` will download the tool packages. After the MCP client connects, call `csharp_set_workspace` with this repository root:
+
+```text
+/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server
+```
+
+If you need to rebuild while the language server is running, call `csharp_stop` first to release file locks, then run `csharp_set_workspace` again afterward.
+
 ## Tests
 
 ```bash
 dotnet test tests/MeshBoard.UnitTests/MeshBoard.UnitTests.csproj
 dotnet test tests/MeshBoard.IntegrationTests/MeshBoard.IntegrationTests.csproj
 ```
+
+Optional live decode smoke (real MQTT traffic, disabled by default):
+
+```bash
+MESHBOARD_LIVE_DECODE_SMOKE=1 \
+MESHBOARD_LIVE_DECODE_SECONDS=25 \
+MESHBOARD_LIVE_DECODE_KEYS="AQ==" \
+dotnet test tests/MeshBoard.UnitTests/MeshBoard.UnitTests.csproj --filter LiveDecodeSmoke
+```
+
+Set `MESHBOARD_LIVE_DECODE_REQUIRE_TEXT=1` to fail the smoke test unless at least one text message is decoded.
 
 ## Docker
 
