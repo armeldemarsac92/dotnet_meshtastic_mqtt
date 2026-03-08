@@ -7,4 +7,8 @@ public interface IBrokerRuntimeRegistry
     BrokerRuntimeSnapshot GetSnapshot(string workspaceId);
 
     void UpdateSnapshot(string workspaceId, BrokerRuntimeSnapshot snapshot);
+
+    RuntimePipelineSnapshot GetPipelineSnapshot();
+
+    void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot);
 }

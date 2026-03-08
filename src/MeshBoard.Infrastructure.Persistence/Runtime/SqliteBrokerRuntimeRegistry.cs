@@ -90,6 +90,56 @@ internal sealed class SqliteBrokerRuntimeRegistry : IBrokerRuntimeRegistry
             });
     }
 
+    public RuntimePipelineSnapshot GetPipelineSnapshot()
+    {
+        using var connection = CreateConnection();
+        connection.Open();
+
+        var response = connection.QueryFirstOrDefault<RuntimePipelineStatusSqlResponse>(
+            RuntimePipelineStatusQueries.GetCurrent);
+
+        if (response is null)
+        {
+            return new RuntimePipelineSnapshot();
+        }
+
+        return new RuntimePipelineSnapshot
+        {
+            InboundQueueCapacity = response.InboundQueueCapacity,
+            InboundWorkerCount = response.InboundWorkerCount,
+            InboundQueueDepth = response.InboundQueueDepth,
+            InboundOldestMessageAgeMilliseconds = response.InboundOldestMessageAgeMilliseconds,
+            InboundEnqueuedCount = response.InboundEnqueuedCount,
+            InboundDequeuedCount = response.InboundDequeuedCount,
+            InboundDroppedCount = response.InboundDroppedCount,
+            UpdatedAtUtc = string.IsNullOrWhiteSpace(response.UpdatedAtUtc)
+                ? null
+                : DateTimeOffset.Parse(response.UpdatedAtUtc)
+        };
+    }
+
+    public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        using var connection = CreateConnection();
+        connection.Open();
+
+        connection.Execute(
+            RuntimePipelineStatusQueries.Upsert,
+            new
+            {
+                snapshot.InboundQueueCapacity,
+                snapshot.InboundWorkerCount,
+                snapshot.InboundQueueDepth,
+                snapshot.InboundOldestMessageAgeMilliseconds,
+                snapshot.InboundEnqueuedCount,
+                snapshot.InboundDequeuedCount,
+                snapshot.InboundDroppedCount,
+                UpdatedAtUtc = (snapshot.UpdatedAtUtc ?? DateTimeOffset.UtcNow).ToString("O")
+            });
+    }
+
     private SqliteConnection CreateConnection()
     {
         return new SqliteConnection(_connectionString);

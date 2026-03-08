@@ -27,10 +27,22 @@
                 <dd class="font-medium text-cinder-950">@(_brokerStatus.ActiveServerAddress ?? "Unknown")</dd>
                 <dt class="text-cinder-800/70">Connection</dt>
                 <dd class="font-medium text-cinder-950">@(_brokerStatus.IsConnected ? "Connected" : "Disconnected")</dd>
+                <dt class="text-cinder-800/70">Queue depth</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundQueueDepth / @_brokerStatus.InboundQueueCapacity</dd>
+                <dt class="text-cinder-800/70">Workers</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundWorkerCount</dd>
+                <dt class="text-cinder-800/70">Oldest queued</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundOldestMessageAgeMilliseconds ms</dd>
+                <dt class="text-cinder-800/70">Dropped</dt>
+                <dd class="font-medium text-cinder-950">@_brokerStatus.InboundDroppedCount</dd>
             </dl>
             @if (!string.IsNullOrWhiteSpace(_brokerStatus.LastStatusMessage))
             {
                 <p class="mt-4 text-sm text-cinder-800/82">@_brokerStatus.LastStatusMessage</p>
+            }
+            @if (_brokerStatus.RuntimeMetricsUpdatedAtUtc.HasValue)
+            {
+                <p class="mt-2 text-xs text-cinder-800/68">Metrics updated @_brokerStatus.RuntimeMetricsUpdatedAtUtc.Value.ToString("u")</p>
             }
         </article>
 

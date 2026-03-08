@@ -9,6 +9,7 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
 {
     private readonly object _sync = new();
     private readonly BrokerRuntimeSnapshot _defaultSnapshot;
+    private RuntimePipelineSnapshot _pipelineSnapshot = new();
     private readonly Dictionary<string, BrokerRuntimeSnapshot> _snapshotsByWorkspace = new(StringComparer.Ordinal);
 
     public InMemoryBrokerRuntimeRegistry(IOptions<BrokerOptions> brokerOptions)
@@ -47,6 +48,24 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
         }
     }
 
+    public RuntimePipelineSnapshot GetPipelineSnapshot()
+    {
+        lock (_sync)
+        {
+            return Clone(_pipelineSnapshot);
+        }
+    }
+
+    public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        lock (_sync)
+        {
+            _pipelineSnapshot = Clone(snapshot);
+        }
+    }
+
     private static BrokerRuntimeSnapshot Clone(BrokerRuntimeSnapshot snapshot)
     {
         return new BrokerRuntimeSnapshot
@@ -57,6 +76,21 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
             IsConnected = snapshot.IsConnected,
             LastStatusMessage = snapshot.LastStatusMessage,
             TopicFilters = [..snapshot.TopicFilters]
+        };
+    }
+
+    private static RuntimePipelineSnapshot Clone(RuntimePipelineSnapshot snapshot)
+    {
+        return new RuntimePipelineSnapshot
+        {
+            InboundQueueCapacity = snapshot.InboundQueueCapacity,
+            InboundWorkerCount = snapshot.InboundWorkerCount,
+            InboundQueueDepth = snapshot.InboundQueueDepth,
+            InboundOldestMessageAgeMilliseconds = snapshot.InboundOldestMessageAgeMilliseconds,
+            InboundEnqueuedCount = snapshot.InboundEnqueuedCount,
+            InboundDequeuedCount = snapshot.InboundDequeuedCount,
+            InboundDroppedCount = snapshot.InboundDroppedCount,
+            UpdatedAtUtc = snapshot.UpdatedAtUtc
         };
     }
 }

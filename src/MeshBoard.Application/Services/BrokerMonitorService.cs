@@ -69,6 +69,7 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
     {
         var workspaceId = GetWorkspaceId();
         var runtimeSnapshot = _brokerRuntimeRegistry.GetSnapshot(workspaceId);
+        var pipelineSnapshot = _brokerRuntimeRegistry.GetPipelineSnapshot();
         var activeServerAddress = string.IsNullOrWhiteSpace(runtimeSnapshot.ActiveServerAddress)
             ? $"{_fallbackBrokerOptions.Host}:{_fallbackBrokerOptions.Port}"
             : runtimeSnapshot.ActiveServerAddress;
@@ -82,7 +83,15 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
             Port = TryParsePort(activeServerAddress),
             IsConnected = runtimeSnapshot.IsConnected,
             LastStatusMessage = runtimeSnapshot.LastStatusMessage,
-            TopicFilters = [..runtimeSnapshot.TopicFilters]
+            TopicFilters = [..runtimeSnapshot.TopicFilters],
+            InboundQueueCapacity = pipelineSnapshot.InboundQueueCapacity,
+            InboundWorkerCount = pipelineSnapshot.InboundWorkerCount,
+            InboundQueueDepth = pipelineSnapshot.InboundQueueDepth,
+            InboundOldestMessageAgeMilliseconds = pipelineSnapshot.InboundOldestMessageAgeMilliseconds,
+            InboundEnqueuedCount = pipelineSnapshot.InboundEnqueuedCount,
+            InboundDequeuedCount = pipelineSnapshot.InboundDequeuedCount,
+            InboundDroppedCount = pipelineSnapshot.InboundDroppedCount,
+            RuntimeMetricsUpdatedAtUtc = pipelineSnapshot.UpdatedAtUtc
         };
     }
 

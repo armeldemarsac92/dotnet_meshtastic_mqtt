@@ -10,6 +10,8 @@ public sealed class MeshtasticRuntimeOptions
 
     public int InboundWorkerCount { get; set; } = 2;
 
+    public int MetricsPublishIntervalMilliseconds { get; set; } = 1000;
+
     public int CommandProcessorPollIntervalMilliseconds { get; set; } = 250;
 
     public int CommandProcessorBatchSize { get; set; } = 32;

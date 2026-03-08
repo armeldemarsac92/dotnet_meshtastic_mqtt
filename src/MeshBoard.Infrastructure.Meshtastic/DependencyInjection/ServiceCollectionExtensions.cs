@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
         {
             services.AddHostedService<MeshtasticMqttHostedService>();
             services.AddHostedService<MeshtasticInboundProcessingHostedService>();
+            services.AddHostedService<MeshtasticRuntimeMetricsHostedService>();
             services.AddHostedService<BrokerRuntimeCommandProcessorHostedService>();
         }
 

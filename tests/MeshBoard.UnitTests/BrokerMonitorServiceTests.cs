@@ -92,6 +92,18 @@ public sealed class BrokerMonitorServiceTests
                 LastStatusMessage = "Connected",
                 TopicFilters = ["msh/EU_868/2/e/MediumFast/#", "msh/US/2/e/LongFast/#"]
             });
+        runtimeRegistry.UpdatePipelineSnapshot(
+            new RuntimePipelineSnapshot
+            {
+                InboundQueueCapacity = 2048,
+                InboundWorkerCount = 2,
+                InboundQueueDepth = 17,
+                InboundOldestMessageAgeMilliseconds = 1250,
+                InboundEnqueuedCount = 100,
+                InboundDequeuedCount = 83,
+                InboundDroppedCount = 4,
+                UpdatedAtUtc = new DateTimeOffset(2026, 3, 8, 16, 30, 0, TimeSpan.Zero)
+            });
         var service = CreateService(
             new FakeBrokerRuntimeCommandService(),
             runtimeRegistry: runtimeRegistry);
@@ -103,6 +115,13 @@ public sealed class BrokerMonitorServiceTests
         Assert.True(status.IsConnected);
         Assert.Equal("Connected", status.LastStatusMessage);
         Assert.Equal(["msh/EU_868/2/e/MediumFast/#", "msh/US/2/e/LongFast/#"], status.TopicFilters);
+        Assert.Equal(2048, status.InboundQueueCapacity);
+        Assert.Equal(2, status.InboundWorkerCount);
+        Assert.Equal(17, status.InboundQueueDepth);
+        Assert.Equal(1250, status.InboundOldestMessageAgeMilliseconds);
+        Assert.Equal(100, status.InboundEnqueuedCount);
+        Assert.Equal(83, status.InboundDequeuedCount);
+        Assert.Equal(4, status.InboundDroppedCount);
     }
 
     [Fact]
@@ -225,6 +244,7 @@ public sealed class BrokerMonitorServiceTests
             ActiveServerAddress = "mqtt.meshtastic.org:1883",
             TopicFilters = []
         };
+        private RuntimePipelineSnapshot _pipelineSnapshot = new();
 
         public BrokerRuntimeSnapshot GetSnapshot(string workspaceId)
         {
@@ -249,6 +269,36 @@ public sealed class BrokerMonitorServiceTests
                 IsConnected = snapshot.IsConnected,
                 LastStatusMessage = snapshot.LastStatusMessage,
                 TopicFilters = [..snapshot.TopicFilters]
+            };
+        }
+
+        public RuntimePipelineSnapshot GetPipelineSnapshot()
+        {
+            return new RuntimePipelineSnapshot
+            {
+                InboundQueueCapacity = _pipelineSnapshot.InboundQueueCapacity,
+                InboundWorkerCount = _pipelineSnapshot.InboundWorkerCount,
+                InboundQueueDepth = _pipelineSnapshot.InboundQueueDepth,
+                InboundOldestMessageAgeMilliseconds = _pipelineSnapshot.InboundOldestMessageAgeMilliseconds,
+                InboundEnqueuedCount = _pipelineSnapshot.InboundEnqueuedCount,
+                InboundDequeuedCount = _pipelineSnapshot.InboundDequeuedCount,
+                InboundDroppedCount = _pipelineSnapshot.InboundDroppedCount,
+                UpdatedAtUtc = _pipelineSnapshot.UpdatedAtUtc
+            };
+        }
+
+        public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+        {
+            _pipelineSnapshot = new RuntimePipelineSnapshot
+            {
+                InboundQueueCapacity = snapshot.InboundQueueCapacity,
+                InboundWorkerCount = snapshot.InboundWorkerCount,
+                InboundQueueDepth = snapshot.InboundQueueDepth,
+                InboundOldestMessageAgeMilliseconds = snapshot.InboundOldestMessageAgeMilliseconds,
+                InboundEnqueuedCount = snapshot.InboundEnqueuedCount,
+                InboundDequeuedCount = snapshot.InboundDequeuedCount,
+                InboundDroppedCount = snapshot.InboundDroppedCount,
+                UpdatedAtUtc = snapshot.UpdatedAtUtc
             };
         }
     }

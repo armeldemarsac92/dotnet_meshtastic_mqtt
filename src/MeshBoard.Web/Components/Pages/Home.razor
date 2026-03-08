@@ -35,6 +35,7 @@
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Broker</p>
                 <strong class="mt-3 block text-lg text-cinder-950">@_brokerStatus.Host:@_brokerStatus.Port</strong>
                 <span class="mt-2 block text-sm text-cinder-800/78">@(_brokerStatus.IsConnected ? "Connected to MQTT" : "Broker offline")</span>
+                <span class="mt-2 block text-sm text-cinder-800/78">Queue @_brokerStatus.InboundQueueDepth/@_brokerStatus.InboundQueueCapacity, dropped @_brokerStatus.InboundDroppedCount</span>
                 @if (!string.IsNullOrWhiteSpace(_brokerStatus.LastStatusMessage))
                 {
                     <span class="mt-3 block text-xs leading-6 text-cinder-800/70">@_brokerStatus.LastStatusMessage</span>

@@ -1025,9 +1025,22 @@ public sealed class PersistenceIntegrationTests
                         LastStatusMessage = "Disconnected",
                         TopicFilters = ["msh/EU_868/2/e/MediumFast/#"]
                     });
+                runtimeRegistryA.UpdatePipelineSnapshot(
+                    new RuntimePipelineSnapshot
+                    {
+                        InboundQueueCapacity = 2048,
+                        InboundWorkerCount = 2,
+                        InboundQueueDepth = 5,
+                        InboundOldestMessageAgeMilliseconds = 900,
+                        InboundEnqueuedCount = 80,
+                        InboundDequeuedCount = 75,
+                        InboundDroppedCount = 3,
+                        UpdatedAtUtc = new DateTimeOffset(2026, 3, 8, 18, 0, 0, TimeSpan.Zero)
+                    });
 
                 var workspaceAStatus = runtimeRegistryB.GetSnapshot("workspace-a");
                 var workspaceBStatus = runtimeRegistryB.GetSnapshot("workspace-b");
+                var pipelineStatus = runtimeRegistryB.GetPipelineSnapshot();
 
                 Assert.Equal(activeProfileId, workspaceAStatus.ActiveServerProfileId);
                 Assert.Equal("Workspace A runtime", workspaceAStatus.ActiveServerName);
@@ -1042,6 +1055,14 @@ public sealed class PersistenceIntegrationTests
                 Assert.False(workspaceBStatus.IsConnected);
                 Assert.Equal("Disconnected", workspaceBStatus.LastStatusMessage);
                 Assert.Equal(["msh/EU_868/2/e/MediumFast/#"], workspaceBStatus.TopicFilters);
+
+                Assert.Equal(2048, pipelineStatus.InboundQueueCapacity);
+                Assert.Equal(2, pipelineStatus.InboundWorkerCount);
+                Assert.Equal(5, pipelineStatus.InboundQueueDepth);
+                Assert.Equal(900, pipelineStatus.InboundOldestMessageAgeMilliseconds);
+                Assert.Equal(80, pipelineStatus.InboundEnqueuedCount);
+                Assert.Equal(75, pipelineStatus.InboundDequeuedCount);
+                Assert.Equal(3, pipelineStatus.InboundDroppedCount);
             }
             finally
             {

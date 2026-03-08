@@ -221,6 +221,16 @@ public sealed class SendCapabilityServiceTests
         {
             throw new NotSupportedException();
         }
+
+        public RuntimePipelineSnapshot GetPipelineSnapshot()
+        {
+            return new RuntimePipelineSnapshot();
+        }
+
+        public void UpdatePipelineSnapshot(RuntimePipelineSnapshot snapshot)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
