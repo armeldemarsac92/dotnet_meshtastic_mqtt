@@ -10,5 +10,8 @@
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.13",
     "tailwindcss": "^4.1.13"
+  },
+  "dependencies": {
+    "mqtt": "^5.15.0"
   }
 }

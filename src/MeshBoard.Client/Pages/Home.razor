@@ -1,25 +1,32 @@
 ﻿@page "/"
+@implements IDisposable
+@inject BrowserRealtimeClient BrowserRealtimeClient
+@inject RealtimeClientState RealtimeClientState
 
 <PageTitle>MeshBoard Client</PageTitle>
 
 <section class="shell-panel rounded-[2.2rem] px-8 py-10 lg:px-10">
-    <div class="grid gap-8 lg:grid-cols-[1.4fr_0.95fr]">
+    <div class="grid gap-8 lg:grid-cols-[1.35fr_1fr]">
         <div class="space-y-5">
             <p class="text-xs font-semibold uppercase tracking-[0.3em] text-signal-600">Phase 1 Client</p>
             <h1 class="max-w-3xl font-display text-4xl leading-tight text-cinder-950 sm:text-5xl">
-                Browser-first MeshBoard starts with API auth and preference reads.
+                Browser-first MeshBoard now boots the API session, local vault, and realtime transport from the client.
             </h1>
             <p class="max-w-2xl text-base leading-8 text-cinder-800/82">
-                This shell already talks to the new API over cookies, uses antiforgery for state changes,
-                and keeps the client-side architecture separate from the old Blazor Server runtime.
+                The browser owns the live `MQTT 5 / WSS` connection, the broker token is short-lived and API-issued,
+                and Meshtastic keys stay on the device behind the local vault instead of crossing the server boundary.
             </p>
 
             <div class="flex flex-wrap gap-3">
                 <AuthorizeView>
                     <Authorized>
                         <a class="shell-button shell-button-accent inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                           href="/favorites">
-                            Open favorites
+                           href="/channels">
+                            Manage channels
+                        </a>
+                        <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                           href="/settings">
+                            Open settings
                         </a>
                     </Authorized>
                     <NotAuthorized>
@@ -40,20 +47,225 @@
             <article class="shell-subpanel rounded-[1.8rem] p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Implemented now</p>
                 <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
-                    <li>Cookie-authenticated JSON API session</li>
-                    <li>Antiforgery bootstrap and request header flow</li>
-                    <li>Authenticated favorites preference page</li>
+                    <li>Cookie-authenticated JSON API session with antiforgery flow</li>
+                    <li>Client-local encrypted vault with wrapped Meshtastic key records</li>
+                    <li>Realtime broker bootstrap over `MQTT 5 / WSS` with API-issued session tokens</li>
                 </ul>
             </article>
 
             <article class="shell-subpanel rounded-[1.8rem] p-5">
                 <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Next migration layers</p>
                 <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
-                    <li>Broker and preset contract split with no server-side keys</li>
-                    <li>Local encrypted key vault with dedicated passphrase</li>
-                    <li>VerneMQ-backed realtime transport over MQTT 5 on WSS</li>
+                    <li>Projection stores for live messages, channels, and node updates</li>
+                    <li>VerneMQ topic ACL hardening and bridge extraction from the hosted runtime</li>
+                    <li>Future outbound compose flow without server-side plaintext ownership</li>
                 </ul>
             </article>
         </div>
     </div>
 </section>
+
+<AuthorizeView>
+    <Authorized>
+        <section class="shell-panel mt-6 rounded-[2rem] px-8 py-8">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Realtime</p>
+                    <h2 class="mt-2 font-display text-3xl text-cinder-950">Broker session bootstrap</h2>
+                    <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
+                        This panel opens the browser-owned realtime connection using the short-lived broker session
+                        token from `/api/realtime/session`. The page only talks to the scoped realtime service.
+                    </p>
+                </div>
+
+                <div class="flex flex-wrap gap-3">
+                    <button class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ConnectAsync"
+                            disabled="@(_snapshot.IsConnecting || _snapshot.IsConnected)">
+                        @ConnectLabel
+                    </button>
+
+                    <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="DisconnectAsync"
+                            disabled="@(!_snapshot.IsConnected && !_snapshot.IsConnecting)">
+                        @DisconnectLabel
+                    </button>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_commandError))
+            {
+                <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+            }
+
+            <div class="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                <article class="shell-subpanel rounded-[1.8rem] p-5">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Connection state</p>
+                        <span class="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/72">
+                            @_snapshot.Status
+                        </span>
+                    </div>
+
+                    <dl class="mt-5 grid gap-3 text-sm text-cinder-800/80 sm:grid-cols-2">
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker URL</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(_snapshot.BrokerUrl)</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Client ID</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(_snapshot.ClientId)</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Allowed topics</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@_snapshot.AllowedTopicPatterns.Count</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active subscriptions</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@_snapshot.ActiveSubscriptionCount</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Connected at</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.ConnectedAtUtc)</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Session expiry</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.SessionExpiresAtUtc)</dd>
+                        </div>
+                    </dl>
+
+                    @if (_snapshot.AllowedTopicPatterns.Count > 0)
+                    {
+                        <div class="mt-5 rounded-[1.5rem] border border-white/70 bg-white/70 p-4">
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Authorized topic patterns</p>
+                            <ul class="mt-3 grid gap-2 text-sm text-cinder-800/82">
+                                @foreach (var topic in _snapshot.AllowedTopicPatterns)
+                                {
+                                    <li class="rounded-2xl border border-slate-200 bg-slate-50/85 px-3 py-2 font-medium text-cinder-950">@topic</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </article>
+
+                <article class="shell-subpanel rounded-[1.8rem] p-5">
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Traffic snapshot</p>
+
+                    <dl class="mt-5 grid gap-3 text-sm text-cinder-800/80">
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Messages observed</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@_snapshot.MessageCount</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last topic</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(_snapshot.LastMessageTopic)</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last payload size</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@FormatPayloadSize(_snapshot.LastPayloadSizeBytes)</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last message time</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.LastMessageReceivedAtUtc)</dd>
+                        </div>
+                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last disconnect</dt>
+                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.LastDisconnectedAtUtc)</dd>
+                        </div>
+                    </dl>
+
+                    @if (!string.IsNullOrWhiteSpace(_snapshot.LastDisconnectReason))
+                    {
+                        <p class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                            @_snapshot.LastDisconnectReason
+                        </p>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(_snapshot.LastError))
+                    {
+                        <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            @_snapshot.LastError
+                        </p>
+                    }
+                </article>
+            </div>
+        </section>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private string? _commandError;
+    private RealtimeClientSnapshot _snapshot = new();
+
+    protected override void OnInitialized()
+    {
+        _snapshot = RealtimeClientState.Snapshot;
+        RealtimeClientState.Changed += HandleRealtimeChanged;
+    }
+
+    public void Dispose()
+    {
+        RealtimeClientState.Changed -= HandleRealtimeChanged;
+    }
+
+    private string ConnectLabel => _snapshot.IsConnecting
+        ? "Opening..."
+        : _snapshot.IsConnected
+            ? "Connected"
+            : "Open realtime";
+
+    private string DisconnectLabel => _snapshot.IsDisconnecting
+        ? "Disconnecting..."
+        : "Disconnect";
+
+    private async Task ConnectAsync()
+    {
+        _commandError = null;
+
+        try
+        {
+            await BrowserRealtimeClient.ConnectAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            _commandError = exception.Message;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        _commandError = null;
+
+        try
+        {
+            await BrowserRealtimeClient.DisconnectAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            _commandError = exception.Message;
+        }
+    }
+
+    private static string DisplayValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "Not set" : value;
+    }
+
+    private static string FormatPayloadSize(int? payloadSizeBytes)
+    {
+        return payloadSizeBytes.HasValue ? $"{payloadSizeBytes.Value} bytes" : "No traffic yet";
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Not available";
+    }
+
+    private void HandleRealtimeChanged()
+    {
+        _snapshot = RealtimeClientState.Snapshot;
+        InvokeAsync(StateHasChanged);
+    }
+}

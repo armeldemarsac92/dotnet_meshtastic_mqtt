@@ -22,4 +22,11 @@
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)/../.." Command="npm run tailwind:build:client" />
   </Target>
 
+  <Target Name="CopyMqttBrowserBundle" BeforeTargets="Build" Condition="Exists('$(MSBuildProjectDirectory)/../../node_modules/mqtt/dist/mqtt.esm.js')">
+    <MakeDir Directories="$(MSBuildProjectDirectory)/wwwroot/vendor" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/../../node_modules/mqtt/dist/mqtt.esm.js"
+          DestinationFiles="$(MSBuildProjectDirectory)/wwwroot/vendor/mqtt.esm.js"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
