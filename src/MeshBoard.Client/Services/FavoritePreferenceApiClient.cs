@@ -1,4 +1,5 @@
 using System.Net;
+using MeshBoard.Api.SDK.API;
 using MeshBoard.Contracts.Favorites;
 
 namespace MeshBoard.Client.Services;

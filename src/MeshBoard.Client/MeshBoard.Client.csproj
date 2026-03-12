@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
 
   <ItemGroup>
+    <ProjectReference Include="..\MeshBoard.Api.SDK\MeshBoard.Api.SDK.csproj" />
     <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
   </ItemGroup>
 
@@ -15,8 +16,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.3" PrivateAssets="all" />
-    <PackageReference Include="Refit" Version="10.0.1" />
-    <PackageReference Include="Refit.HttpClientFactory" Version="10.0.1" />
   </ItemGroup>
 
   <Target Name="BuildTailwindCss" BeforeTargets="Build" Condition="Exists('$(MSBuildProjectDirectory)/../../node_modules/.bin/tailwindcss')">

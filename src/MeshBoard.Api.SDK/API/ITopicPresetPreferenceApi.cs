@@ -1,7 +1,7 @@
 using MeshBoard.Contracts.Topics;
 using Refit;
 
-namespace MeshBoard.Client.Services;
+namespace MeshBoard.Api.SDK.API;
 
 public interface ITopicPresetPreferenceApi
 {
