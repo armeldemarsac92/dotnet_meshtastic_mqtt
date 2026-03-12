@@ -23,6 +23,130 @@
             </button>
         </div>
 
+        @if (!string.IsNullOrWhiteSpace(_brokerCommandError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_brokerCommandError</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_brokerCommandSuccess))
+        {
+            <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_brokerCommandSuccess</p>
+        }
+
+        <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Broker editor</p>
+                    <h2 class="mt-2 font-display text-2xl text-cinder-950">@BrokerEditorTitle</h2>
+                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                        Passwords stay masked. Leaving the password blank keeps the existing secret; use the clear option only when you want to remove it.
+                    </p>
+                </div>
+
+                <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="StartNewBroker"
+                        disabled="@(_isSavingBroker || _isLoading)">
+                    New broker
+                </button>
+            </div>
+
+            <EditForm class="mt-6 grid gap-4" Model="_brokerForm" OnValidSubmit="SaveBrokerAsync">
+                <DataAnnotationsValidator />
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Name</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   @bind-Value="_brokerForm.Name" />
+                        <ValidationMessage For="() => _brokerForm.Name" />
+                    </label>
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Host</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   @bind-Value="_brokerForm.Host" />
+                        <ValidationMessage For="() => _brokerForm.Host" />
+                    </label>
+                </div>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Port</span>
+                        <InputNumber class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                     @bind-Value="_brokerForm.Port" />
+                        <ValidationMessage For="() => _brokerForm.Port" />
+                    </label>
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Username</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   @bind-Value="_brokerForm.Username" />
+                    </label>
+                </div>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Default topic pattern</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   @bind-Value="_brokerForm.DefaultTopicPattern" />
+                        <ValidationMessage For="() => _brokerForm.DefaultTopicPattern" />
+                    </label>
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Downlink topic</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   @bind-Value="_brokerForm.DownlinkTopic" />
+                        <ValidationMessage For="() => _brokerForm.DownlinkTopic" />
+                    </label>
+                </div>
+
+                <label class="block space-y-2">
+                    <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Password</span>
+                    <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                               type="password"
+                               @bind-Value="_brokerForm.Password" />
+                </label>
+
+                @if (_editingBrokerHasPasswordConfigured)
+                {
+                    <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
+                        <InputCheckbox class="size-4 rounded border-slate-300"
+                                       @bind-Value="_brokerForm.ClearPassword" />
+                        <span>Clear the currently stored broker password.</span>
+                    </label>
+                }
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
+                        <InputCheckbox class="size-4 rounded border-slate-300"
+                                       @bind-Value="_brokerForm.UseTls" />
+                        <span>Use TLS for the upstream broker connection.</span>
+                    </label>
+
+                    <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
+                        <InputCheckbox class="size-4 rounded border-slate-300"
+                                       @bind-Value="_brokerForm.EnableSend" />
+                        <span>Allow downlink send features for this broker.</span>
+                    </label>
+                </div>
+
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                    <button type="button"
+                            class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ResetBrokerEditor"
+                            disabled="@(_isSavingBroker || _isLoading)">
+                        Reset
+                    </button>
+
+                    <button type="submit"
+                            class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            disabled="@(_isSavingBroker || _isLoading)">
+                        @(_isSavingBroker ? "Saving..." : BrokerSubmitLabel)
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+
         @if (!string.IsNullOrWhiteSpace(_loadError))
         {
             <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_loadError</p>
@@ -60,7 +184,7 @@
                                 </p>
                             </div>
 
-                            <div class="grid gap-2 text-xs uppercase tracking-[0.14em] text-cinder-800/72">
+                            <div class="grid gap-2 text-xs uppercase tracking-[0.14em] text-cinder-800/72 sm:justify-items-end">
                                 <span class="rounded-full border border-slate-200 bg-white/75 px-3 py-2">
                                     TLS: @(broker.UseTls ? "Enabled" : "Disabled")
                                 </span>
@@ -70,6 +194,21 @@
                                 <span class="rounded-full border border-slate-200 bg-white/75 px-3 py-2">
                                     Send: @(broker.EnableSend ? "Enabled" : "Disabled")
                                 </span>
+                                <div class="flex flex-wrap gap-2 pt-1">
+                                    <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                            @onclick="() => EditBroker(broker)"
+                                            disabled="@(_isSavingBroker || _isActivatingBroker || _isLoading)">
+                                        Edit
+                                    </button>
+                                    @if (!broker.IsActive)
+                                    {
+                                        <button class="shell-button shell-button-accent rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                                @onclick="() => ActivateBrokerAsync(broker)"
+                                                disabled="@(_isSavingBroker || _isActivatingBroker || _isLoading)">
+                                            @(_activatingBrokerId == broker.Id ? "Activating..." : "Activate")
+                                        </button>
+                                    }
+                                </div>
                             </div>
                         </div>
 
@@ -96,6 +235,73 @@
             <p class="mt-3 text-sm leading-7 text-cinder-800/82">
                 The API returns only metadata here. Topic decryption keys stay out of the browser/server contract and will move into the client-local vault later.
             </p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_presetCommandError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_presetCommandError</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_presetCommandSuccess))
+        {
+            <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_presetCommandSuccess</p>
+        }
+
+        <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Preset editor</p>
+                    <h3 class="mt-2 font-display text-2xl text-cinder-950">@PresetEditorTitle</h3>
+                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                        Saving with an existing topic pattern updates that preset for the active broker. Saving with a new pattern creates a new one.
+                    </p>
+                </div>
+
+                <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="StartNewPreset"
+                        disabled="@(_isSavingPreset || _isLoading)">
+                    New preset
+                </button>
+            </div>
+
+            <EditForm class="mt-6 grid gap-4" Model="_presetForm" OnValidSubmit="SavePresetAsync">
+                <DataAnnotationsValidator />
+
+                <label class="block space-y-2">
+                    <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Name</span>
+                    <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                               @bind-Value="_presetForm.Name" />
+                    <ValidationMessage For="() => _presetForm.Name" />
+                </label>
+
+                <label class="block space-y-2">
+                    <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Topic pattern</span>
+                    <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                               @bind-Value="_presetForm.TopicPattern" />
+                    <ValidationMessage For="() => _presetForm.TopicPattern" />
+                </label>
+
+                <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
+                    <InputCheckbox class="size-4 rounded border-slate-300"
+                                   @bind-Value="_presetForm.IsDefault" />
+                    <span>Mark this preset as the default for the active broker.</span>
+                </label>
+
+                <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                    <button type="button"
+                            class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ResetPresetEditor"
+                            disabled="@(_isSavingPreset || _isLoading)">
+                        Reset
+                    </button>
+
+                    <button type="submit"
+                            class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            disabled="@(_isSavingPreset || _isLoading)">
+                        @(_isSavingPreset ? "Saving..." : PresetSubmitLabel)
+                    </button>
+                </div>
+            </EditForm>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_loadError))
@@ -130,6 +336,13 @@
                                 </span>
                             }
                         </div>
+                        <div class="mt-4 flex justify-end">
+                            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                    @onclick="() => EditPreset(preset)"
+                                    disabled="@(_isSavingPreset || _isLoading)">
+                                Edit
+                            </button>
+                        </div>
                         <p class="mt-4 text-sm text-cinder-800/74">
                             Created @preset.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
                         </p>
@@ -143,8 +356,35 @@
 @code {
     private readonly List<SavedBrokerServerProfile> _brokers = [];
     private readonly List<SavedTopicPreset> _presets = [];
+    private BrokerFormModel _brokerForm = BrokerFormModel.CreateDefault();
+    private TopicPresetFormModel _presetForm = TopicPresetFormModel.CreateDefault();
+    private Guid? _activatingBrokerId;
+    private Guid? _editingBrokerId;
+    private bool _editingBrokerHasPasswordConfigured;
     private bool _isLoading = true;
+    private bool _isActivatingBroker;
+    private bool _isSavingBroker;
+    private bool _isSavingPreset;
+    private string? _brokerCommandError;
+    private string? _brokerCommandSuccess;
     private string? _loadError;
+    private string? _presetCommandError;
+    private string? _presetCommandSuccess;
+
+    private string BrokerEditorTitle => _editingBrokerId is null ? "Create broker profile" : "Edit broker profile";
+
+    private string BrokerSubmitLabel => _editingBrokerId is null ? "Create broker" : "Save broker";
+
+    private bool IsEditingExistingPreset =>
+        _presets.Any(
+            preset => string.Equals(
+                preset.TopicPattern,
+                _presetForm.TopicPattern.Trim(),
+                StringComparison.OrdinalIgnoreCase));
+
+    private string PresetEditorTitle => IsEditingExistingPreset ? "Edit topic preset" : "Create topic preset";
+
+    private string PresetSubmitLabel => IsEditingExistingPreset ? "Save changes" : "Create preset";
 
     protected override async Task OnInitializedAsync()
     {
@@ -154,6 +394,31 @@
     private static string DisplayValue(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? "Not configured" : value;
+    }
+
+    private static BrokerFormModel CreateBrokerForm(SavedBrokerServerProfile broker)
+    {
+        return new BrokerFormModel
+        {
+            Name = broker.Name,
+            Host = broker.Host,
+            Port = broker.Port,
+            UseTls = broker.UseTls,
+            Username = broker.Username,
+            DefaultTopicPattern = broker.DefaultTopicPattern,
+            DownlinkTopic = broker.DownlinkTopic,
+            EnableSend = broker.EnableSend
+        };
+    }
+
+    private static TopicPresetFormModel CreatePresetForm(SavedTopicPreset preset)
+    {
+        return new TopicPresetFormModel
+        {
+            Name = preset.Name,
+            TopicPattern = preset.TopicPattern,
+            IsDefault = preset.IsDefault
+        };
     }
 
     private async Task LoadAsync()
@@ -171,6 +436,19 @@
 
             _presets.Clear();
             _presets.AddRange(presets.OrderByDescending(item => item.IsDefault).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+
+            if (_editingBrokerId is { } editingBrokerId)
+            {
+                var matchingBroker = _brokers.FirstOrDefault(item => item.Id == editingBrokerId);
+                if (matchingBroker is null)
+                {
+                    ResetBrokerEditor();
+                }
+                else
+                {
+                    _editingBrokerHasPasswordConfigured = matchingBroker.HasPasswordConfigured;
+                }
+            }
         }
         catch (Exception exception)
         {
@@ -185,5 +463,207 @@
     private async Task ReloadAsync()
     {
         await LoadAsync();
+    }
+
+    private void StartNewBroker()
+    {
+        ResetBrokerEditor();
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+    }
+
+    private void EditBroker(SavedBrokerServerProfile broker)
+    {
+        _editingBrokerId = broker.Id;
+        _editingBrokerHasPasswordConfigured = broker.HasPasswordConfigured;
+        _brokerForm = CreateBrokerForm(broker);
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+    }
+
+    private void ResetBrokerEditor()
+    {
+        _editingBrokerId = null;
+        _editingBrokerHasPasswordConfigured = false;
+        _brokerForm = BrokerFormModel.CreateDefault();
+    }
+
+    private async Task SaveBrokerAsync()
+    {
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+        _isSavingBroker = true;
+
+        try
+        {
+            var request = new SaveBrokerPreferenceRequest
+            {
+                Name = _brokerForm.Name.Trim(),
+                Host = _brokerForm.Host.Trim(),
+                Port = _brokerForm.Port,
+                UseTls = _brokerForm.UseTls,
+                Username = _brokerForm.Username.Trim(),
+                Password = string.IsNullOrWhiteSpace(_brokerForm.Password) ? null : _brokerForm.Password,
+                ClearPassword = string.IsNullOrWhiteSpace(_brokerForm.Password) && _brokerForm.ClearPassword,
+                DefaultTopicPattern = _brokerForm.DefaultTopicPattern.Trim(),
+                DownlinkTopic = _brokerForm.DownlinkTopic.Trim(),
+                EnableSend = _brokerForm.EnableSend
+            };
+
+            SavedBrokerServerProfile savedProfile;
+
+            if (_editingBrokerId is { } editingBrokerId)
+            {
+                savedProfile = await BrokerPreferenceApiClient.UpdateAsync(editingBrokerId, request);
+                _brokerCommandSuccess = $"Broker '{savedProfile.Name}' updated.";
+            }
+            else
+            {
+                savedProfile = await BrokerPreferenceApiClient.CreateAsync(request);
+                _brokerCommandSuccess = $"Broker '{savedProfile.Name}' created.";
+            }
+
+            _editingBrokerId = savedProfile.Id;
+            _editingBrokerHasPasswordConfigured = !string.IsNullOrWhiteSpace(request.Password) || (savedProfile.HasPasswordConfigured && !request.ClearPassword);
+            _brokerForm = CreateBrokerForm(savedProfile);
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _brokerCommandError = exception.Message;
+        }
+        finally
+        {
+            _isSavingBroker = false;
+        }
+    }
+
+    private async Task ActivateBrokerAsync(SavedBrokerServerProfile broker)
+    {
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+        _isActivatingBroker = true;
+        _activatingBrokerId = broker.Id;
+
+        try
+        {
+            var activeBroker = await BrokerPreferenceApiClient.ActivateAsync(broker.Id);
+            _brokerCommandSuccess = $"Broker '{activeBroker.Name}' is now active.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _brokerCommandError = exception.Message;
+        }
+        finally
+        {
+            _isActivatingBroker = false;
+            _activatingBrokerId = null;
+        }
+    }
+
+    private void StartNewPreset()
+    {
+        ResetPresetEditor();
+        _presetCommandError = null;
+        _presetCommandSuccess = null;
+    }
+
+    private void EditPreset(SavedTopicPreset preset)
+    {
+        _presetForm = CreatePresetForm(preset);
+        _presetCommandError = null;
+        _presetCommandSuccess = null;
+    }
+
+    private void ResetPresetEditor()
+    {
+        _presetForm = TopicPresetFormModel.CreateDefault();
+    }
+
+    private async Task SavePresetAsync()
+    {
+        _presetCommandError = null;
+        _presetCommandSuccess = null;
+        _isSavingPreset = true;
+
+        try
+        {
+            var request = new SaveTopicPresetPreferenceRequest
+            {
+                Name = _presetForm.Name.Trim(),
+                TopicPattern = _presetForm.TopicPattern.Trim(),
+                IsDefault = _presetForm.IsDefault
+            };
+
+            var savedPreset = await TopicPresetPreferenceApiClient.SaveAsync(request);
+            _presetForm = CreatePresetForm(savedPreset);
+            _presetCommandSuccess = $"Topic preset '{savedPreset.Name}' saved.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _presetCommandError = exception.Message;
+        }
+        finally
+        {
+            _isSavingPreset = false;
+        }
+    }
+
+    private sealed class BrokerFormModel
+    {
+        [Required]
+        [MaxLength(128)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(255)]
+        public string Host { get; set; } = string.Empty;
+
+        [Range(1, 65535)]
+        public int Port { get; set; } = 1883;
+
+        public bool UseTls { get; set; }
+
+        [MaxLength(255)]
+        public string Username { get; set; } = string.Empty;
+
+        public string Password { get; set; } = string.Empty;
+
+        public bool ClearPassword { get; set; }
+
+        [Required]
+        [MaxLength(255)]
+        public string DefaultTopicPattern { get; set; } = "msh/US/2/e/#";
+
+        [Required]
+        [MaxLength(255)]
+        public string DownlinkTopic { get; set; } = "msh/US/2/json/mqtt/";
+
+        public bool EnableSend { get; set; }
+
+        public static BrokerFormModel CreateDefault()
+        {
+            return new BrokerFormModel();
+        }
+    }
+
+    private sealed class TopicPresetFormModel
+    {
+        [Required]
+        [MaxLength(128)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(255)]
+        public string TopicPattern { get; set; } = string.Empty;
+
+        public bool IsDefault { get; set; }
+
+        public static TopicPresetFormModel CreateDefault()
+        {
+            return new TopicPresetFormModel();
+        }
     }
 }

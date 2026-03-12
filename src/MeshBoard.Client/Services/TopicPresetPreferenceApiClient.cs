@@ -30,4 +30,19 @@ public sealed class TopicPresetPreferenceApiClient
 
         return response.Content ?? [];
     }
+
+    public async Task<SavedTopicPreset> SaveAsync(
+        SaveTopicPresetPreferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _topicPresetPreferenceApi.SaveAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Saving the topic preset failed."));
+        }
+
+        return response.Content
+            ?? throw new InvalidOperationException("The API returned an empty topic preset payload.");
+    }
 }

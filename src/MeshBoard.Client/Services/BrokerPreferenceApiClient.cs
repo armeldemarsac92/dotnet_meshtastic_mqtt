@@ -42,4 +42,48 @@ public sealed class BrokerPreferenceApiClient
 
         return response.Content ?? [];
     }
+
+    public async Task<SavedBrokerServerProfile> CreateAsync(
+        SaveBrokerPreferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _brokerPreferenceApi.CreateAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Saving the broker profile failed."));
+        }
+
+        return response.Content
+            ?? throw new InvalidOperationException("The API returned an empty broker profile payload.");
+    }
+
+    public async Task<SavedBrokerServerProfile> UpdateAsync(
+        Guid id,
+        SaveBrokerPreferenceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _brokerPreferenceApi.UpdateAsync(id, request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Updating the broker profile failed."));
+        }
+
+        return response.Content
+            ?? throw new InvalidOperationException("The API returned an empty broker profile payload.");
+    }
+
+    public async Task<SavedBrokerServerProfile> ActivateAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var response = await _brokerPreferenceApi.ActivateAsync(id, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Activating the broker profile failed."));
+        }
+
+        return response.Content
+            ?? throw new InvalidOperationException("The API returned an empty broker profile payload.");
+    }
 }
