@@ -1,19 +1,16 @@
-using System.Net.Http.Json;
 using MeshBoard.Contracts.Authentication;
 
 namespace MeshBoard.Client.Services;
 
 public sealed class AntiforgeryTokenProvider
 {
-    private readonly HttpClient _httpClient;
-    private readonly ApiRequestFactory _requestFactory;
+    private readonly IAntiforgeryApi _antiforgeryApi;
 
     private string? _cachedToken;
 
-    public AntiforgeryTokenProvider(HttpClient httpClient, ApiRequestFactory requestFactory)
+    public AntiforgeryTokenProvider(IAntiforgeryApi antiforgeryApi)
     {
-        _httpClient = httpClient;
-        _requestFactory = requestFactory;
+        _antiforgeryApi = antiforgeryApi;
     }
 
     public void Clear()
@@ -28,11 +25,14 @@ public sealed class AntiforgeryTokenProvider
             return _cachedToken;
         }
 
-        using var request = _requestFactory.Create(HttpMethod.Get, "/api/auth/antiforgery");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var response = await _antiforgeryApi.GetAntiforgeryTokenAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Loading the antiforgery token failed."));
+        }
 
-        var payload = await response.Content.ReadFromJsonAsync<AntiforgeryTokenResponse>(cancellationToken)
+        var payload = response.Content
             ?? throw new InvalidOperationException("The API returned an empty antiforgery payload.");
 
         if (string.IsNullOrWhiteSpace(payload.RequestToken))

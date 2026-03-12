@@ -1,0 +1,189 @@
+@page "/settings"
+@attribute [Authorize]
+@inject BrokerPreferenceApiClient BrokerPreferenceApiClient
+@inject TopicPresetPreferenceApiClient TopicPresetPreferenceApiClient
+
+<PageTitle>Settings</PageTitle>
+
+<div class="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+    <section class="shell-panel rounded-[2rem] p-8">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Saved brokers</h1>
+                <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
+                    These values come from the API-safe broker read model. Password values and client decryption keys are intentionally excluded.
+                </p>
+            </div>
+
+            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    @onclick="ReloadAsync"
+                    disabled="@_isLoading">
+                Refresh
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_loadError</p>
+        }
+        else if (_isLoading)
+        {
+            <p class="mt-6 text-sm text-cinder-800/72">Loading broker profiles...</p>
+        }
+        else if (_brokers.Count == 0)
+        {
+            <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
+                No broker profiles are currently stored for this workspace.
+            </div>
+        }
+        else
+        {
+            <div class="mt-6 grid gap-4">
+                @foreach (var broker in _brokers)
+                {
+                    <article class="shell-subpanel rounded-[1.7rem] p-5">
+                        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div class="space-y-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@broker.ServerAddress</p>
+                                    @if (broker.IsActive)
+                                    {
+                                        <span class="rounded-full border border-signal-200 bg-signal-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-signal-700">
+                                            Active
+                                        </span>
+                                    }
+                                </div>
+                                <h2 class="font-display text-2xl text-cinder-950">@broker.Name</h2>
+                                <p class="text-sm text-cinder-800/80">
+                                    Default topic pattern: <span class="font-semibold text-cinder-900">@broker.DefaultTopicPattern</span>
+                                </p>
+                            </div>
+
+                            <div class="grid gap-2 text-xs uppercase tracking-[0.14em] text-cinder-800/72">
+                                <span class="rounded-full border border-slate-200 bg-white/75 px-3 py-2">
+                                    TLS: @(broker.UseTls ? "Enabled" : "Disabled")
+                                </span>
+                                <span class="rounded-full border border-slate-200 bg-white/75 px-3 py-2">
+                                    Password: @(broker.HasPasswordConfigured ? "Configured" : "Empty")
+                                </span>
+                                <span class="rounded-full border border-slate-200 bg-white/75 px-3 py-2">
+                                    Send: @(broker.EnableSend ? "Enabled" : "Disabled")
+                                </span>
+                            </div>
+                        </div>
+
+                        <dl class="mt-5 grid gap-3 text-sm text-cinder-800/80 sm:grid-cols-2">
+                            <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                                <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Username</dt>
+                                <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(broker.Username)</dd>
+                            </div>
+                            <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                                <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Downlink topic</dt>
+                                <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(broker.DownlinkTopic)</dd>
+                            </div>
+                        </dl>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="shell-panel rounded-[2rem] p-8">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
+            <h2 class="mt-2 font-display text-3xl text-cinder-950">Saved topic presets</h2>
+            <p class="mt-3 text-sm leading-7 text-cinder-800/82">
+                The API returns only metadata here. Topic decryption keys stay out of the browser/server contract and will move into the client-local vault later.
+            </p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_loadError</p>
+        }
+        else if (_isLoading)
+        {
+            <p class="mt-6 text-sm text-cinder-800/72">Loading topic presets...</p>
+        }
+        else if (_presets.Count == 0)
+        {
+            <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
+                No topic presets are available for the active broker yet.
+            </div>
+        }
+        else
+        {
+            <div class="mt-6 grid gap-4">
+                @foreach (var preset in _presets)
+                {
+                    <article class="shell-subpanel rounded-[1.7rem] p-5">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@preset.TopicPattern</p>
+                                <h3 class="mt-2 font-display text-2xl text-cinder-950">@preset.Name</h3>
+                            </div>
+                            @if (preset.IsDefault)
+                            {
+                                <span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                                    Default
+                                </span>
+                            }
+                        </div>
+                        <p class="mt-4 text-sm text-cinder-800/74">
+                            Created @preset.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                        </p>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private readonly List<SavedBrokerServerProfile> _brokers = [];
+    private readonly List<SavedTopicPreset> _presets = [];
+    private bool _isLoading = true;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private static string DisplayValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "Not configured" : value;
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var brokers = await BrokerPreferenceApiClient.GetAllAsync();
+            var presets = await TopicPresetPreferenceApiClient.GetAllAsync();
+
+            _brokers.Clear();
+            _brokers.AddRange(brokers.OrderByDescending(item => item.IsActive).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+
+            _presets.Clear();
+            _presets.AddRange(presets.OrderByDescending(item => item.IsDefault).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+        }
+        catch (Exception exception)
+        {
+            _loadError = exception.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        await LoadAsync();
+    }
+}

@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Net;
 using MeshBoard.Client.Authentication;
 using MeshBoard.Contracts.Authentication;
@@ -7,19 +6,16 @@ namespace MeshBoard.Client.Services;
 
 public sealed class AuthApiClient
 {
+    private readonly IAuthApi _authApi;
     private readonly AntiforgeryTokenProvider _antiforgeryTokenProvider;
     private readonly AuthSessionState _authSessionState;
-    private readonly HttpClient _httpClient;
-    private readonly ApiRequestFactory _requestFactory;
 
     public AuthApiClient(
-        HttpClient httpClient,
-        ApiRequestFactory requestFactory,
+        IAuthApi authApi,
         AntiforgeryTokenProvider antiforgeryTokenProvider,
         AuthSessionState authSessionState)
     {
-        _httpClient = httpClient;
-        _requestFactory = requestFactory;
+        _authApi = authApi;
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
         _authSessionState = authSessionState;
     }
@@ -28,10 +24,7 @@ public sealed class AuthApiClient
         LoginUserRequest request,
         CancellationToken cancellationToken = default)
     {
-        var antiforgeryToken = await _antiforgeryTokenProvider.GetAsync(cancellationToken: cancellationToken);
-
-        using var httpRequest = _requestFactory.CreateJson(HttpMethod.Post, "/api/auth/login", request, antiforgeryToken);
-        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var response = await _authApi.LoginAsync(request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -41,10 +34,10 @@ public sealed class AuthApiClient
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                await ApiRequestFactory.ReadErrorMessageAsync(response, "Login failed.", cancellationToken));
+                ApiProblemDetailsParser.GetMessage(response, "Login failed."));
         }
 
-        var user = await response.Content.ReadFromJsonAsync<AuthenticatedUserResponse>(cancellationToken)
+        var user = response.Content
             ?? throw new InvalidOperationException("The API returned an empty login payload.");
 
         _authSessionState.SetCurrentUser(user);
@@ -55,9 +48,14 @@ public sealed class AuthApiClient
     {
         try
         {
-            var antiforgeryToken = await _antiforgeryTokenProvider.GetAsync(forceRefresh: true, cancellationToken);
-            using var httpRequest = _requestFactory.Create(HttpMethod.Post, "/api/auth/logout", antiforgeryToken);
-            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            await _antiforgeryTokenProvider.GetAsync(forceRefresh: true, cancellationToken: cancellationToken);
+            var response = await _authApi.LogoutAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.Unauthorized)
+            {
+                throw new InvalidOperationException(
+                    ApiProblemDetailsParser.GetMessage(response, "Logout failed."));
+            }
         }
         finally
         {
@@ -70,18 +68,15 @@ public sealed class AuthApiClient
         RegisterUserRequest request,
         CancellationToken cancellationToken = default)
     {
-        var antiforgeryToken = await _antiforgeryTokenProvider.GetAsync(cancellationToken: cancellationToken);
-
-        using var httpRequest = _requestFactory.CreateJson(HttpMethod.Post, "/api/auth/register", request, antiforgeryToken);
-        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var response = await _authApi.RegisterAsync(request, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                await ApiRequestFactory.ReadErrorMessageAsync(response, "Registration failed.", cancellationToken));
+                ApiProblemDetailsParser.GetMessage(response, "Registration failed."));
         }
 
-        var user = await response.Content.ReadFromJsonAsync<AuthenticatedUserResponse>(cancellationToken)
+        var user = response.Content
             ?? throw new InvalidOperationException("The API returned an empty register payload.");
 
         _authSessionState.SetCurrentUser(user);
@@ -90,8 +85,7 @@ public sealed class AuthApiClient
 
     public async Task<AuthenticatedUserResponse?> TryLoadCurrentUserAsync(CancellationToken cancellationToken = default)
     {
-        using var request = _requestFactory.Create(HttpMethod.Get, "/api/auth/me");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var response = await _authApi.GetCurrentUserAsync(cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
@@ -105,7 +99,7 @@ public sealed class AuthApiClient
             return null;
         }
 
-        var user = await response.Content.ReadFromJsonAsync<AuthenticatedUserResponse>(cancellationToken)
+        var user = response.Content
             ?? throw new InvalidOperationException("The API returned an empty current-user payload.");
 
         _authSessionState.SetCurrentUser(user);

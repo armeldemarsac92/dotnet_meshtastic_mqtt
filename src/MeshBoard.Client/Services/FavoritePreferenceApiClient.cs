@@ -1,70 +1,56 @@
-using System.Net.Http.Json;
+using System.Net;
 using MeshBoard.Contracts.Favorites;
 
 namespace MeshBoard.Client.Services;
 
 public sealed class FavoritePreferenceApiClient
 {
-    private readonly AntiforgeryTokenProvider _antiforgeryTokenProvider;
-    private readonly HttpClient _httpClient;
-    private readonly ApiRequestFactory _requestFactory;
+    private readonly IFavoritePreferenceApi _favoritePreferenceApi;
 
     public FavoritePreferenceApiClient(
-        HttpClient httpClient,
-        ApiRequestFactory requestFactory,
-        AntiforgeryTokenProvider antiforgeryTokenProvider)
+        IFavoritePreferenceApi favoritePreferenceApi)
     {
-        _httpClient = httpClient;
-        _requestFactory = requestFactory;
-        _antiforgeryTokenProvider = antiforgeryTokenProvider;
+        _favoritePreferenceApi = favoritePreferenceApi;
     }
 
     public async Task<IReadOnlyList<FavoriteNode>> GetFavoritesAsync(CancellationToken cancellationToken = default)
     {
-        using var request = _requestFactory.Create(HttpMethod.Get, "/api/preferences/favorites");
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        var response = await _favoritePreferenceApi.GetFavoritesAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Loading favorites failed."));
+        }
 
-        return await response.Content.ReadFromJsonAsync<List<FavoriteNode>>(cancellationToken) ?? [];
+        return response.Content ?? [];
     }
 
     public async Task<FavoriteNode> SaveFavoriteAsync(
         SaveFavoriteNodeRequest request,
         CancellationToken cancellationToken = default)
     {
-        var antiforgeryToken = await _antiforgeryTokenProvider.GetAsync(cancellationToken: cancellationToken);
-
-        using var httpRequest = _requestFactory.CreateJson(
-            HttpMethod.Post,
-            "/api/preferences/favorites",
-            request,
-            antiforgeryToken);
-
-        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var response = await _favoritePreferenceApi.SaveFavoriteAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                await ApiRequestFactory.ReadErrorMessageAsync(response, "Saving the favorite failed.", cancellationToken));
+                ApiProblemDetailsParser.GetMessage(response, "Saving the favorite failed."));
         }
 
-        return await response.Content.ReadFromJsonAsync<FavoriteNode>(cancellationToken)
+        return response.Content
             ?? throw new InvalidOperationException("The API returned an empty favorite payload.");
     }
 
     public async Task RemoveFavoriteAsync(string nodeId, CancellationToken cancellationToken = default)
     {
-        var antiforgeryToken = await _antiforgeryTokenProvider.GetAsync(cancellationToken: cancellationToken);
-
-        using var request = _requestFactory.Create(
-            HttpMethod.Delete,
-            $"/api/preferences/favorites/{Uri.EscapeDataString(nodeId)}",
-            antiforgeryToken);
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var response = await _favoritePreferenceApi.RemoveFavoriteAsync(nodeId, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            var fallbackMessage = response.StatusCode == HttpStatusCode.NotFound
+                ? "Favorite not found."
+                : "Removing the favorite failed.";
+
             throw new InvalidOperationException(
-                await ApiRequestFactory.ReadErrorMessageAsync(response, "Removing the favorite failed.", cancellationToken));
+                ApiProblemDetailsParser.GetMessage(response, fallbackMessage));
         }
     }
 }
