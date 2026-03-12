@@ -1,0 +1,106 @@
+@page "/register"
+@attribute [AllowAnonymous]
+@inject AuthApiClient AuthApiClient
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Register</PageTitle>
+
+<section class="mx-auto w-full max-w-xl shell-panel rounded-[2rem] p-8">
+    <div class="space-y-3">
+        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Authentication</p>
+        <h1 class="font-display text-4xl text-cinder-950">Create account</h1>
+        <p class="text-sm leading-7 text-cinder-800/82">
+            Register through the new API. The server provisions your workspace, and the browser remains the future trust boundary for decrypt keys.
+        </p>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_error</p>
+    }
+
+    <EditForm class="mt-6 space-y-4" Model="_model" OnValidSubmit="SubmitAsync">
+        <DataAnnotationsValidator />
+
+        <label class="block space-y-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Username</span>
+            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                       @bind-Value="_model.Username" />
+            <ValidationMessage For="() => _model.Username" />
+        </label>
+
+        <label class="block space-y-2">
+            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Password</span>
+            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                       type="password"
+                       @bind-Value="_model.Password" />
+            <ValidationMessage For="() => _model.Password" />
+        </label>
+
+        <button type="submit"
+                class="shell-button shell-button-accent w-full rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                disabled="@_isSubmitting">
+            @(_isSubmitting ? "Creating account..." : "Create account")
+        </button>
+    </EditForm>
+
+    <p class="mt-5 text-sm text-cinder-800/78">
+        Already have an account?
+        <a class="font-semibold text-signal-700 underline underline-offset-4" href="/login">Sign in</a>
+    </p>
+</section>
+
+@code {
+    private bool _isSubmitting;
+    private string? _error;
+    private RegisterFormModel _model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authenticationState.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/favorites", forceLoad: false);
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+        _isSubmitting = true;
+
+        try
+        {
+            await AuthApiClient.RegisterAsync(
+                new RegisterUserRequest
+                {
+                    Username = _model.Username,
+                    Password = _model.Password
+                });
+
+            Navigation.NavigateTo("/favorites", forceLoad: false);
+        }
+        catch (Exception exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private sealed class RegisterFormModel
+    {
+        [Required]
+        [MinLength(3)]
+        [MaxLength(32)]
+        [RegularExpression("^[A-Za-z0-9](?:[A-Za-z0-9._-]{1,30}[A-Za-z0-9])?$")]
+        public string Username { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(8)]
+        public string Password { get; set; } = string.Empty;
+    }
+}

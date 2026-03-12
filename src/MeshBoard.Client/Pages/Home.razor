@@ -1,0 +1,59 @@
+﻿@page "/"
+
+<PageTitle>MeshBoard Client</PageTitle>
+
+<section class="shell-panel rounded-[2.2rem] px-8 py-10 lg:px-10">
+    <div class="grid gap-8 lg:grid-cols-[1.4fr_0.95fr]">
+        <div class="space-y-5">
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-signal-600">Phase 1 Client</p>
+            <h1 class="max-w-3xl font-display text-4xl leading-tight text-cinder-950 sm:text-5xl">
+                Browser-first MeshBoard starts with API auth and preference reads.
+            </h1>
+            <p class="max-w-2xl text-base leading-8 text-cinder-800/82">
+                This shell already talks to the new API over cookies, uses antiforgery for state changes,
+                and keeps the client-side architecture separate from the old Blazor Server runtime.
+            </p>
+
+            <div class="flex flex-wrap gap-3">
+                <AuthorizeView>
+                    <Authorized>
+                        <a class="shell-button shell-button-accent inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                           href="/favorites">
+                            Open favorites
+                        </a>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a class="shell-button shell-button-accent inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                           href="/login">
+                            Sign in
+                        </a>
+                        <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                           href="/register">
+                            Create account
+                        </a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+
+        <div class="grid gap-4">
+            <article class="shell-subpanel rounded-[1.8rem] p-5">
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Implemented now</p>
+                <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
+                    <li>Cookie-authenticated JSON API session</li>
+                    <li>Antiforgery bootstrap and request header flow</li>
+                    <li>Authenticated favorites preference page</li>
+                </ul>
+            </article>
+
+            <article class="shell-subpanel rounded-[1.8rem] p-5">
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Next migration layers</p>
+                <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
+                    <li>Broker and preset contract split with no server-side keys</li>
+                    <li>Local encrypted key vault with dedicated passphrase</li>
+                    <li>VerneMQ-backed realtime transport over MQTT 5 on WSS</li>
+                </ul>
+            </article>
+        </div>
+    </div>
+</section>

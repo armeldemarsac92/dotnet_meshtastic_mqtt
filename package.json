@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "tailwind:build": "tailwindcss -i ./src/MeshBoard.Web/Styles/app.css -o ./src/MeshBoard.Web/wwwroot/app.css --minify",
-    "tailwind:watch": "tailwindcss -i ./src/MeshBoard.Web/Styles/app.css -o ./src/MeshBoard.Web/wwwroot/app.css --watch"
+    "tailwind:watch": "tailwindcss -i ./src/MeshBoard.Web/Styles/app.css -o ./src/MeshBoard.Web/wwwroot/app.css --watch",
+    "tailwind:build:client": "tailwindcss -i ./src/MeshBoard.Client/Styles/app.css -o ./src/MeshBoard.Client/wwwroot/css/app.css --minify",
+    "tailwind:watch:client": "tailwindcss -i ./src/MeshBoard.Client/Styles/app.css -o ./src/MeshBoard.Client/wwwroot/css/app.css --watch"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.13",

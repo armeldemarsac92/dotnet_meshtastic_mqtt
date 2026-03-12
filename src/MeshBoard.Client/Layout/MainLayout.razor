@@ -1,0 +1,89 @@
+﻿@inherits LayoutComponentBase
+@inject AuthApiClient AuthApiClient
+
+<div class="shell-stage min-h-screen">
+    <div class="relative z-10 grid min-h-screen lg:grid-cols-[18rem_1fr]">
+        <aside class="shell-sidebar flex flex-col gap-6 px-6 py-8 text-sand-50">
+            <div class="flex items-center gap-4">
+                <div class="grid size-12 place-items-center rounded-2xl border border-white/40 bg-white/90 font-display text-lg text-cinder-950 shadow-lg shadow-cinder-950/15">
+                    MB
+                </div>
+                <div>
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-sand-200/72">Browser Client</p>
+                    <h1 class="font-display text-3xl text-sand-50">MeshBoard</h1>
+                </div>
+            </div>
+
+            <p class="text-sm leading-7 text-sand-100/78">
+                Client-side shell for auth, favorites, and the future local decrypt pipeline.
+            </p>
+
+            <nav class="grid gap-2 text-sm font-medium">
+                <NavLink class="shell-nav-link rounded-full px-4 py-3" href="/" Match="NavLinkMatch.All">Overview</NavLink>
+                <NavLink class="shell-nav-link rounded-full px-4 py-3" href="/favorites">Favorites</NavLink>
+                <NavLink class="shell-nav-link rounded-full px-4 py-3" href="/login">Login</NavLink>
+                <NavLink class="shell-nav-link rounded-full px-4 py-3" href="/register">Register</NavLink>
+            </nav>
+
+            <AuthorizeView>
+                <Authorized>
+                    <section class="shell-sidebar-note rounded-[1.4rem] p-4 text-sm text-sand-100/84">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sand-200/72">Signed in</p>
+                        <p class="mt-2 text-base font-semibold text-sand-50">@context.User.Identity?.Name</p>
+                        <button class="shell-button mt-4 w-full rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="LogoutAsync"
+                                disabled="@_isSigningOut">
+                            @(_isSigningOut ? "Signing out..." : "Logout")
+                        </button>
+                    </section>
+                </Authorized>
+                <NotAuthorized>
+                    <section class="shell-sidebar-note rounded-[1.4rem] p-4 text-sm leading-7 text-sand-100/84">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sand-200/72">Session</p>
+                        <p class="mt-2">Sign in to load your workspace preferences from the API.</p>
+                    </section>
+                </NotAuthorized>
+            </AuthorizeView>
+
+            @if (!string.IsNullOrWhiteSpace(_logoutError))
+            {
+                <p class="rounded-2xl border border-rose-200/35 bg-rose-500/14 px-4 py-3 text-sm text-rose-100">
+                    @_logoutError
+                </p>
+            }
+        </aside>
+
+        <main class="px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
+            @Body
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool _isSigningOut;
+    private string? _logoutError;
+
+    private async Task LogoutAsync()
+    {
+        _logoutError = null;
+        _isSigningOut = true;
+
+        try
+        {
+            await AuthApiClient.LogoutAsync();
+            Navigation.NavigateTo("/login", forceLoad: false);
+        }
+        catch (Exception)
+        {
+            _logoutError = "The API did not confirm logout. The local client session was cleared.";
+            StateHasChanged();
+        }
+        finally
+        {
+            _isSigningOut = false;
+        }
+    }
+
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
+}
