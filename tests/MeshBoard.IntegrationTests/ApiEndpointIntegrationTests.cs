@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Favorites;
@@ -117,6 +119,76 @@ public sealed class ApiEndpointIntegrationTests
 
         var meResponse = await client.GetAsync("/api/auth/me");
         Assert.Equal(HttpStatusCode.Unauthorized, meResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task RealtimeSession_WhenUnauthenticated_ShouldReturnUnauthorized()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        var response = await PostJsonAsync(client, host, "/api/realtime/session", payload: null);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RealtimeSession_WhenAuthenticated_ShouldReturnConfiguredBrokerPayloadAndJwtClaims()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        var user = await RegisterAsync(client, host);
+        var topicFilter = $"meshboard/workspaces/{user.WorkspaceId}/live/#";
+
+        var saveChannelResponse = await PostJsonAsync(
+            client,
+            host,
+            "/api/preferences/channels",
+            new SaveChannelFilterRequest
+            {
+                TopicFilter = topicFilter
+            });
+
+        saveChannelResponse.EnsureSuccessStatusCode();
+
+        var sessionResponse = await PostJsonAsync(client, host, "/api/realtime/session", payload: null);
+
+        Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
+
+        var sessionPayload = await sessionResponse.Content.ReadFromJsonAsync<RealtimeSessionPayload>();
+        Assert.NotNull(sessionPayload);
+        Assert.Equal(ApiIntegrationTestHost.RealtimeBrokerUrl, sessionPayload!.BrokerUrl);
+        Assert.False(string.IsNullOrWhiteSpace(sessionPayload.ClientId));
+        Assert.False(string.IsNullOrWhiteSpace(sessionPayload.Token));
+        Assert.NotEqual(default, sessionPayload.ExpiresAtUtc);
+        Assert.True(sessionPayload.ExpiresAtUtc > DateTimeOffset.UtcNow);
+
+        var allowedTopicPatterns = Assert.Single(sessionPayload.AllowedTopicPatterns);
+        Assert.Equal(topicFilter, allowedTopicPatterns);
+
+        var (header, payload) = DecodeJwt(sessionPayload.Token);
+
+        Assert.Equal("JWT", header.GetProperty("typ").GetString());
+        Assert.Equal(ApiIntegrationTestHost.RealtimeKeyId, header.GetProperty("kid").GetString());
+
+        Assert.Equal(ApiIntegrationTestHost.RealtimeIssuer, payload.GetProperty("iss").GetString());
+        Assert.Equal(ApiIntegrationTestHost.RealtimeAudience, GetSingleOrFirstString(payload, "aud"));
+        Assert.Equal(user.Id, payload.GetProperty("user_id").GetString());
+        Assert.Equal(user.WorkspaceId, payload.GetProperty("workspace_id").GetString());
+        Assert.Equal(sessionPayload.ClientId, payload.GetProperty("client_id").GetString());
+        Assert.Equal(topicFilter, Assert.Single(GetStringArray(payload, "allowed_topic_patterns")));
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("jti").GetString()));
+
+        var issuedAt = DateTimeOffset.FromUnixTimeSeconds(payload.GetProperty("iat").GetInt64());
+        var notBefore = DateTimeOffset.FromUnixTimeSeconds(payload.GetProperty("nbf").GetInt64());
+        var expiresAt = DateTimeOffset.FromUnixTimeSeconds(payload.GetProperty("exp").GetInt64());
+
+        Assert.True(notBefore >= issuedAt);
+        Assert.True(expiresAt > issuedAt);
+        Assert.Equal(
+            expiresAt.ToUnixTimeSeconds(),
+            sessionPayload.ExpiresAtUtc.ToUnixTimeSeconds());
     }
 
     [Fact]
@@ -509,5 +581,64 @@ public sealed class ApiEndpointIntegrationTests
         }
 
         return await client.SendAsync(request);
+    }
+
+    private static (JsonElement Header, JsonElement Payload) DecodeJwt(string token)
+    {
+        var segments = token.Split('.');
+        Assert.Equal(3, segments.Length);
+
+        using var headerDocument = JsonDocument.Parse(DecodeBase64Url(segments[0]));
+        using var payloadDocument = JsonDocument.Parse(DecodeBase64Url(segments[1]));
+
+        return (headerDocument.RootElement.Clone(), payloadDocument.RootElement.Clone());
+    }
+
+    private static string DecodeBase64Url(string value)
+    {
+        var normalized = value.Replace('-', '+').Replace('_', '/');
+        normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '=');
+
+        return Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
+    }
+
+    private static string GetSingleOrFirstString(JsonElement element, string propertyName)
+    {
+        var property = element.GetProperty(propertyName);
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString() ?? string.Empty,
+            JsonValueKind.Array => property.EnumerateArray().Select(item => item.GetString()).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static IReadOnlyList<string> GetStringArray(JsonElement element, string propertyName)
+    {
+        var property = element.GetProperty(propertyName);
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => [property.GetString() ?? string.Empty],
+            JsonValueKind.Array => property.EnumerateArray()
+                .Select(item => item.GetString())
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Cast<string>()
+                .ToList(),
+            _ => []
+        };
+    }
+
+    private sealed record RealtimeSessionPayload
+    {
+        public string BrokerUrl { get; init; } = string.Empty;
+
+        public string ClientId { get; init; } = string.Empty;
+
+        public string Token { get; init; } = string.Empty;
+
+        public DateTimeOffset ExpiresAtUtc { get; init; }
+
+        public List<string> AllowedTopicPatterns { get; init; } = [];
     }
 }

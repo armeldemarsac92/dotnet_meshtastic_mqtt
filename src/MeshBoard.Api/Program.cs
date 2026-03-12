@@ -1,8 +1,12 @@
 using MeshBoard.Api.Authentication;
 using MeshBoard.Api.Preferences;
+using MeshBoard.Api.Realtime;
+using MeshBoard.Application.Abstractions.Authentication;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
+using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Authentication;
+using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -13,6 +17,8 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddApplicationServices();
 builder.Services.AddPersistenceInfrastructure(builder.Configuration);
+builder.Services.AddOptions<RealtimeSessionOptions>()
+    .Bind(builder.Configuration.GetSection(RealtimeSessionOptions.SectionName));
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -44,7 +50,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
                 return Task.CompletedTask;
             }
         };
-    });
+});
 builder.Services.AddAuthorization();
 builder.Services.AddAntiforgery(options =>
 {
@@ -53,6 +59,8 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SameSite = SameSiteMode.Strict;
     options.HeaderName = "X-CSRF-TOKEN";
 });
+builder.Services.AddScoped<ICurrentUserContextAccessor, HttpContextUserContextAccessor>();
+builder.Services.AddScoped<IRealtimeSessionService, RealtimeSessionService>();
 builder.Services.AddScoped<IWorkspaceContextAccessor, HttpContextWorkspaceContextAccessor>();
 
 var app = builder.Build();
@@ -73,6 +81,7 @@ app.MapApiAuthEndpoints();
 app.MapBrokerPreferenceEndpoints();
 app.MapChannelPreferenceEndpoints();
 app.MapFavoritePreferenceEndpoints();
+app.MapRealtimeSessionEndpoints();
 app.MapTopicPresetPreferenceEndpoints();
 
 app.Run();

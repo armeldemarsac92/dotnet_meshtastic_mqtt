@@ -29,6 +29,7 @@ public class Program
         builder.Services.AddScoped<BrokerPreferenceApiClient>();
         builder.Services.AddScoped<ChannelPreferenceApiClient>();
         builder.Services.AddScoped<FavoritePreferenceApiClient>();
+        builder.Services.AddScoped<RealtimeSessionApiClient>();
         builder.Services.AddScoped<TopicPresetPreferenceApiClient>();
         builder.Services.AddMeshBoardApiSdk(apiBaseAddress);
 
