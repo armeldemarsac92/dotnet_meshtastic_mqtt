@@ -15,6 +15,8 @@ public interface IBrokerMonitorService
 
     BrokerStatus GetBrokerStatus();
 
+    Task<IReadOnlyCollection<SubscriptionIntent>> GetSavedChannels(CancellationToken cancellationToken = default);
+
     Task SubscribeToDefaultTopic(CancellationToken cancellationToken = default);
 
     Task SubscribeToTopic(string topicFilter, CancellationToken cancellationToken = default);
@@ -93,6 +95,19 @@ public sealed class BrokerMonitorService : IBrokerMonitorService
             InboundDroppedCount = pipelineSnapshot.InboundDroppedCount,
             RuntimeMetricsUpdatedAtUtc = pipelineSnapshot.UpdatedAtUtc
         };
+    }
+
+    public async Task<IReadOnlyCollection<SubscriptionIntent>> GetSavedChannels(CancellationToken cancellationToken = default)
+    {
+        var workspaceId = GetWorkspaceId();
+        var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
+
+        _logger.LogInformation(
+            "Attempting to fetch saved channel filters for workspace {WorkspaceId} and broker {BrokerServerProfileId}",
+            workspaceId,
+            activeServer.Id);
+
+        return await _subscriptionIntentRepository.GetAllAsync(workspaceId, activeServer.Id, cancellationToken);
     }
 
     public async Task SubscribeToDefaultTopic(CancellationToken cancellationToken = default)

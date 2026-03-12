@@ -17,6 +17,7 @@ public static class MeshBoardApiServiceCollectionExtensions
         RegisterRefitClient<IAuthApi>(services, baseAddress, includeAntiforgery: true);
         RegisterRefitClient<IFavoritePreferenceApi>(services, baseAddress, includeAntiforgery: true);
         RegisterRefitClient<IBrokerPreferenceApi>(services, baseAddress, includeAntiforgery: false);
+        RegisterRefitClient<IChannelPreferenceApi>(services, baseAddress, includeAntiforgery: true);
         RegisterRefitClient<ITopicPresetPreferenceApi>(services, baseAddress, includeAntiforgery: false);
 
         return services;

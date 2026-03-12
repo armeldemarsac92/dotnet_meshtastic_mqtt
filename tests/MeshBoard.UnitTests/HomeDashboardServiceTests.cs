@@ -131,6 +131,12 @@ public sealed class HomeDashboardServiceTests
             };
         }
 
+        public Task<IReadOnlyCollection<SubscriptionIntent>> GetSavedChannels(CancellationToken cancellationToken = default)
+        {
+            IReadOnlyCollection<SubscriptionIntent> channels = [];
+            return Task.FromResult(channels);
+        }
+
         public Task SubscribeToDefaultTopic(CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();

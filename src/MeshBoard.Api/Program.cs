@@ -71,6 +71,7 @@ app.UseAntiforgery();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 app.MapApiAuthEndpoints();
 app.MapBrokerPreferenceEndpoints();
+app.MapChannelPreferenceEndpoints();
 app.MapFavoritePreferenceEndpoints();
 app.MapTopicPresetPreferenceEndpoints();
 

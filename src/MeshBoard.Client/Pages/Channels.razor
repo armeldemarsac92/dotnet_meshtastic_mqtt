@@ -1,0 +1,196 @@
+@page "/channels"
+@attribute [Authorize]
+@inject ChannelPreferenceApiClient ChannelPreferenceApiClient
+
+<PageTitle>Channels</PageTitle>
+
+<div class="grid gap-6 xl:grid-cols-[0.95fr_1.2fr]">
+    <section class="shell-panel rounded-[2rem] p-8">
+        <div class="space-y-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
+            <h1 class="font-display text-4xl text-cinder-950">Saved channels</h1>
+            <p class="text-sm leading-7 text-cinder-800/82">
+                These saved topic filters are scoped to the active broker profile and persisted through the new API preference surface.
+            </p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_commandError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_commandSuccess))
+        {
+            <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_commandSuccess</p>
+        }
+
+        <EditForm class="mt-6 grid gap-4" Model="_form" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+
+            <label class="block space-y-2">
+                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Topic filter</span>
+                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                           @bind-Value="_form.TopicFilter" />
+                <ValidationMessage For="() => _form.TopicFilter" />
+            </label>
+
+            <button type="submit"
+                    class="shell-button shell-button-accent mt-2 rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    disabled="@_isSaving">
+                @(_isSaving ? "Saving..." : "Save channel")
+            </button>
+        </EditForm>
+    </section>
+
+    <section class="shell-panel rounded-[2rem] p-8">
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Workspace state</p>
+                <h2 class="mt-2 font-display text-3xl text-cinder-950">Persisted filters</h2>
+            </div>
+
+            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    @onclick="ReloadAsync"
+                    disabled="@_isLoading">
+                Refresh
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_loadError</p>
+        }
+        else if (_isLoading)
+        {
+            <p class="mt-6 text-sm text-cinder-800/72">Loading saved channels...</p>
+        }
+        else if (_channels.Count == 0)
+        {
+            <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
+                No saved channel filters are stored for the active broker yet.
+            </div>
+        }
+        else
+        {
+            <div class="mt-6 grid gap-4">
+                @foreach (var channel in _channels)
+                {
+                    <article class="shell-subpanel flex flex-col gap-4 rounded-[1.7rem] p-5 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="space-y-1">
+                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@channel.BrokerServerProfileId</p>
+                            <h3 class="font-display text-2xl text-cinder-950">@channel.TopicFilter</h3>
+                            <p class="text-sm text-cinder-800/80">
+                                Saved @channel.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                            </p>
+                        </div>
+
+                        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="() => RemoveAsync(channel.TopicFilter)"
+                                disabled="@_isDeleting">
+                            Remove
+                        </button>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private readonly List<SavedChannelFilter> _channels = [];
+    private ChannelFilterFormModel _form = new();
+    private bool _isDeleting;
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private string? _commandError;
+    private string? _commandSuccess;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var channels = await ChannelPreferenceApiClient.GetAllAsync();
+            _channels.Clear();
+            _channels.AddRange(channels.OrderBy(item => item.TopicFilter, StringComparer.OrdinalIgnoreCase));
+        }
+        catch (Exception exception)
+        {
+            _loadError = exception.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        _commandError = null;
+        _commandSuccess = null;
+        _isSaving = true;
+
+        try
+        {
+            await ChannelPreferenceApiClient.SaveAsync(
+                new SaveChannelFilterRequest
+                {
+                    TopicFilter = _form.TopicFilter.Trim()
+                });
+
+            _form = new ChannelFilterFormModel();
+            _commandSuccess = "Saved channel filter.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _commandError = exception.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private async Task RemoveAsync(string topicFilter)
+    {
+        _commandError = null;
+        _commandSuccess = null;
+        _isDeleting = true;
+
+        try
+        {
+            await ChannelPreferenceApiClient.DeleteAsync(topicFilter);
+            _commandSuccess = "Removed channel filter.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _commandError = exception.Message;
+        }
+        finally
+        {
+            _isDeleting = false;
+        }
+    }
+
+    private sealed class ChannelFilterFormModel
+    {
+        [Required]
+        [MaxLength(255)]
+        public string TopicFilter { get; set; } = string.Empty;
+    }
+}

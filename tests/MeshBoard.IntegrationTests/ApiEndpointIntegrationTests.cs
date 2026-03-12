@@ -331,6 +331,62 @@ public sealed class ApiEndpointIntegrationTests
     }
 
     [Fact]
+    public async Task ChannelPreferences_ShouldRoundTripSavedChannelFilters()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        await RegisterAsync(client, host);
+
+        var topicFilter = $"msh/US/2/e/{Guid.NewGuid():N}/#";
+
+        var createResponse = await PostJsonAsync(
+            client,
+            host,
+            "/api/preferences/channels",
+            new SaveChannelFilterRequest
+            {
+                TopicFilter = topicFilter
+            });
+
+        Assert.True(
+            createResponse.IsSuccessStatusCode,
+            $"Expected channel create to succeed but received {(int)createResponse.StatusCode} ({createResponse.StatusCode}).");
+
+        var getResponse = await client.GetAsync("/api/preferences/channels");
+        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
+
+        var savedChannels = await getResponse.Content.ReadFromJsonAsync<List<SavedChannelFilter>>();
+        Assert.NotNull(savedChannels);
+
+        var persistedChannel = Assert.Single(savedChannels!, channel => channel.TopicFilter == topicFilter);
+        Assert.NotEqual(Guid.Empty, persistedChannel.BrokerServerProfileId);
+        Assert.True(persistedChannel.CreatedAtUtc > DateTimeOffset.MinValue);
+
+        var encodedTopicFilter = string.Join(
+            '/',
+            topicFilter
+                .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                .Select(Uri.EscapeDataString));
+
+        var deleteResponse = await DeleteAsync(
+            client,
+            host,
+            $"/api/preferences/channels/{encodedTopicFilter}");
+
+        Assert.True(
+            deleteResponse.IsSuccessStatusCode,
+            $"Expected channel delete to succeed but received {(int)deleteResponse.StatusCode} ({deleteResponse.StatusCode}).");
+
+        var getAfterDeleteResponse = await client.GetAsync("/api/preferences/channels");
+        Assert.Equal(HttpStatusCode.OK, getAfterDeleteResponse.StatusCode);
+
+        var channelsAfterDelete = await getAfterDeleteResponse.Content.ReadFromJsonAsync<List<SavedChannelFilter>>();
+        Assert.NotNull(channelsAfterDelete);
+        Assert.DoesNotContain(channelsAfterDelete!, channel => channel.TopicFilter == topicFilter);
+    }
+
+    [Fact]
     public async Task Favorites_ShouldRoundTripAndReturnNotFoundWhenDeletingMissingNode()
     {
         await using var host = new ApiIntegrationTestHost();

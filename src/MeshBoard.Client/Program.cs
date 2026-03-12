@@ -27,6 +27,7 @@ public class Program
         builder.Services.AddScoped<IAntiforgeryRequestTokenProvider>(sp => sp.GetRequiredService<AntiforgeryTokenProvider>());
         builder.Services.AddScoped<AuthApiClient>();
         builder.Services.AddScoped<BrokerPreferenceApiClient>();
+        builder.Services.AddScoped<ChannelPreferenceApiClient>();
         builder.Services.AddScoped<FavoritePreferenceApiClient>();
         builder.Services.AddScoped<TopicPresetPreferenceApiClient>();
         builder.Services.AddMeshBoardApiSdk(apiBaseAddress);
