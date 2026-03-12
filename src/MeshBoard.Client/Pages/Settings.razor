@@ -499,11 +499,124 @@
             else
             {
                 <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Vault bootstrap</p>
-                    <h3 class="mt-2 font-display text-2xl text-cinder-950">Envelope ready</h3>
-                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
-                        The vault envelope is unlocked and ready for later key-import work. This slice does not yet persist Meshtastic key records, but it establishes the browser-only passphrase, storage, and lock lifecycle required by the roadmap.
-                    </p>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Local key records</p>
+                            <h3 class="mt-2 font-display text-2xl text-cinder-950">@VaultKeyEditorTitle</h3>
+                            <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                                Wrapped Meshtastic keys are stored locally in IndexedDB only after being encrypted with the unlocked vault session key. Editing metadata does not require re-entering the key; enter a new key value only when rotating it.
+                            </p>
+                        </div>
+
+                        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="ResetVaultKeyEditor"
+                                disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                            New record
+                        </button>
+                    </div>
+
+                    <EditForm class="mt-6 grid gap-4" Model="_vaultKeyForm" OnValidSubmit="SaveVaultKeyAsync">
+                        <DataAnnotationsValidator />
+
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <label class="block space-y-2">
+                                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Label</span>
+                                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                           @bind-Value="_vaultKeyForm.Name" />
+                                <ValidationMessage For="() => _vaultKeyForm.Name" />
+                            </label>
+
+                            <label class="block space-y-2">
+                                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Broker scope</span>
+                                <InputSelect class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                             @bind-Value="_vaultKeyForm.BrokerServerProfileId">
+                                    <option value="">All local broker scopes</option>
+                                    @foreach (var broker in _brokers.OrderByDescending(item => item.IsActive).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@broker.Id.ToString()">@broker.Name</option>
+                                    }
+                                </InputSelect>
+                            </label>
+                        </div>
+
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Topic pattern</span>
+                            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                       @bind-Value="_vaultKeyForm.TopicPattern" />
+                            <ValidationMessage For="() => _vaultKeyForm.TopicPattern" />
+                        </label>
+
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Meshtastic key</span>
+                            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                       type="password"
+                                       @bind-Value="_vaultKeyForm.KeyValue" />
+                            <span class="text-xs leading-6 text-cinder-800/72">
+                                Base64 or hex. Leave blank only when editing metadata for an existing local record.
+                            </span>
+                        </label>
+
+                        <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                            <button type="button"
+                                    class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                    @onclick="ResetVaultKeyEditor"
+                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                Reset
+                            </button>
+
+                            <button type="submit"
+                                    class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                @(_isSavingVaultKey ? "Saving..." : VaultKeySubmitLabel)
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    @if (_vaultKeyRecords.Count == 0)
+                    {
+                        <div class="mt-6 rounded-2xl border border-white/70 bg-white/70 px-4 py-4 text-sm leading-7 text-cinder-800/78">
+                            No wrapped Meshtastic keys are stored locally yet.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mt-6 grid gap-4">
+                            @foreach (var keyRecord in _vaultKeyRecords)
+                            {
+                                <article class="rounded-2xl border border-white/70 bg-white/70 px-4 py-4 text-sm text-cinder-800/82">
+                                    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                        <div class="space-y-2">
+                                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@keyRecord.TopicPattern</p>
+                                            <h4 class="font-display text-2xl text-cinder-950">@keyRecord.Name</h4>
+                                            <p>
+                                                Broker scope: <span class="font-medium text-cinder-950">@DisplayBrokerName(keyRecord.BrokerServerProfileId)</span>
+                                            </p>
+                                            <p>
+                                                Key length: <span class="font-medium text-cinder-950">@keyRecord.KeyLengthBytes bytes</span>
+                                            </p>
+                                        </div>
+
+                                        <div class="flex flex-wrap gap-2">
+                                            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                                    @onclick="() => EditVaultKey(keyRecord)"
+                                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                                Edit
+                                            </button>
+                                            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                                    @onclick="() => RemoveVaultKeyAsync(keyRecord)"
+                                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                                @(string.Equals(_removingVaultKeyRecordId, keyRecord.Id, StringComparison.Ordinal) ? "Removing..." : "Remove")
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <p class="mt-4 text-xs uppercase tracking-[0.18em] text-cinder-800/60">
+                                        Created @keyRecord.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm") • Updated @keyRecord.UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                                    </p>
+                                </article>
+                            }
+                        </div>
+                    }
                 </div>
             }
         </article>
@@ -513,9 +626,11 @@
 @code {
     private readonly List<SavedBrokerServerProfile> _brokers = [];
     private readonly List<SavedTopicPreset> _presets = [];
+    private readonly List<LocalVaultKeyRecordSummary> _vaultKeyRecords = [];
     private BrokerFormModel _brokerForm = BrokerFormModel.CreateDefault();
     private TopicPresetFormModel _presetForm = TopicPresetFormModel.CreateDefault();
     private VaultCreateFormModel _vaultCreateForm = VaultCreateFormModel.CreateDefault();
+    private VaultKeyFormModel _vaultKeyForm = VaultKeyFormModel.CreateDefault();
     private VaultUnlockFormModel _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
     private Guid? _activatingBrokerId;
     private Guid? _editingBrokerId;
@@ -524,10 +639,14 @@
     private bool _isActivatingBroker;
     private bool _isSavingBroker;
     private bool _isSavingPreset;
+    private bool _isSavingVaultKey;
     private bool _isVaultCreating;
+    private bool _isVaultRemovingKey;
     private bool _isVaultLocking;
     private bool _isVaultRequestingPersistence;
     private bool _isVaultUnlocking;
+    private string? _editingVaultKeyRecordId;
+    private string? _removingVaultKeyRecordId;
     private string? _brokerCommandError;
     private string? _brokerCommandSuccess;
     private string? _loadError;
@@ -550,6 +669,10 @@
     private string PresetEditorTitle => IsEditingExistingPreset ? "Edit topic preset" : "Create topic preset";
 
     private string PresetSubmitLabel => IsEditingExistingPreset ? "Save changes" : "Create preset";
+
+    private string VaultKeyEditorTitle => _editingVaultKeyRecordId is null ? "Add local key record" : "Edit local key record";
+
+    private string VaultKeySubmitLabel => _editingVaultKeyRecordId is null ? "Add key record" : "Save key record";
 
     protected override async Task OnInitializedAsync()
     {
@@ -586,6 +709,17 @@
         };
     }
 
+    private string DisplayBrokerName(Guid? brokerServerProfileId)
+    {
+        if (brokerServerProfileId is null)
+        {
+            return "All local broker scopes";
+        }
+
+        var broker = _brokers.FirstOrDefault(item => item.Id == brokerServerProfileId.Value);
+        return broker?.Name ?? brokerServerProfileId.Value.ToString();
+    }
+
     private async Task LoadAsync()
     {
         _isLoading = true;
@@ -614,6 +748,8 @@
                     _editingBrokerHasPasswordConfigured = matchingBroker.HasPasswordConfigured;
                 }
             }
+
+            await LoadVaultKeyRecordsAsync();
         }
         catch (Exception exception)
         {
@@ -628,6 +764,18 @@
     private async Task ReloadAsync()
     {
         await LoadAsync();
+    }
+
+    private VaultKeyFormModel CreateVaultKeyFormDefault()
+    {
+        var activeBroker = _brokers.FirstOrDefault(item => item.IsActive);
+        var defaultPreset = _presets.FirstOrDefault(item => item.IsDefault);
+
+        return new VaultKeyFormModel
+        {
+            BrokerServerProfileId = activeBroker?.Id.ToString() ?? string.Empty,
+            TopicPattern = defaultPreset?.TopicPattern ?? activeBroker?.DefaultTopicPattern ?? string.Empty
+        };
     }
 
     private void StartNewBroker()
@@ -746,6 +894,30 @@
         _presetForm = TopicPresetFormModel.CreateDefault();
     }
 
+    private async Task LoadVaultKeyRecordsAsync()
+    {
+        _vaultKeyRecords.Clear();
+
+        if (!VaultSessionState.Snapshot.IsUnlocked)
+        {
+            ResetVaultKeyEditor();
+            return;
+        }
+
+        var keyRecords = await LocalVaultService.GetKeyRecordsAsync();
+        _vaultKeyRecords.AddRange(keyRecords.OrderByDescending(item => item.UpdatedAtUtc));
+
+        if (_editingVaultKeyRecordId is { } editingVaultKeyRecordId &&
+            _vaultKeyRecords.All(item => !string.Equals(item.Id, editingVaultKeyRecordId, StringComparison.Ordinal)))
+        {
+            ResetVaultKeyEditor();
+        }
+        else if (_editingVaultKeyRecordId is null)
+        {
+            _vaultKeyForm = CreateVaultKeyFormDefault();
+        }
+    }
+
     private async Task SavePresetAsync()
     {
         _presetCommandError = null;
@@ -776,6 +948,19 @@
         }
     }
 
+    private void EditVaultKey(LocalVaultKeyRecordSummary keyRecord)
+    {
+        _editingVaultKeyRecordId = keyRecord.Id;
+        _vaultKeyForm = new VaultKeyFormModel
+        {
+            Name = keyRecord.Name,
+            BrokerServerProfileId = keyRecord.BrokerServerProfileId?.ToString() ?? string.Empty,
+            TopicPattern = keyRecord.TopicPattern
+        };
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+    }
+
     private async Task CreateVaultAsync()
     {
         _vaultCommandError = null;
@@ -795,6 +980,7 @@
             _vaultCommandSuccess = "The local vault envelope is now stored in the browser.";
             _vaultCreateForm = VaultCreateFormModel.CreateDefault();
             _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+            await LoadVaultKeyRecordsAsync();
         }
         catch (Exception exception)
         {
@@ -816,6 +1002,8 @@
         {
             await LocalVaultService.LockAsync();
             _vaultCommandSuccess = "The local vault is locked.";
+            _vaultKeyRecords.Clear();
+            ResetVaultKeyEditor();
             _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
         }
         catch (Exception exception)
@@ -862,6 +1050,7 @@
             await LocalVaultService.UnlockAsync(_vaultUnlockForm.Passphrase);
             _vaultCommandSuccess = "The local vault is unlocked for this browser session.";
             _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+            await LoadVaultKeyRecordsAsync();
         }
         catch (Exception exception)
         {
@@ -870,6 +1059,83 @@
         finally
         {
             _isVaultUnlocking = false;
+        }
+    }
+
+    private void ResetVaultKeyEditor()
+    {
+        _editingVaultKeyRecordId = null;
+        _vaultKeyForm = CreateVaultKeyFormDefault();
+    }
+
+    private async Task SaveVaultKeyAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isSavingVaultKey = true;
+
+        try
+        {
+            Guid? brokerServerProfileId = null;
+            if (!string.IsNullOrWhiteSpace(_vaultKeyForm.BrokerServerProfileId))
+            {
+                brokerServerProfileId = Guid.Parse(_vaultKeyForm.BrokerServerProfileId);
+            }
+
+            await LocalVaultService.SaveKeyRecordAsync(
+                new SaveLocalVaultKeyRecordRequest
+                {
+                    Id = _editingVaultKeyRecordId,
+                    Name = _vaultKeyForm.Name,
+                    BrokerServerProfileId = brokerServerProfileId,
+                    TopicPattern = _vaultKeyForm.TopicPattern,
+                    KeyValue = _vaultKeyForm.KeyValue
+                });
+
+            _vaultCommandSuccess = _editingVaultKeyRecordId is null
+                ? "The local key record was added to the browser vault."
+                : "The local key record was updated.";
+
+            ResetVaultKeyEditor();
+            await LoadVaultKeyRecordsAsync();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isSavingVaultKey = false;
+        }
+    }
+
+    private async Task RemoveVaultKeyAsync(LocalVaultKeyRecordSummary keyRecord)
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultRemovingKey = true;
+        _removingVaultKeyRecordId = keyRecord.Id;
+
+        try
+        {
+            await LocalVaultService.RemoveKeyRecordAsync(keyRecord.Id);
+            _vaultCommandSuccess = $"The local key record '{keyRecord.Name}' was removed.";
+
+            if (string.Equals(_editingVaultKeyRecordId, keyRecord.Id, StringComparison.Ordinal))
+            {
+                ResetVaultKeyEditor();
+            }
+
+            await LoadVaultKeyRecordsAsync();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultRemovingKey = false;
+            _removingVaultKeyRecordId = null;
         }
     }
 
@@ -953,6 +1219,26 @@
         public static VaultUnlockFormModel CreateDefault()
         {
             return new VaultUnlockFormModel();
+        }
+    }
+
+    private sealed class VaultKeyFormModel
+    {
+        [Required]
+        [MaxLength(128)]
+        public string Name { get; set; } = string.Empty;
+
+        public string BrokerServerProfileId { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(255)]
+        public string TopicPattern { get; set; } = string.Empty;
+
+        public string KeyValue { get; set; } = string.Empty;
+
+        public static VaultKeyFormModel CreateDefault()
+        {
+            return new VaultKeyFormModel();
         }
     }
 }

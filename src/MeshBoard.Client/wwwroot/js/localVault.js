@@ -1,5 +1,6 @@
 const dbName = "meshboard-client";
 const dbVersion = 1;
+const keyStoreName = "vault_keys";
 const metaStoreName = "vault_meta";
 const manifestKey = "manifest";
 const vaultVerifier = "meshboard-vault:v1";
@@ -7,6 +8,7 @@ const pbkdf2Iterations = 310000;
 
 let dbPromise;
 let sessionUnlocked = false;
+let sessionWrappingKey = null;
 
 export async function createVault(passphrase) {
     ensurePassphrase(passphrase);
@@ -42,6 +44,7 @@ export async function createVault(passphrase) {
 
     await writeRecord(database, metaStoreName, manifest);
     sessionUnlocked = true;
+    sessionWrappingKey = wrappingKey;
     return await buildStatus(database);
 }
 
@@ -52,8 +55,28 @@ export async function getStatus() {
 
 export async function lockVault() {
     sessionUnlocked = false;
+    sessionWrappingKey = null;
     const database = await getDatabase();
     return await buildStatus(database);
+}
+
+export async function getKeyRecords() {
+    ensureUnlocked();
+
+    const database = await getDatabase();
+    const records = await readAllRecords(database, keyStoreName);
+
+    return records
+        .map(record => ({
+            id: record.id,
+            name: record.name,
+            topicPattern: record.topicPattern,
+            brokerServerProfileId: record.brokerServerProfileId ?? null,
+            keyLengthBytes: record.keyLengthBytes,
+            createdAtUtc: record.createdAtUtc,
+            updatedAtUtc: record.updatedAtUtc
+        }))
+        .sort((left, right) => right.updatedAtUtc.localeCompare(left.updatedAtUtc));
 }
 
 export async function requestPersistentStorage() {
@@ -92,6 +115,66 @@ export async function unlockVault(passphrase) {
     }
 
     sessionUnlocked = true;
+    sessionWrappingKey = wrappingKey;
+    return await buildStatus(database);
+}
+
+export async function removeKeyRecord(id) {
+    ensureUnlocked();
+
+    if (typeof id !== "string" || id.trim().length === 0) {
+        throw new Error("The vault key identifier is missing.");
+    }
+
+    const database = await getDatabase();
+    const existingRecord = await readRecord(database, keyStoreName, id);
+    if (!existingRecord) {
+        throw new Error("The requested vault key was not found.");
+    }
+
+    await deleteRecord(database, keyStoreName, id);
+    await updateManifestKeyCount(database, -1);
+
+    return await buildStatus(database);
+}
+
+export async function saveKeyRecord(request) {
+    ensureUnlocked();
+    validateKeyRecordRequest(request);
+
+    const database = await getDatabase();
+    const now = new Date().toISOString();
+    const recordId = typeof request.id === "string" && request.id.trim().length > 0
+        ? request.id.trim()
+        : crypto.randomUUID();
+    const existingRecord = await readRecord(database, keyStoreName, recordId);
+    const hasReplacementKey = typeof request.normalizedKeyBase64 === "string" && request.normalizedKeyBase64.trim().length > 0;
+    if (!existingRecord && !hasReplacementKey) {
+        throw new Error("Enter a Meshtastic key to create a new local record.");
+    }
+
+    const wrappedKey = hasReplacementKey
+        ? await wrapKeyBase64(request.normalizedKeyBase64.trim())
+        : existingRecord.wrappedKey;
+
+    const record = {
+        id: recordId,
+        name: request.name.trim(),
+        topicPattern: request.topicPattern.trim(),
+        brokerServerProfileId: typeof request.brokerServerProfileId === "string" && request.brokerServerProfileId.trim().length > 0
+            ? request.brokerServerProfileId.trim()
+            : null,
+        keyLengthBytes: hasReplacementKey ? request.keyLengthBytes : existingRecord.keyLengthBytes,
+        createdAtUtc: existingRecord?.createdAtUtc ?? now,
+        updatedAtUtc: now,
+        wrappedKey
+    };
+
+    await writeRecord(database, keyStoreName, record);
+    if (!existingRecord) {
+        await updateManifestKeyCount(database, 1);
+    }
+
     return await buildStatus(database);
 }
 
@@ -147,10 +230,50 @@ async function encryptVerifier(wrappingKey, iv) {
         new TextEncoder().encode(vaultVerifier));
 }
 
+function ensureUnlocked() {
+    if (!sessionUnlocked || sessionWrappingKey === null) {
+        throw new Error("Unlock the local vault before managing key records.");
+    }
+}
+
 function ensurePassphrase(passphrase) {
     if (typeof passphrase !== "string" || passphrase.trim().length < 12) {
         throw new Error("Vault passphrases must be at least 12 characters.");
     }
+}
+
+function validateKeyRecordRequest(request) {
+    if (!request || typeof request !== "object") {
+        throw new Error("The vault key payload is missing.");
+    }
+
+    if (typeof request.name !== "string" || request.name.trim().length === 0) {
+        throw new Error("Enter a local label for the key record.");
+    }
+
+    if (typeof request.topicPattern !== "string" || request.topicPattern.trim().length === 0) {
+        throw new Error("Enter the topic pattern this key applies to.");
+    }
+
+    if (typeof request.id !== "string" || request.id.trim().length === 0) {
+        if (typeof request.normalizedKeyBase64 !== "string" || request.normalizedKeyBase64.trim().length === 0) {
+            throw new Error("The vault key payload is invalid.");
+        }
+    }
+}
+
+async function wrapKeyBase64(keyBase64) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const cipherText = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        sessionWrappingKey,
+        new TextEncoder().encode(keyBase64));
+
+    return {
+        algorithm: "AES-GCM",
+        ivBase64Url: toBase64Url(iv),
+        cipherTextBase64Url: toBase64Url(new Uint8Array(cipherText))
+    };
 }
 
 function fromBase64Url(value) {
@@ -174,6 +297,9 @@ function openDatabase() {
             if (!database.objectStoreNames.contains(metaStoreName)) {
                 database.createObjectStore(metaStoreName, { keyPath: "key" });
             }
+            if (!database.objectStoreNames.contains(keyStoreName)) {
+                database.createObjectStore(keyStoreName, { keyPath: "id" });
+            }
         };
 
         request.onsuccess = () => resolve(request.result);
@@ -185,6 +311,16 @@ function readManifest(database) {
     return readRecord(database, metaStoreName, manifestKey);
 }
 
+function readAllRecords(database, storeName) {
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction(storeName, "readonly");
+        const request = transaction.objectStore(storeName).getAll();
+
+        request.onsuccess = () => resolve(request.result ?? []);
+        request.onerror = () => reject(request.error ?? new Error("Reading local vault records failed."));
+    });
+}
+
 function readRecord(database, storeName, key) {
     return new Promise((resolve, reject) => {
         const transaction = database.transaction(storeName, "readonly");
@@ -193,6 +329,16 @@ function readRecord(database, storeName, key) {
         request.onsuccess = () => resolve(request.result ?? null);
         request.onerror = () => reject(request.error ?? new Error("Reading the local vault failed."));
     });
+}
+
+async function updateManifestKeyCount(database, delta) {
+    const manifest = await readManifest(database);
+    if (!manifest) {
+        throw new Error("No local vault is configured for this browser.");
+    }
+
+    manifest.storedKeyCount = Math.max(0, (manifest.storedKeyCount ?? 0) + delta);
+    await writeRecord(database, metaStoreName, manifest);
 }
 
 function toBase64Url(value) {
@@ -210,5 +356,15 @@ function writeRecord(database, storeName, value) {
 
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error ?? new Error("Writing the local vault failed."));
+    });
+}
+
+function deleteRecord(database, storeName, key) {
+    return new Promise((resolve, reject) => {
+        const transaction = database.transaction(storeName, "readwrite");
+        const request = transaction.objectStore(storeName).delete(key);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error ?? new Error("Deleting the local vault record failed."));
     });
 }
