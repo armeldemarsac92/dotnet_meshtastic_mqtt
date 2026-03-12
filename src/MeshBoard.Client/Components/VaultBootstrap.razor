@@ -1,0 +1,29 @@
+@inject LocalVaultService LocalVaultService
+
+@if (!_isReady)
+{
+    <div class="boot-screen">
+        <div class="boot-card">
+            <p class="boot-kicker">Local Vault</p>
+            <h1 class="boot-title">Preparing client storage</h1>
+            <p class="boot-copy">Checking persistent browser storage and local key-vault metadata.</p>
+        </div>
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    private bool _isReady;
+
+    [Parameter]
+    public RenderFragment ChildContent { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LocalVaultService.InitializeAsync();
+        _isReady = true;
+    }
+}

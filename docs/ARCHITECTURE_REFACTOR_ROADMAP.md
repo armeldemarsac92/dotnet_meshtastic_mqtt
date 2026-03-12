@@ -678,6 +678,7 @@ Production default:
 - wiping keys requires an explicit user action
 - the local vault passphrase must not be persisted server-side
 - the local vault passphrase is dedicated to the client vault and must not be derived from or automatically reused from the account login password
+- accepted bootstrap exception: see `docs/adr/0002-browser-vault-kdf-bootstrap.md` for the initial standards-only PBKDF2 vault-envelope slice before the later Argon2id hardening slice
 
 Implementation guidance:
 
@@ -685,6 +686,7 @@ Implementation guidance:
 - derive the wrapping key from a user-supplied passphrase
 - preferred KDF: `Argon2id`
 - fallback KDF only if browser/runtime support or performance makes Argon2id non-viable, and only with an explicit ADR
+- `ADR 0002` accepts a standards-only `PBKDF2-SHA-256` bootstrap for the first vault envelope while preserving `Argon2id` as the upgrade target
 - import runtime keys into Web Crypto after unlock
 - runtime `CryptoKey` objects should be non-extractable where feasible
 - clear unlocked key material from memory on lock, logout, and hard reset flows

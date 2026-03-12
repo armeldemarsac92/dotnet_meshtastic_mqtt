@@ -1,6 +1,7 @@
 using System.Net;
 using MeshBoard.Api.SDK.API;
 using MeshBoard.Client.Authentication;
+using MeshBoard.Client.Vault;
 using MeshBoard.Contracts.Authentication;
 
 namespace MeshBoard.Client.Services;
@@ -10,15 +11,18 @@ public sealed class AuthApiClient
     private readonly IAuthApi _authApi;
     private readonly AntiforgeryTokenProvider _antiforgeryTokenProvider;
     private readonly AuthSessionState _authSessionState;
+    private readonly LocalVaultService _localVaultService;
 
     public AuthApiClient(
         IAuthApi authApi,
         AntiforgeryTokenProvider antiforgeryTokenProvider,
-        AuthSessionState authSessionState)
+        AuthSessionState authSessionState,
+        LocalVaultService localVaultService)
     {
         _authApi = authApi;
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
         _authSessionState = authSessionState;
+        _localVaultService = localVaultService;
     }
 
     public async Task<AuthenticatedUserResponse?> LoginAsync(
@@ -60,6 +64,14 @@ public sealed class AuthApiClient
         }
         finally
         {
+            try
+            {
+                await _localVaultService.LockAsync(cancellationToken);
+            }
+            catch
+            {
+            }
+
             _antiforgeryTokenProvider.Clear();
             _authSessionState.Clear();
         }

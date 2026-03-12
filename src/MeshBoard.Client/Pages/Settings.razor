@@ -1,7 +1,9 @@
 @page "/settings"
 @attribute [Authorize]
 @inject BrokerPreferenceApiClient BrokerPreferenceApiClient
+@inject LocalVaultService LocalVaultService
 @inject TopicPresetPreferenceApiClient TopicPresetPreferenceApiClient
+@inject VaultSessionState VaultSessionState
 
 <PageTitle>Settings</PageTitle>
 
@@ -353,11 +355,168 @@
     </section>
 </div>
 
+<section class="shell-panel mt-6 rounded-[2rem] p-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Local vault</p>
+            <h2 class="mt-2 font-display text-3xl text-cinder-950">Client-side key vault</h2>
+            <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
+                This bootstrap stores only a passphrase-protected local vault envelope in the browser. Decryption keys remain local to the device, the vault locks on logout, and browser persistence is requested explicitly because storage can still be evicted if the browser declines it.
+            </p>
+        </div>
+
+        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                @onclick="RequestPersistentStorageAsync"
+                disabled="@(_isVaultRequestingPersistence || !VaultSessionState.Snapshot.PersistentStorageSupported)">
+            @(_isVaultRequestingPersistence ? "Requesting..." : "Request persistence")
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_vaultCommandError))
+    {
+        <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_vaultCommandError</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_vaultCommandSuccess))
+    {
+        <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_vaultCommandSuccess</p>
+    }
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <article class="shell-subpanel rounded-[1.7rem] p-5">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Status</p>
+            <h3 class="mt-2 font-display text-2xl text-cinder-950">
+                @(VaultSessionState.Snapshot.HasVault
+                    ? (VaultSessionState.Snapshot.IsUnlocked ? "Vault unlocked" : "Vault locked")
+                    : "Vault not configured")
+            </h3>
+
+            <dl class="mt-5 grid gap-3 text-sm text-cinder-800/82">
+                <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                    <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Persistent storage</dt>
+                    <dd class="mt-2 font-medium text-cinder-950">
+                        @if (!VaultSessionState.Snapshot.PersistentStorageSupported)
+                        {
+                            <span>Not supported in this browser context</span>
+                        }
+                        else if (VaultSessionState.Snapshot.PersistentStorageGranted)
+                        {
+                            <span>Granted</span>
+                        }
+                        else
+                        {
+                            <span>Best effort only</span>
+                        }
+                    </dd>
+                </div>
+
+                <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                    <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Stored keys</dt>
+                    <dd class="mt-2 font-medium text-cinder-950">@VaultSessionState.Snapshot.StoredKeyCount</dd>
+                </div>
+
+                <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                    <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">KDF bootstrap</dt>
+                    <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(VaultSessionState.Snapshot.KdfName)</dd>
+                </div>
+            </dl>
+
+            @if (VaultSessionState.Snapshot.HasVault && VaultSessionState.Snapshot.IsUnlocked)
+            {
+                <button class="shell-button mt-5 rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="LockVaultAsync"
+                        disabled="@_isVaultLocking">
+                    @(_isVaultLocking ? "Locking..." : "Lock vault")
+                </button>
+            }
+        </article>
+
+        <article class="shell-subpanel rounded-[1.7rem] p-5">
+            @if (!VaultSessionState.Snapshot.HasVault)
+            {
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Create vault</p>
+                    <h3 class="mt-2 font-display text-2xl text-cinder-950">Dedicated local passphrase</h3>
+                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                        This passphrase is local to the browser vault and is not reused from the API login. The current bootstrap stores only the locked vault envelope so later key-import slices can reuse it without redesigning storage.
+                    </p>
+                </div>
+
+                <EditForm class="mt-6 grid gap-4" Model="_vaultCreateForm" OnValidSubmit="CreateVaultAsync">
+                    <DataAnnotationsValidator />
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Passphrase</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   type="password"
+                                   @bind-Value="_vaultCreateForm.Passphrase" />
+                        <ValidationMessage For="() => _vaultCreateForm.Passphrase" />
+                    </label>
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Confirm passphrase</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   type="password"
+                                   @bind-Value="_vaultCreateForm.ConfirmPassphrase" />
+                        <ValidationMessage For="() => _vaultCreateForm.ConfirmPassphrase" />
+                    </label>
+
+                    <button type="submit"
+                            class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            disabled="@_isVaultCreating">
+                        @(_isVaultCreating ? "Creating..." : "Create vault")
+                    </button>
+                </EditForm>
+            }
+            else if (VaultSessionState.Snapshot.IsLocked)
+            {
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Unlock vault</p>
+                    <h3 class="mt-2 font-display text-2xl text-cinder-950">Unlock local secrets</h3>
+                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                        Unlock happens locally in the browser. The passphrase is not sent to the API and is cleared from the UI form after each attempt.
+                    </p>
+                </div>
+
+                <EditForm class="mt-6 grid gap-4" Model="_vaultUnlockForm" OnValidSubmit="UnlockVaultAsync">
+                    <DataAnnotationsValidator />
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Passphrase</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   type="password"
+                                   @bind-Value="_vaultUnlockForm.Passphrase" />
+                        <ValidationMessage For="() => _vaultUnlockForm.Passphrase" />
+                    </label>
+
+                    <button type="submit"
+                            class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            disabled="@_isVaultUnlocking">
+                        @(_isVaultUnlocking ? "Unlocking..." : "Unlock vault")
+                    </button>
+                </EditForm>
+            }
+            else
+            {
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Vault bootstrap</p>
+                    <h3 class="mt-2 font-display text-2xl text-cinder-950">Envelope ready</h3>
+                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                        The vault envelope is unlocked and ready for later key-import work. This slice does not yet persist Meshtastic key records, but it establishes the browser-only passphrase, storage, and lock lifecycle required by the roadmap.
+                    </p>
+                </div>
+            }
+        </article>
+    </div>
+</section>
+
 @code {
     private readonly List<SavedBrokerServerProfile> _brokers = [];
     private readonly List<SavedTopicPreset> _presets = [];
     private BrokerFormModel _brokerForm = BrokerFormModel.CreateDefault();
     private TopicPresetFormModel _presetForm = TopicPresetFormModel.CreateDefault();
+    private VaultCreateFormModel _vaultCreateForm = VaultCreateFormModel.CreateDefault();
+    private VaultUnlockFormModel _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
     private Guid? _activatingBrokerId;
     private Guid? _editingBrokerId;
     private bool _editingBrokerHasPasswordConfigured;
@@ -365,11 +524,17 @@
     private bool _isActivatingBroker;
     private bool _isSavingBroker;
     private bool _isSavingPreset;
+    private bool _isVaultCreating;
+    private bool _isVaultLocking;
+    private bool _isVaultRequestingPersistence;
+    private bool _isVaultUnlocking;
     private string? _brokerCommandError;
     private string? _brokerCommandSuccess;
     private string? _loadError;
     private string? _presetCommandError;
     private string? _presetCommandSuccess;
+    private string? _vaultCommandError;
+    private string? _vaultCommandSuccess;
 
     private string BrokerEditorTitle => _editingBrokerId is null ? "Create broker profile" : "Edit broker profile";
 
@@ -611,6 +776,103 @@
         }
     }
 
+    private async Task CreateVaultAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+
+        if (!string.Equals(_vaultCreateForm.Passphrase, _vaultCreateForm.ConfirmPassphrase, StringComparison.Ordinal))
+        {
+            _vaultCommandError = "The vault passphrase confirmation does not match.";
+            return;
+        }
+
+        _isVaultCreating = true;
+
+        try
+        {
+            await LocalVaultService.CreateVaultAsync(_vaultCreateForm.Passphrase);
+            _vaultCommandSuccess = "The local vault envelope is now stored in the browser.";
+            _vaultCreateForm = VaultCreateFormModel.CreateDefault();
+            _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultCreating = false;
+        }
+    }
+
+    private async Task LockVaultAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultLocking = true;
+
+        try
+        {
+            await LocalVaultService.LockAsync();
+            _vaultCommandSuccess = "The local vault is locked.";
+            _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultLocking = false;
+        }
+    }
+
+    private async Task RequestPersistentStorageAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultRequestingPersistence = true;
+
+        try
+        {
+            await LocalVaultService.RequestPersistentStorageAsync();
+            _vaultCommandSuccess = VaultSessionState.Snapshot.PersistentStorageGranted
+                ? "Persistent browser storage was granted for the local vault."
+                : "The browser kept the vault in best-effort storage mode.";
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultRequestingPersistence = false;
+        }
+    }
+
+    private async Task UnlockVaultAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultUnlocking = true;
+
+        try
+        {
+            await LocalVaultService.UnlockAsync(_vaultUnlockForm.Passphrase);
+            _vaultCommandSuccess = "The local vault is unlocked for this browser session.";
+            _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultUnlocking = false;
+        }
+    }
+
     private sealed class BrokerFormModel
     {
         [Required]
@@ -664,6 +926,33 @@
         public static TopicPresetFormModel CreateDefault()
         {
             return new TopicPresetFormModel();
+        }
+    }
+
+    private sealed class VaultCreateFormModel
+    {
+        [Required]
+        [MinLength(12)]
+        public string Passphrase { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(12)]
+        public string ConfirmPassphrase { get; set; } = string.Empty;
+
+        public static VaultCreateFormModel CreateDefault()
+        {
+            return new VaultCreateFormModel();
+        }
+    }
+
+    private sealed class VaultUnlockFormModel
+    {
+        [Required]
+        public string Passphrase { get; set; } = string.Empty;
+
+        public static VaultUnlockFormModel CreateDefault()
+        {
+            return new VaultUnlockFormModel();
         }
     }
 }
