@@ -1,4 +1,5 @@
 using MeshBoard.Api.Authentication;
+using MeshBoard.Api.Preferences;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
 using MeshBoard.Contracts.Authentication;
@@ -69,6 +70,7 @@ app.UseAntiforgery();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 app.MapApiAuthEndpoints();
+app.MapFavoritePreferenceEndpoints();
 
 app.Run();
 
