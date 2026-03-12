@@ -4,8 +4,8 @@ This document is the working architecture and delivery reference for this reposi
 
 It exists so future agents can start coding without having to rediscover the core constraints, external facts, and design rules for the project.
 
-For planned remediation and scalability work, see `docs/ARCHITECTURE_REFACTOR_ROADMAP.md`.
-For the secure high-scale refactor that separates public shared feeds from private-key-protected traffic, see `docs/PERFORMANCE_SECURITY_REFACTOR_PLAN.md`.
+For planned remediation, scalability, performance, and security work, see `docs/ARCHITECTURE_REFACTOR_ROADMAP.md`.
+For mandatory HTTP SDK structure rules, see `docs/SDK_ASSEMBLY_CONSUMPTION_GUIDE.md`.
 For product-direction decisions, see `docs/adr/0001-operating-model.md`.
 
 Historical note:
@@ -53,7 +53,7 @@ These items were verified against official sources and should be treated as curr
 
 ## Core Architectural Position
 
-This app should follow the repository C# style guide in `AGENT_CSHARP_STYLE.md`, adapted to a Blazor application.
+This app should follow the repository C# style guide in `docs/AGENT_CSHARP_STYLE.md`, adapted to a Blazor application.
 
 The important translation is:
 
@@ -61,6 +61,7 @@ The important translation is:
 - Application services own orchestration and business rules.
 - Repositories own persistence.
 - Infrastructure adapters own MQTT and Meshtastic protocol integration.
+- HTTP API consumption goes through dedicated SDK assemblies, not ad hoc `HttpClient` or page-local Refit definitions.
 
 Do not build this as a component-centric app where Razor files directly manage MQTT, SQL, or protocol logic.
 
@@ -121,6 +122,7 @@ Dependency inversion is required.
 High-level rules:
 
 - `Web` depends on `Application` and `Contracts`, never on concrete database code.
+- `Client` and worker apps consume HTTP APIs through dedicated SDK assemblies that own Refit endpoint definitions and DI registration.
 - `Application` depends on repository and integration abstractions, never on Dapper, SQLite, MQTTnet, or protobuf transport details.
 - Infrastructure projects depend on `Application` and `Contracts` to implement abstractions.
 - Database choice must remain replaceable.
@@ -129,6 +131,7 @@ Concrete implications:
 
 - Repository interfaces must live outside the persistence implementation project.
 - MQTT client abstractions must live outside the MQTT implementation project.
+- Refit endpoint interfaces and HTTP transport handlers must live in SDK assemblies rather than in `Client`, `Web`, or worker feature projects.
 - Application services must accept interfaces such as `INodeRepository`, `IMessageRepository`, `IFavoriteNodeRepository`, `IMqttConnection`, `IMeshtasticEnvelopeReader`, and `IUnitOfWork`.
 - The first persistence implementation can be SQLite plus Dapper, but switching to PostgreSQL or another SQL engine should require replacing infrastructure registrations, SQL dialect details, and possibly query classes, not rewriting UI or service logic.
 
@@ -183,6 +186,7 @@ src/
   MeshBoard.Contracts/
   MeshBoard.Application/
   MeshBoard.Web/
+  MeshBoard.Api.SDK/
   MeshBoard.Infrastructure.Meshtastic/
   MeshBoard.Infrastructure.Persistence/
 tests/
@@ -212,6 +216,20 @@ Examples:
 - `FavoriteNode`
 - `NotFoundException`
 - `ConflictException`
+
+#### `MeshBoard.Api.SDK`
+
+Contains:
+
+- thin Refit endpoint interfaces in `API/`
+- HTTP client and handler registration in `DI/`
+- no business logic
+
+Rules:
+
+- consumers inject SDK interfaces into their own repositories or services
+- logging, caching, retries, fallback behavior, and null-on-404 translation stay in the consumer wrapper
+- startup registers the SDK first, then consumer-specific services
 
 #### `MeshBoard.Application`
 
@@ -528,7 +546,7 @@ When coding begins, the preferred order is:
 
 ## Rules For Future Agents
 
-- Follow `AGENT_CSHARP_STYLE.md` as the coding style baseline.
+- Follow `docs/AGENT_CSHARP_STYLE.md` as the coding style baseline.
 - Preserve dependency inversion. Do not let UI or application code depend on concrete persistence or MQTT libraries.
 - Keep repository interfaces out of the infrastructure implementation project.
 - Keep Blazor components thin.

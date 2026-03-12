@@ -341,12 +341,21 @@ Typed HTTP clients are wrapped behind endpoint interfaces or service classes.
 Patterns:
 
 - Refit is used for typed HTTP APIs.
-- SDK projects expose endpoint interfaces consumed by workers.
+- SDK projects expose endpoint interfaces consumed by workers or other apps.
 - External API wrapper services catch `ApiException` explicitly.
 - Recoverable remote failures may return `null` or empty results instead of crashing the worker immediately.
 - Retry loops are implemented imperatively when needed.
 
 This style favors pragmatic wrappers over deep custom client frameworks.
+
+The required structure is:
+
+- SDK assembly owns Refit endpoint interfaces.
+- SDK assembly owns `HttpClient` and DI registration.
+- Consumer app owns wrapper services or repositories.
+- Business behavior stays out of the SDK.
+
+Do not place Refit endpoint interfaces directly inside the consuming UI, worker, or service project when the call belongs to a reusable API boundary.
 
 ## Exception Boundary Style
 
