@@ -97,15 +97,7 @@ internal static class AuthEndpointMappings
 
     private static ClaimsPrincipal CreatePrincipal(AppUser user)
     {
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id),
-            new(ClaimTypes.Name, user.Username),
-            new(MeshBoardClaimTypes.WorkspaceId, user.Id)
-        };
-
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        return new ClaimsPrincipal(identity);
+        return AppUserPrincipalFactory.CreatePrincipal(user, CookieAuthenticationDefaults.AuthenticationScheme);
     }
 
     private static AuthenticationProperties CreateAuthenticationProperties()

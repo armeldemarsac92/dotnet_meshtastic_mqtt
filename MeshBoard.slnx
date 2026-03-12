@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/MeshBoard.Api/MeshBoard.Api.csproj" />
     <Project Path="src/MeshBoard.Application/MeshBoard.Application.csproj" />
     <Project Path="src/MeshBoard.Contracts/MeshBoard.Contracts.csproj" />
     <Project Path="src/MeshBoard.Infrastructure.Meshtastic/MeshBoard.Infrastructure.Meshtastic.csproj" />
