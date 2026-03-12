@@ -1,4 +1,5 @@
 using MeshBoard.Client.Authentication;
+using MeshBoard.Client.Messages;
 using MeshBoard.Client.Services;
 using MeshBoard.Contracts.Realtime;
 using Microsoft.JSInterop;
@@ -8,6 +9,7 @@ namespace MeshBoard.Client.Realtime;
 public sealed class BrowserRealtimeClient : IAsyncDisposable
 {
     private readonly AuthSessionState _authSessionState;
+    private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
     private readonly RealtimeClientState _realtimeClientState;
     private readonly RealtimeSessionApiClient _realtimeSessionApiClient;
@@ -16,10 +18,12 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     public BrowserRealtimeClient(
         AuthSessionState authSessionState,
         IJSRuntime jsRuntime,
+        LiveMessageFeedService liveMessageFeedService,
         RealtimeClientState realtimeClientState,
         RealtimeSessionApiClient realtimeSessionApiClient)
     {
         _authSessionState = authSessionState;
+        _liveMessageFeedService = liveMessageFeedService;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
         _realtimeClientState = realtimeClientState;
         _realtimeSessionApiClient = realtimeSessionApiClient;
@@ -154,15 +158,23 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     [JSInvokable]
     public Task HandleMessageAsync(RealtimeMessageEvent messageEvent)
     {
+        var receivedAtUtc = messageEvent.ReceivedAtUtc == default
+            ? DateTimeOffset.UtcNow
+            : messageEvent.ReceivedAtUtc;
+
+        _liveMessageFeedService.RecordMessage(
+            messageEvent.Topic,
+            messageEvent.PayloadBase64,
+            messageEvent.PayloadSizeBytes,
+            receivedAtUtc);
+
         SetSnapshot(snapshot => snapshot with
         {
             IsReady = true,
             MessageCount = snapshot.MessageCount + 1,
             LastMessageTopic = NormalizeText(messageEvent.Topic),
             LastPayloadSizeBytes = messageEvent.PayloadSizeBytes,
-            LastMessageReceivedAtUtc = messageEvent.ReceivedAtUtc == default
-                ? DateTimeOffset.UtcNow
-                : messageEvent.ReceivedAtUtc
+            LastMessageReceivedAtUtc = receivedAtUtc
         });
 
         return Task.CompletedTask;
@@ -296,6 +308,8 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
 
     public sealed class RealtimeMessageEvent
     {
+        public string PayloadBase64 { get; set; } = string.Empty;
+
         public int PayloadSizeBytes { get; set; }
 
         public DateTimeOffset ReceivedAtUtc { get; set; }

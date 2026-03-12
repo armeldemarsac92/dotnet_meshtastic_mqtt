@@ -1,6 +1,7 @@
 using System.Net;
 using MeshBoard.Api.SDK.API;
 using MeshBoard.Client.Authentication;
+using MeshBoard.Client.Messages;
 using MeshBoard.Client.Realtime;
 using MeshBoard.Client.Vault;
 using MeshBoard.Contracts.Authentication;
@@ -13,6 +14,7 @@ public sealed class AuthApiClient
     private readonly AntiforgeryTokenProvider _antiforgeryTokenProvider;
     private readonly AuthSessionState _authSessionState;
     private readonly BrowserRealtimeClient _browserRealtimeClient;
+    private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly LocalVaultService _localVaultService;
 
     public AuthApiClient(
@@ -20,12 +22,14 @@ public sealed class AuthApiClient
         AntiforgeryTokenProvider antiforgeryTokenProvider,
         AuthSessionState authSessionState,
         BrowserRealtimeClient browserRealtimeClient,
+        LiveMessageFeedService liveMessageFeedService,
         LocalVaultService localVaultService)
     {
         _authApi = authApi;
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
         _authSessionState = authSessionState;
         _browserRealtimeClient = browserRealtimeClient;
+        _liveMessageFeedService = liveMessageFeedService;
         _localVaultService = localVaultService;
     }
 
@@ -86,6 +90,7 @@ public sealed class AuthApiClient
 
             _antiforgeryTokenProvider.Clear();
             _authSessionState.Clear();
+            _liveMessageFeedService.Clear();
         }
     }
 

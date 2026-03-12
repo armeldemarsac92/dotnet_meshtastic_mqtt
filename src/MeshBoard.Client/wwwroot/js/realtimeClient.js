@@ -137,7 +137,10 @@ async function emitMessage(topic, payload) {
     return;
   }
 
+  const payloadBytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload ?? []);
+
   await currentCallbacks.invokeMethodAsync("HandleMessageAsync", {
+    payloadBase64: bytesToBase64(payloadBytes),
     payloadSizeBytes: payload?.byteLength ?? 0,
     receivedAtUtc: new Date().toISOString(),
     topic
@@ -186,6 +189,20 @@ function normalizeSession(session) {
     expiresAtUtc,
     token
   };
+}
+
+function bytesToBase64(payloadBytes) {
+  if (!payloadBytes?.length) {
+    return "";
+  }
+
+  let binary = "";
+
+  for (const byte of payloadBytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary);
 }
 
 async function refreshSession(generation) {

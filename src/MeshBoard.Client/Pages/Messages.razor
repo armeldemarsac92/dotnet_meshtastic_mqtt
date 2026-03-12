@@ -1,0 +1,208 @@
+@page "/messages"
+@attribute [Authorize]
+@implements IDisposable
+@inject BrowserRealtimeClient BrowserRealtimeClient
+@inject LiveMessageFeedService LiveMessageFeedService
+@inject RealtimeClientState RealtimeClientState
+
+<PageTitle>Messages</PageTitle>
+
+<div class="space-y-6">
+    <header class="shell-panel rounded-[2rem] p-8">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Traffic</p>
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Live encrypted packets</h1>
+                <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
+                    This feed is memory-only in wave 1. The browser keeps recent raw envelopes locally so future
+                    decrypt and projection layers can stay on-device without server-owned plaintext history.
+                </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="ConnectAsync"
+                        disabled="@(_connectionSnapshot.IsConnecting || _connectionSnapshot.IsConnected)">
+                    @ConnectLabel
+                </button>
+
+                <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="DisconnectAsync"
+                        disabled="@(!_connectionSnapshot.IsConnected && !_connectionSnapshot.IsConnecting)">
+                    @DisconnectLabel
+                </button>
+
+                <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="ClearFeed"
+                        disabled="@(_feedSnapshot.Messages.Count == 0)">
+                    Clear buffer
+                </button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_commandError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+        }
+
+        <div class="mt-6 grid gap-4 md:grid-cols-3">
+            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Connection</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_connectionSnapshot.Status</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Client ID: @DisplayValue(_connectionSnapshot.ClientId)</p>
+            </article>
+
+            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Buffer size</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_feedSnapshot.Messages.Count / 100</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Total observed this session: @_feedSnapshot.TotalReceived</p>
+            </article>
+
+            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last packet</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_feedSnapshot.LastReceivedAtUtc)</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Subscriptions: @_connectionSnapshot.ActiveSubscriptionCount</p>
+            </article>
+        </div>
+    </header>
+
+    <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
+        @if (_feedSnapshot.Messages.Count == 0)
+        {
+            <div class="p-8 text-sm leading-7 text-cinder-800/78">
+                No live packets are buffered yet. Open the realtime connection and keep at least one saved channel
+                authorized for the broker session.
+            </div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-fixed border-collapse">
+                    <colgroup>
+                        <col class="w-[18%]" />
+                        <col class="w-[28%]" />
+                        <col class="w-[12%]" />
+                        <col class="w-[42%]" />
+                    </colgroup>
+                    <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                        <tr>
+                            <th class="px-5 py-4">Received</th>
+                            <th class="px-5 py-4">Topic</th>
+                            <th class="px-5 py-4">Bytes</th>
+                            <th class="px-5 py-4">Payload</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var message in _feedSnapshot.Messages)
+                        {
+                            <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                                <td class="px-5 py-4 align-top whitespace-nowrap">@message.ReceivedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td class="px-5 py-4 align-top break-words font-medium">@message.Topic</td>
+                                <td class="px-5 py-4 align-top">@message.PayloadSizeBytes</td>
+                                <td class="px-5 py-4 align-top">
+                                    <code class="block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">
+                                        @TruncatePayload(message.PayloadBase64)
+                                    </code>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private string? _commandError;
+    private RealtimeClientSnapshot _connectionSnapshot = new();
+    private LiveMessageFeedSnapshot _feedSnapshot = new();
+
+    protected override void OnInitialized()
+    {
+        _connectionSnapshot = RealtimeClientState.Snapshot;
+        _feedSnapshot = LiveMessageFeedService.Current;
+        RealtimeClientState.Changed += HandleConnectionChanged;
+        LiveMessageFeedService.Changed += HandleFeedChanged;
+    }
+
+    public void Dispose()
+    {
+        RealtimeClientState.Changed -= HandleConnectionChanged;
+        LiveMessageFeedService.Changed -= HandleFeedChanged;
+    }
+
+    private string ConnectLabel => _connectionSnapshot.IsConnecting
+        ? "Opening..."
+        : _connectionSnapshot.IsConnected
+            ? "Connected"
+            : "Open realtime";
+
+    private string DisconnectLabel => _connectionSnapshot.IsDisconnecting
+        ? "Disconnecting..."
+        : "Disconnect";
+
+    private void ClearFeed()
+    {
+        LiveMessageFeedService.Clear();
+    }
+
+    private async Task ConnectAsync()
+    {
+        _commandError = null;
+
+        try
+        {
+            await BrowserRealtimeClient.ConnectAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            _commandError = exception.Message;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        _commandError = null;
+
+        try
+        {
+            await BrowserRealtimeClient.DisconnectAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            _commandError = exception.Message;
+        }
+    }
+
+    private static string DisplayValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "Not set" : value;
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "No packets yet";
+    }
+
+    private void HandleConnectionChanged()
+    {
+        _connectionSnapshot = RealtimeClientState.Snapshot;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleFeedChanged()
+    {
+        _feedSnapshot = LiveMessageFeedService.Current;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string TruncatePayload(string payloadBase64)
+    {
+        return payloadBase64.Length <= 180
+            ? payloadBase64
+            : $"{payloadBase64[..180]}...";
+    }
+}
