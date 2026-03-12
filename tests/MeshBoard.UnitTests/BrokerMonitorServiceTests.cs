@@ -402,6 +402,11 @@ public sealed class BrokerMonitorServiceTests
             return Task.FromResult(_activeProfile);
         }
 
+        public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_profiles.TryGetValue(profileId, out var profile) ? profile : null);
+        }
+
         public Task<BrokerServerProfile> SaveServerProfile(
             SaveBrokerServerProfileRequest request,
             CancellationToken cancellationToken = default)

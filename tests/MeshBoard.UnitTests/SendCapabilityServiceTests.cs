@@ -154,6 +154,11 @@ public sealed class SendCapabilityServiceTests
             return Task.FromResult(_activeProfile);
         }
 
+        public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<BrokerServerProfile?>(_activeProfile.Id == profileId ? _activeProfile : null);
+        }
+
         public Task<BrokerServerProfile> SaveServerProfile(
             SaveBrokerServerProfileRequest request,
             CancellationToken cancellationToken = default)
@@ -184,6 +189,11 @@ public sealed class SendCapabilityServiceTests
         public Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default)
         {
             return Task.FromException<BrokerServerProfile>(_exception);
+        }
+
+        public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromException<BrokerServerProfile?>(_exception);
         }
 
         public Task<BrokerServerProfile> SaveServerProfile(

@@ -11,6 +11,8 @@ public interface ITopicPresetService
 {
     Task<IReadOnlyCollection<TopicPreset>> GetTopicPresets(CancellationToken cancellationToken = default);
 
+    Task<TopicPreset?> GetTopicPresetByPattern(string topicPattern, CancellationToken cancellationToken = default);
+
     Task<TopicPreset> SaveTopicPreset(SaveTopicPresetRequest request, CancellationToken cancellationToken = default);
 }
 
@@ -53,6 +55,23 @@ public sealed class TopicPresetService : ITopicPresetService
             activeServerAddress);
 
         return topicPresets;
+    }
+
+    public async Task<TopicPreset?> GetTopicPresetByPattern(string topicPattern, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(topicPattern))
+        {
+            return null;
+        }
+
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
+        var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
+
+        return await _topicPresetRepository.GetByTopicPatternAsync(
+            workspaceId,
+            activeServerAddress,
+            topicPattern.Trim(),
+            cancellationToken);
     }
 
     public async Task<TopicPreset> SaveTopicPreset(

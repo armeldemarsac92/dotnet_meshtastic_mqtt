@@ -9,6 +9,12 @@ public interface ITopicPresetRepository
         string brokerServer,
         CancellationToken cancellationToken = default);
 
+    Task<TopicPreset?> GetByTopicPatternAsync(
+        string workspaceId,
+        string brokerServer,
+        string topicPattern,
+        CancellationToken cancellationToken = default);
+
     Task<TopicPreset> UpsertAsync(
         string workspaceId,
         string brokerServer,

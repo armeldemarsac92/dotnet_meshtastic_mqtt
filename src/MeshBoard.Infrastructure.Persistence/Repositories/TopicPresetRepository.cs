@@ -41,6 +41,31 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
         return topicPresets.Select(x => x.MapToTopicPreset()).ToList();
     }
 
+    public async Task<TopicPreset?> GetByTopicPatternAsync(
+        string workspaceId,
+        string brokerServer,
+        string topicPattern,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Attempting to fetch topic preset {TopicPattern} for workspace {WorkspaceId} and broker {BrokerServer}",
+            topicPattern,
+            workspaceId,
+            brokerServer);
+
+        var response = await _dbContext.QueryFirstOrDefaultAsync<TopicPresetSqlResponse>(
+            TopicPresetQueries.GetTopicPresetByTopicPattern,
+            new
+            {
+                WorkspaceId = workspaceId,
+                BrokerServer = brokerServer,
+                TopicPattern = topicPattern
+            },
+            cancellationToken);
+
+        return response?.MapToTopicPreset();
+    }
+
     public async Task<TopicPreset> UpsertAsync(
         string workspaceId,
         string brokerServer,

@@ -312,6 +312,11 @@ public sealed class HomeDashboardServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<TopicPreset?> GetTopicPresetByPattern(string topicPattern, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<TopicPreset?>(null);
+        }
+
         public Task<IReadOnlyCollection<TopicPreset>> GetTopicPresets(CancellationToken cancellationToken = default)
         {
             GetTopicPresetsCallCount++;

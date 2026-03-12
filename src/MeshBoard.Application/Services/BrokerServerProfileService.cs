@@ -13,6 +13,8 @@ public interface IBrokerServerProfileService
 
     Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default);
 
+    Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default);
+
     Task<BrokerServerProfile> SaveServerProfile(
         SaveBrokerServerProfileRequest request,
         CancellationToken cancellationToken = default);
@@ -55,6 +57,11 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
 
         _logger.LogWarning("No active broker server profile is configured.");
         throw new NotFoundException("No active broker server profile is configured.");
+    }
+
+    public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+    {
+        return _repository.GetByIdAsync(GetWorkspaceId(), profileId, cancellationToken);
     }
 
     public async Task<BrokerServerProfile> SaveServerProfile(

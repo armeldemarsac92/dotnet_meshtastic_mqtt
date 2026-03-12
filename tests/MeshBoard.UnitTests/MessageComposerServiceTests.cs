@@ -223,6 +223,11 @@ public sealed class MessageComposerServiceTests
             return Task.FromResult(_activeProfile);
         }
 
+        public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<BrokerServerProfile?>(_activeProfile.Id == profileId ? _activeProfile : null);
+        }
+
         public Task<BrokerServerProfile> SaveServerProfile(
             SaveBrokerServerProfileRequest request,
             CancellationToken cancellationToken = default)

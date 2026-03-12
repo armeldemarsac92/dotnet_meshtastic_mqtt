@@ -142,6 +142,11 @@ public sealed class TopicDiscoveryServiceTests
                 });
         }
 
+        public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<BrokerServerProfile?>(null);
+        }
+
         public Task<BrokerServerProfile> SaveServerProfile(
             SaveBrokerServerProfileRequest request,
             CancellationToken cancellationToken = default)
