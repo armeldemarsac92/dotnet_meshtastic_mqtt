@@ -1,4 +1,6 @@
-namespace MeshBoard.Client.Services;
+using MeshBoard.Api.SDK.Abstractions;
+
+namespace MeshBoard.Api.SDK.Infrastructure;
 
 public sealed class AntiforgeryTokenHeaderHandler : DelegatingHandler
 {
@@ -10,19 +12,18 @@ public sealed class AntiforgeryTokenHeaderHandler : DelegatingHandler
         HttpMethod.Trace.Method
     ];
 
-    private readonly AntiforgeryTokenProvider _antiforgeryTokenProvider;
+    private readonly IAntiforgeryRequestTokenProvider _antiforgeryRequestTokenProvider;
 
-    public AntiforgeryTokenHeaderHandler(AntiforgeryTokenProvider antiforgeryTokenProvider)
+    public AntiforgeryTokenHeaderHandler(IAntiforgeryRequestTokenProvider antiforgeryRequestTokenProvider)
     {
-        _antiforgeryTokenProvider = antiforgeryTokenProvider;
+        _antiforgeryRequestTokenProvider = antiforgeryRequestTokenProvider;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (!SafeMethods.Contains(request.Method.Method))
         {
-            var requestToken = await _antiforgeryTokenProvider.GetAsync(cancellationToken: cancellationToken);
-            request.Headers.Remove("X-CSRF-TOKEN");
+            var requestToken = await _antiforgeryRequestTokenProvider.GetAsync(cancellationToken: cancellationToken);
             request.Headers.Add("X-CSRF-TOKEN", requestToken);
         }
 

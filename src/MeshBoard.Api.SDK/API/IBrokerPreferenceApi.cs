@@ -1,7 +1,7 @@
 using MeshBoard.Contracts.Configuration;
 using Refit;
 
-namespace MeshBoard.Client.Services;
+namespace MeshBoard.Api.SDK.API;
 
 public interface IBrokerPreferenceApi
 {

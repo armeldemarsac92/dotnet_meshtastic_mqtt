@@ -1,8 +1,10 @@
+using MeshBoard.Api.SDK.Abstractions;
+using MeshBoard.Api.SDK.API;
 using MeshBoard.Contracts.Authentication;
 
 namespace MeshBoard.Client.Services;
 
-public sealed class AntiforgeryTokenProvider
+public sealed class AntiforgeryTokenProvider : IAntiforgeryRequestTokenProvider
 {
     private readonly IAntiforgeryApi _antiforgeryApi;
 
