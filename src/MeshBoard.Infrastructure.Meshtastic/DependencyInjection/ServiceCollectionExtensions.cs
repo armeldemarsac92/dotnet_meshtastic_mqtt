@@ -64,11 +64,11 @@ public static class ServiceCollectionExtensions
         services.Replace(ServiceDescriptor.Singleton<ITopicEncryptionKeyResolver, TopicPresetEncryptionKeyResolver>());
         services.TryAddSingleton<IMeshtasticEnvelopeReader, MeshtasticEnvelopeReader>();
         services.TryAddSingleton<MeshtasticInboundMessageQueue>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMqttInboundMessageSink, MeshtasticInboundQueueSink>());
     }
 
     private static void AddMeshtasticIngestionHostedServices(IServiceCollection services)
     {
-        services.AddHostedService<MeshtasticInboundQueuePumpHostedService>();
         services.AddHostedService<MeshtasticInboundProcessingHostedService>();
         services.AddHostedService<MeshtasticRuntimeMetricsHostedService>();
     }
@@ -95,6 +95,7 @@ public static class ServiceCollectionExtensions
     private static void AddMeshtasticRuntimeHostedServices(IServiceCollection services)
     {
         services.AddHostedService<MeshtasticMqttHostedService>();
+        services.AddHostedService<MqttInboundDispatchHostedService>();
         services.AddHostedService<BrokerRuntimeCommandProcessorHostedService>();
     }
 
