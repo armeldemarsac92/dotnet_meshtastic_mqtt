@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Realtime;
 using MeshBoard.Application.Meshtastic;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Authentication;
@@ -17,6 +18,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddMemoryCache(options => options.SizeLimit = 1_024);
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
+        services.TryAddSingleton<IRealtimePacketEnvelopeFactory, RealtimePacketEnvelopeFactory>();
         services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
         services.TryAddSingleton<IActiveCircuitMetricsService, InMemoryActiveCircuitMetricsService>();
         services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();

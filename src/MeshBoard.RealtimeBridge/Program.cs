@@ -9,7 +9,8 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddApplicationServices();
 builder.Services.AddMeshtasticRuntimeInfrastructure(builder.Configuration);
 builder.Services.AddPersistenceInfrastructure(builder.Configuration);
-builder.Services.AddSingleton<IMqttInboundMessageSink, ObservedInboundPacketLoggingSink>();
+builder.Services.AddSingleton<IRealtimePacketPublisher, StructuredLoggingRealtimePacketPublisher>();
+builder.Services.AddSingleton<IMqttInboundMessageSink, RealtimePacketPublishingSink>();
 
 var host = builder.Build();
 await host.RunAsync();
