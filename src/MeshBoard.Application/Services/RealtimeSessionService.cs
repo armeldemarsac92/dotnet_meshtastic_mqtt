@@ -21,44 +21,44 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
     private const int MaxClientIdPrefixLength = 12;
 
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
-    private readonly IBrokerMonitorService _brokerMonitorService;
     private readonly ICurrentUserContextAccessor _currentUserContextAccessor;
     private readonly RealtimeSessionOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public RealtimeSessionService(
-        IBrokerMonitorService brokerMonitorService,
         ICurrentUserContextAccessor currentUserContextAccessor,
         IWorkspaceContextAccessor workspaceContextAccessor,
         IOptions<RealtimeSessionOptions> options,
         TimeProvider timeProvider)
     {
-        _brokerMonitorService = brokerMonitorService;
         _currentUserContextAccessor = currentUserContextAccessor;
         _workspaceContextAccessor = workspaceContextAccessor;
         _options = options.Value;
         _timeProvider = timeProvider;
     }
 
-    public async Task<RealtimeSessionResponse> CreateSessionAsync(CancellationToken cancellationToken = default)
+    public Task<RealtimeSessionResponse> CreateSessionAsync(CancellationToken cancellationToken = default)
     {
         var brokerUri = ValidateAndGetBrokerUri(_options);
         var userId = _currentUserContextAccessor.GetUserId();
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
-        var allowedTopicPatterns = await GetAllowedTopicPatternsAsync(cancellationToken);
+        var allowedTopicPatterns = new List<string>
+        {
+            RealtimeTopicNames.BuildWorkspaceLiveWildcard(workspaceId)
+        };
         var issuedAtUtc = _timeProvider.GetUtcNow();
         var expiresAtUtc = issuedAtUtc.AddMinutes(_options.TokenLifetimeMinutes);
         var clientId = CreateClientId(_options.ClientIdPrefix);
 
-        return new RealtimeSessionResponse
+        return Task.FromResult(new RealtimeSessionResponse
         {
             BrokerUrl = brokerUri.ToString(),
             ClientId = clientId,
             Token = CreateToken(userId, workspaceId, clientId, issuedAtUtc, expiresAtUtc, allowedTopicPatterns),
             ExpiresAtUtc = expiresAtUtc,
             AllowedTopicPatterns = allowedTopicPatterns
-        };
+        });
     }
 
     private static string Base64UrlEncode(byte[] value)
@@ -180,17 +180,5 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
             RSASignaturePadding.Pkcs1);
 
         return $"{signingInput}.{Base64UrlEncode(signature)}";
-    }
-
-    private async Task<List<string>> GetAllowedTopicPatternsAsync(CancellationToken cancellationToken)
-    {
-        var channels = await _brokerMonitorService.GetSavedChannels(cancellationToken);
-
-        return channels
-            .Select(channel => channel.TopicFilter)
-            .Where(topicFilter => !string.IsNullOrWhiteSpace(topicFilter))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(topicFilter => topicFilter, StringComparer.Ordinal)
-            .ToList();
     }
 }

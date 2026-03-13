@@ -6,6 +6,7 @@ using System.Text.Json;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Favorites;
+using MeshBoard.Contracts.Realtime;
 using MeshBoard.Contracts.Topics;
 
 namespace MeshBoard.IntegrationTests;
@@ -139,18 +140,7 @@ public sealed class ApiEndpointIntegrationTests
         using var client = host.CreateApiClient();
 
         var user = await RegisterAsync(client, host);
-        var topicFilter = $"meshboard/workspaces/{user.WorkspaceId}/live/#";
-
-        var saveChannelResponse = await PostJsonAsync(
-            client,
-            host,
-            "/api/preferences/channels",
-            new SaveChannelFilterRequest
-            {
-                TopicFilter = topicFilter
-            });
-
-        saveChannelResponse.EnsureSuccessStatusCode();
+        var topicFilter = RealtimeTopicNames.BuildWorkspaceLiveWildcard(user.WorkspaceId);
 
         var sessionResponse = await PostJsonAsync(client, host, "/api/realtime/session", payload: null);
 
