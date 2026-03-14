@@ -2,6 +2,7 @@ using MeshBoard.Api.SDK.Abstractions;
 using MeshBoard.Api.SDK.DI;
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Channels;
+using MeshBoard.Client.Dashboard;
 using MeshBoard.Client.Maps;
 using MeshBoard.Client.Messages;
 using MeshBoard.Client.Nodes;
@@ -39,6 +40,7 @@ public class Program
         builder.Services.AddScoped<ChannelPreferenceApiClient>();
         builder.Services.AddScoped<ChannelProjectionStore>();
         builder.Services.AddScoped<ChannelProjectionState>();
+        builder.Services.AddScoped<ClientDashboardSummaryBuilder>();
         builder.Services.AddScoped<DecryptedMessageStore>();
         builder.Services.AddScoped<DecryptedMessageState>();
         builder.Services.AddScoped<FavoritePreferenceApiClient>();

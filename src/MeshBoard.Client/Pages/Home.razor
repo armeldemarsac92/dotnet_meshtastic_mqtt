@@ -1,224 +1,495 @@
-﻿@page "/"
+@page "/"
+@using MeshBoard.Client.Dashboard
 @implements IDisposable
+@inject AuthSessionState AuthSessionState
+@inject BrokerPreferenceApiClient BrokerPreferenceApiClient
 @inject BrowserRealtimeClient BrowserRealtimeClient
+@inject ChannelPreferenceApiClient ChannelPreferenceApiClient
+@inject ChannelProjectionStore ChannelProjectionStore
+@inject ClientDashboardSummaryBuilder DashboardSummaryBuilder
+@inject DecryptedMessageStore DecryptedMessageStore
+@inject FavoritePreferenceApiClient FavoritePreferenceApiClient
+@inject LiveMessageFeedService LiveMessageFeedService
+@inject NodeProjectionStore NodeProjectionStore
 @inject RealtimeClientState RealtimeClientState
+@inject TopicPresetPreferenceApiClient TopicPresetPreferenceApiClient
+@inject VaultSessionState VaultSessionState
 
-<PageTitle>MeshBoard Client</PageTitle>
+<PageTitle>MeshBoard Dashboard</PageTitle>
 
-<section class="shell-panel rounded-[2.2rem] px-8 py-10 lg:px-10">
-    <div class="grid gap-8 lg:grid-cols-[1.35fr_1fr]">
-        <div class="space-y-5">
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-signal-600">Phase 1 Client</p>
-            <h1 class="max-w-3xl font-display text-4xl leading-tight text-cinder-950 sm:text-5xl">
-                Browser-first MeshBoard now boots the API session, local vault, and realtime transport from the client.
-            </h1>
-            <p class="max-w-2xl text-base leading-8 text-cinder-800/82">
-                The browser owns the live `MQTT 5 / WSS` connection, the broker token is short-lived and API-issued,
-                and Meshtastic keys stay on the device behind the local vault instead of crossing the server boundary.
-            </p>
+@if (!AuthSessionState.IsAuthenticated)
+{
+    <section class="shell-panel rounded-[2.2rem] px-8 py-10 lg:px-10">
+        <div class="grid gap-8 lg:grid-cols-[1.3fr_1fr]">
+            <div class="space-y-5">
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-signal-600">Browser-first MeshBoard</p>
+                <h1 class="max-w-3xl font-display text-4xl leading-tight text-cinder-950 sm:text-5xl">
+                    Sign in to open your realtime workspace, local vault, and client-owned Meshtastic dashboard.
+                </h1>
+                <p class="max-w-2xl text-base leading-8 text-cinder-800/82">
+                    The browser owns the `MQTT 5 / WSS` connection, decryption stays on the device, and the dashboard
+                    summarizes live traffic from local projections instead of server-side read models.
+                </p>
 
-            <div class="flex flex-wrap gap-3">
-                <AuthorizeView>
-                    <Authorized>
+                <div class="flex flex-wrap gap-3">
+                    <a class="shell-button shell-button-accent inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                       href="/login">
+                        Sign in
+                    </a>
+                    <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                       href="/register">
+                        Create account
+                    </a>
+                </div>
+            </div>
+
+            <div class="grid gap-4">
+                <article class="shell-subpanel rounded-[1.8rem] p-5">
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Client trust model</p>
+                    <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
+                        <li>API stores preferences and workspace metadata only</li>
+                        <li>Broker sessions use short-lived WSS tokens</li>
+                        <li>Meshtastic keys remain inside the local encrypted vault</li>
+                    </ul>
+                </article>
+
+                <article class="shell-subpanel rounded-[1.8rem] p-5">
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Local summaries</p>
+                    <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
+                        <li>Recent packets and decrypt health</li>
+                        <li>Observed nodes, channels, and map projections</li>
+                        <li>Saved broker, channel, preset, and favorite counts</li>
+                    </ul>
+                </article>
+            </div>
+        </div>
+    </section>
+}
+else
+{
+    <div class="space-y-6">
+        <section class="shell-panel rounded-[2.2rem] px-8 py-10 lg:px-10">
+            <div class="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.3em] text-signal-600">Workspace dashboard</p>
+                        <h1 class="mt-2 max-w-3xl font-display text-4xl leading-tight text-cinder-950 sm:text-5xl">
+                            Local live summaries for `@AuthSessionState.CurrentUser?.Username`
+                        </h1>
+                        <p class="mt-3 max-w-3xl text-base leading-8 text-cinder-800/82">
+                            This overview combines API-backed preferences with browser-owned live projections. Nothing
+                            here depends on server-side decrypted message or node tables.
+                        </p>
+                    </div>
+
+                    <div class="flex flex-wrap gap-3">
                         <a class="shell-button shell-button-accent inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                           href="/channels">
-                            Manage channels
-                        </a>
-                        <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
                            href="/messages">
                             Open messages
+                        </a>
+                        <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                           href="/nodes">
+                            Open nodes
+                        </a>
+                        <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                           href="/channels">
+                            Open channels
+                        </a>
+                        <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                           href="/map">
+                            Open map
                         </a>
                         <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
                            href="/settings">
                             Open settings
                         </a>
-                    </Authorized>
-                    <NotAuthorized>
-                        <a class="shell-button shell-button-accent inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                           href="/login">
-                            Sign in
-                        </a>
-                        <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                           href="/register">
-                            Create account
-                        </a>
-                    </NotAuthorized>
-                </AuthorizeView>
-            </div>
-        </div>
-
-        <div class="grid gap-4">
-            <article class="shell-subpanel rounded-[1.8rem] p-5">
-                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Implemented now</p>
-                <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
-                    <li>Cookie-authenticated JSON API session with antiforgery flow</li>
-                    <li>Client-local encrypted vault with wrapped Meshtastic key records</li>
-                    <li>Realtime broker bootstrap over `MQTT 5 / WSS` with API-issued session tokens</li>
-                </ul>
-            </article>
-
-            <article class="shell-subpanel rounded-[1.8rem] p-5">
-                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Next migration layers</p>
-                <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
-                    <li>Projection stores for live messages, channels, and node updates</li>
-                    <li>VerneMQ topic ACL hardening and bridge extraction from the hosted runtime</li>
-                    <li>Future outbound compose flow without server-side plaintext ownership</li>
-                </ul>
-            </article>
-        </div>
-    </div>
-</section>
-
-<AuthorizeView>
-    <Authorized>
-        <section class="shell-panel mt-6 rounded-[2rem] px-8 py-8">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Realtime</p>
-                    <h2 class="mt-2 font-display text-3xl text-cinder-950">Broker session bootstrap</h2>
-                    <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
-                        This panel opens the browser-owned realtime connection using the short-lived broker session
-                        token from `/api/realtime/session`. The page only talks to the scoped realtime service.
-                    </p>
+                    </div>
                 </div>
 
-                <div class="flex flex-wrap gap-3">
-                    <button class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                            @onclick="ConnectAsync"
-                            disabled="@(_snapshot.IsConnecting || _snapshot.IsConnected)">
-                        @ConnectLabel
-                    </button>
+                <div class="grid gap-4 sm:min-w-[20rem] sm:grid-cols-2 xl:w-[26rem] xl:grid-cols-1">
+                    <article class="shell-subpanel rounded-[1.8rem] p-5">
+                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Workspace</p>
+                        <p class="mt-4 text-2xl font-semibold text-cinder-950">@AuthSessionState.CurrentUser?.WorkspaceId</p>
+                        <p class="mt-2 text-sm text-cinder-800/72">Preferences stay server-side; keys and decryption stay local.</p>
+                    </article>
 
-                    <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                            @onclick="DisconnectAsync"
-                            disabled="@(!_snapshot.IsConnected && !_snapshot.IsConnecting)">
-                        @DisconnectLabel
-                    </button>
+                    <article class="shell-subpanel rounded-[1.8rem] p-5">
+                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Last activity</p>
+                        <p class="mt-4 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_summary.LastActivityAtUtc)</p>
+                        <p class="mt-2 text-sm text-cinder-800/72">Computed from local packets, decoded messages, nodes, and channels.</p>
+                    </article>
                 </div>
             </div>
 
             @if (!string.IsNullOrWhiteSpace(_commandError))
             {
-                <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+                <p class="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
             }
 
-            <div class="mt-6 grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-                <article class="shell-subpanel rounded-[1.8rem] p-5">
-                    <div class="flex flex-wrap items-center gap-3">
-                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Connection state</p>
-                        <span class="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/72">
-                            @_snapshot.Status
-                        </span>
+            @if (!string.IsNullOrWhiteSpace(_preferenceError))
+            {
+                <p class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">@_preferenceError</p>
+            }
+        </section>
+
+        <section class="grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Transport</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_realtimeSnapshot.Status</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@DisplayValue(_realtimeSnapshot.BrokerUrl)</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Raw packets</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.RawPacketCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@FormatTimestamp(_realtimeSnapshot.LastMessageReceivedAtUtc)</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Decoded messages</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.DecryptedMessageCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Client-side projection only</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Observed nodes</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.ObservedNodeCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@_summary.LocatedNodeCount with location</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active channels</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.ObservedChannelCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Projected from the current browser session</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Local vault</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@GetVaultStatusLabel()</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@_vaultSnapshot.StoredKeyCount stored key(s)</p>
+            </article>
+        </section>
+
+        <div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <section class="shell-panel rounded-[2rem] p-8">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Transport</p>
+                        <h2 class="mt-2 font-display text-3xl text-cinder-950">Realtime broker session</h2>
+                        <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
+                            The dashboard keeps the current connect and disconnect controls, but the surrounding state now
+                            reads like an operational summary instead of a bootstrap page.
+                        </p>
                     </div>
 
-                    <dl class="mt-5 grid gap-3 text-sm text-cinder-800/80 sm:grid-cols-2">
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker URL</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(_snapshot.BrokerUrl)</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Client ID</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(_snapshot.ClientId)</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Allowed topics</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@_snapshot.AllowedTopicPatterns.Count</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active subscriptions</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@_snapshot.ActiveSubscriptionCount</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Connected at</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.ConnectedAtUtc)</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Session expiry</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.SessionExpiresAtUtc)</dd>
-                        </div>
-                    </dl>
+                    <div class="flex flex-wrap gap-3">
+                        <button class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="ConnectAsync"
+                                disabled="@(_realtimeSnapshot.IsConnecting || _realtimeSnapshot.IsConnected)">
+                            @ConnectLabel
+                        </button>
 
-                    @if (_snapshot.AllowedTopicPatterns.Count > 0)
-                    {
-                        <div class="mt-5 rounded-[1.5rem] border border-white/70 bg-white/70 p-4">
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Authorized topic patterns</p>
-                            <ul class="mt-3 grid gap-2 text-sm text-cinder-800/82">
-                                @foreach (var topic in _snapshot.AllowedTopicPatterns)
-                                {
-                                    <li class="rounded-2xl border border-slate-200 bg-slate-50/85 px-3 py-2 font-medium text-cinder-950">@topic</li>
-                                }
-                            </ul>
-                        </div>
-                    }
-                </article>
+                        <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="DisconnectAsync"
+                                disabled="@(!_realtimeSnapshot.IsConnected && !_realtimeSnapshot.IsConnecting)">
+                            @DisconnectLabel
+                        </button>
+                    </div>
+                </div>
 
-                <article class="shell-subpanel rounded-[1.8rem] p-5">
-                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Traffic snapshot</p>
+                <div class="mt-6 grid gap-4 sm:grid-cols-2">
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker URL</p>
+                        <p class="mt-3 break-all text-sm font-medium text-cinder-950">@DisplayValue(_realtimeSnapshot.BrokerUrl)</p>
+                    </article>
 
-                    <dl class="mt-5 grid gap-3 text-sm text-cinder-800/80">
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Messages observed</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@_snapshot.MessageCount</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last topic</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(_snapshot.LastMessageTopic)</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last payload size</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@FormatPayloadSize(_snapshot.LastPayloadSizeBytes)</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last message time</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.LastMessageReceivedAtUtc)</dd>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
-                            <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last disconnect</dt>
-                            <dd class="mt-2 font-medium text-cinder-950">@FormatTimestamp(_snapshot.LastDisconnectedAtUtc)</dd>
-                        </div>
-                    </dl>
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Client ID</p>
+                        <p class="mt-3 break-all text-sm font-medium text-cinder-950">@DisplayValue(_realtimeSnapshot.ClientId)</p>
+                    </article>
 
-                    @if (!string.IsNullOrWhiteSpace(_snapshot.LastDisconnectReason))
-                    {
-                        <p class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-                            @_snapshot.LastDisconnectReason
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Allowed topics</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_realtimeSnapshot.AllowedTopicPatterns.Count</p>
+                        <p class="mt-2 text-sm text-cinder-800/72">Active subscriptions: @_realtimeSnapshot.ActiveSubscriptionCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Session expiry</p>
+                        <p class="mt-3 text-sm font-medium text-cinder-950">@FormatTimestamp(_realtimeSnapshot.SessionExpiresAtUtc)</p>
+                        <p class="mt-2 text-sm text-cinder-800/72">Connected at @FormatTimestamp(_realtimeSnapshot.ConnectedAtUtc)</p>
+                    </article>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_realtimeSnapshot.LastDisconnectReason))
+                {
+                    <p class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                        @_realtimeSnapshot.LastDisconnectReason
+                    </p>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_realtimeSnapshot.LastError))
+                {
+                    <p class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        @_realtimeSnapshot.LastError
+                    </p>
+                }
+            </section>
+
+            <section class="shell-panel rounded-[2rem] p-8">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
+                        <h2 class="mt-2 font-display text-3xl text-cinder-950">API-backed workspace summary</h2>
+                        <p class="mt-3 text-sm leading-7 text-cinder-800/82">
+                            These counts come from the API and remain separate from the live browser projections.
                         </p>
-                    }
+                    </div>
 
-                    @if (!string.IsNullOrWhiteSpace(_snapshot.LastError))
-                    {
-                        <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                            @_snapshot.LastError
-                        </p>
-                    }
-                </article>
+                    <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ReloadPreferencesAsync"
+                            disabled="@_isLoadingPreferences">
+                        @(_isLoadingPreferences ? "Refreshing..." : "Refresh")
+                    </button>
+                </div>
+
+                <div class="mt-6 grid gap-4 sm:grid-cols-2">
+                    <article class="shell-subpanel rounded-[1.6rem] p-5 sm:col-span-2">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active broker</p>
+                        <p class="mt-3 text-lg font-semibold text-cinder-950">@GetActiveBrokerName()</p>
+                        <p class="mt-2 text-sm text-cinder-800/72">@GetActiveBrokerAddress()</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker profiles</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_preferences.SavedBrokerCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Saved channels</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_preferences.SavedChannelCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Topic presets</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_preferences.TopicPresetCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Favorites</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_preferences.FavoriteCount</p>
+                    </article>
+                </div>
+            </section>
+        </div>
+
+        <div class="grid gap-6 xl:grid-cols-[0.9fr_1.05fr_1.05fr]">
+            <section class="shell-panel rounded-[2rem] p-8">
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Decrypt health</p>
+                <h2 class="mt-2 font-display text-3xl text-cinder-950">Local key effectiveness</h2>
+                <p class="mt-3 text-sm leading-7 text-cinder-800/82">
+                    These counts come from the current in-memory live packet window. They answer whether the vault is
+                    actually matching keys against the live traffic.
+                </p>
+
+                <div class="mt-6 grid gap-4">
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Successful decrypts</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.SuccessfulDecryptCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">No matching key</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.NoMatchingKeyCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Decrypt or parse failures</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.DecryptFailureCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Persistent storage</p>
+                        <p class="mt-3 text-lg font-semibold text-cinder-950">@GetPersistentStorageLabel()</p>
+                        <p class="mt-2 text-sm text-cinder-800/72">KDF: @DisplayValue(_vaultSnapshot.KdfName)</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="shell-panel rounded-[2rem] p-8">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Live channels</p>
+                        <h2 class="mt-2 font-display text-3xl text-cinder-950">Busiest cohorts</h2>
+                    </div>
+
+                    <a class="text-sm font-medium text-signal-600 underline underline-offset-4" href="/channels">Open channels</a>
+                </div>
+
+                @if (_summary.ActiveChannels.Count == 0)
+                {
+                    <p class="mt-6 text-sm leading-7 text-cinder-800/78">
+                        No locally projected channels yet. Keep the realtime connection open and wait for live traffic.
+                    </p>
+                }
+                else
+                {
+                    <div class="mt-6 grid gap-4">
+                        @foreach (var channel in _summary.ActiveChannels)
+                        {
+                            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-signal-600">@channel.ChannelKey</p>
+                                        <p class="mt-2 text-sm font-medium text-cinder-950">@DisplayValue(channel.LastPacketType)</p>
+                                    </div>
+
+                                    <div class="text-right text-sm text-cinder-800/72">
+                                        <p>@channel.ObservedPacketCount packets</p>
+                                        <p class="mt-1">@channel.DistinctNodeCount nodes</p>
+                                    </div>
+                                </div>
+
+                                <p class="mt-4 text-sm text-cinder-800/72">@FormatTimestamp(channel.LastObservedAtUtc)</p>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="shell-panel rounded-[2rem] p-8">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Active nodes</p>
+                        <h2 class="mt-2 font-display text-3xl text-cinder-950">Most observed nodes</h2>
+                    </div>
+
+                    <a class="text-sm font-medium text-signal-600 underline underline-offset-4" href="/nodes">Open nodes</a>
+                </div>
+
+                @if (_summary.ActiveNodes.Count == 0)
+                {
+                    <p class="mt-6 text-sm leading-7 text-cinder-800/78">
+                        No locally projected nodes yet. Messages, node info, telemetry, and position packets will populate this list.
+                    </p>
+                }
+                else
+                {
+                    <div class="mt-6 grid gap-4">
+                        @foreach (var node in _summary.ActiveNodes)
+                        {
+                            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-signal-600">@node.DisplayName</p>
+                                        <p class="mt-2 text-sm text-cinder-800/72">@node.NodeId</p>
+                                        <p class="mt-2 text-sm font-medium text-cinder-950">@DisplayValue(node.Channel)</p>
+                                    </div>
+
+                                    <div class="text-right text-sm text-cinder-800/72">
+                                        <p>@node.ObservedPacketCount packets</p>
+                                        <p class="mt-1">@GetNodeFlags(node)</p>
+                                    </div>
+                                </div>
+
+                                <p class="mt-4 text-sm text-cinder-800/72">@FormatTimestamp(node.LastHeardAtUtc)</p>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+
+        <section class="shell-panel rounded-[2rem] p-8">
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Decoded traffic</p>
+                    <h2 class="mt-2 font-display text-3xl text-cinder-950">Recent locally decoded messages</h2>
+                </div>
+
+                <a class="text-sm font-medium text-signal-600 underline underline-offset-4" href="/messages">Open messages</a>
             </div>
+
+            @if (_summary.RecentMessages.Count == 0)
+            {
+                <p class="mt-6 text-sm leading-7 text-cinder-800/78">
+                    No decoded messages are in memory yet. Successful local decrypts will appear here as the browser processes live traffic.
+                </p>
+            }
+            else
+            {
+                <div class="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.25fr]">
+                    @foreach (var message in _summary.RecentMessages)
+                    {
+                        <article class="shell-subpanel rounded-[1.6rem] p-5">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-signal-600">@DisplayValue(message.PacketType)</p>
+                                    <p class="mt-2 break-all text-sm text-cinder-800/72">@message.SourceTopic</p>
+                                </div>
+
+                                <p class="text-sm text-cinder-800/72">@FormatTimestamp(message.ReceivedAtUtc)</p>
+                            </div>
+
+                            <p class="mt-4 text-sm leading-7 text-cinder-900">
+                                @(string.IsNullOrWhiteSpace(message.PayloadPreview) ? "No payload preview was produced for this packet." : message.PayloadPreview)
+                            </p>
+                        </article>
+                    }
+                </div>
+            }
         </section>
-    </Authorized>
-</AuthorizeView>
+    </div>
+}
 
 @code {
     private string? _commandError;
-    private RealtimeClientSnapshot _snapshot = new();
+    private bool _isLoadingPreferences;
+    private ClientDashboardPreferenceSummary _preferences = ClientDashboardPreferenceSummary.Empty;
+    private string? _preferenceError;
+    private int _preferenceLoadVersion;
+    private RealtimeClientSnapshot _realtimeSnapshot = new();
+    private ClientDashboardSummary _summary = new();
+    private VaultStatusSnapshot _vaultSnapshot = new();
 
     protected override void OnInitialized()
     {
-        _snapshot = RealtimeClientState.Snapshot;
-        RealtimeClientState.Changed += HandleRealtimeChanged;
+        AuthSessionState.Changed += HandleAuthChanged;
+        RealtimeClientState.Changed += HandleDashboardStateChanged;
+        LiveMessageFeedService.Changed += HandleDashboardStateChanged;
+        DecryptedMessageStore.Changed += HandleDashboardStateChanged;
+        NodeProjectionStore.Changed += HandleDashboardStateChanged;
+        ChannelProjectionStore.Changed += HandleDashboardStateChanged;
+        VaultSessionState.Changed += HandleDashboardStateChanged;
+        RefreshDashboardState();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthSessionState.IsAuthenticated)
+        {
+            await LoadPreferencesAsync();
+        }
     }
 
     public void Dispose()
     {
-        RealtimeClientState.Changed -= HandleRealtimeChanged;
+        AuthSessionState.Changed -= HandleAuthChanged;
+        RealtimeClientState.Changed -= HandleDashboardStateChanged;
+        LiveMessageFeedService.Changed -= HandleDashboardStateChanged;
+        DecryptedMessageStore.Changed -= HandleDashboardStateChanged;
+        NodeProjectionStore.Changed -= HandleDashboardStateChanged;
+        ChannelProjectionStore.Changed -= HandleDashboardStateChanged;
+        VaultSessionState.Changed -= HandleDashboardStateChanged;
     }
 
-    private string ConnectLabel => _snapshot.IsConnecting
+    private string ConnectLabel => _realtimeSnapshot.IsConnecting
         ? "Opening..."
-        : _snapshot.IsConnected
+        : _realtimeSnapshot.IsConnected
             ? "Connected"
             : "Open realtime";
 
-    private string DisconnectLabel => _snapshot.IsDisconnecting
+    private string DisconnectLabel => _realtimeSnapshot.IsDisconnecting
         ? "Disconnecting..."
         : "Disconnect";
 
@@ -250,14 +521,168 @@
         }
     }
 
+    private string GetActiveBrokerAddress()
+    {
+        return _preferences.ActiveBroker is null
+            ? "No active broker selected."
+            : _preferences.ActiveBroker.ServerAddress;
+    }
+
+    private string GetActiveBrokerName()
+    {
+        return _preferences.ActiveBroker?.Name ?? "No active broker selected";
+    }
+
+    private static string GetNodeFlags(ClientDashboardNodeSummary node)
+    {
+        if (node.HasLocation && node.HasTelemetry)
+        {
+            return "location + telemetry";
+        }
+
+        if (node.HasLocation)
+        {
+            return "location";
+        }
+
+        if (node.HasTelemetry)
+        {
+            return "telemetry";
+        }
+
+        return "basic traffic only";
+    }
+
+    private string GetPersistentStorageLabel()
+    {
+        if (!_vaultSnapshot.PersistentStorageSupported)
+        {
+            return "Not supported";
+        }
+
+        return _vaultSnapshot.PersistentStorageGranted
+            ? "Granted"
+            : "Available";
+    }
+
+    private string GetVaultStatusLabel()
+    {
+        if (_vaultSnapshot.IsUnlocked)
+        {
+            return "Unlocked";
+        }
+
+        if (_vaultSnapshot.HasVault)
+        {
+            return "Locked";
+        }
+
+        return "Not configured";
+    }
+
+    private void HandleAuthChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (AuthSessionState.IsAuthenticated)
+            {
+                await LoadPreferencesAsync();
+            }
+            else
+            {
+                _preferences = ClientDashboardPreferenceSummary.Empty;
+                _preferenceError = null;
+                _isLoadingPreferences = false;
+                _preferenceLoadVersion++;
+                RefreshDashboardState();
+                StateHasChanged();
+            }
+        });
+    }
+
+    private void HandleDashboardStateChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            RefreshDashboardState();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadPreferencesAsync()
+    {
+        var version = Interlocked.Increment(ref _preferenceLoadVersion);
+        _isLoadingPreferences = true;
+        _preferenceError = null;
+        RefreshDashboardState();
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var activeBrokerTask = BrokerPreferenceApiClient.GetActiveAsync();
+            var brokersTask = BrokerPreferenceApiClient.GetAllAsync();
+            var savedChannelsTask = ChannelPreferenceApiClient.GetAllAsync();
+            var presetsTask = TopicPresetPreferenceApiClient.GetAllAsync();
+            var favoritesTask = FavoritePreferenceApiClient.GetFavoritesAsync();
+
+            await Task.WhenAll(activeBrokerTask, brokersTask, savedChannelsTask, presetsTask, favoritesTask);
+
+            if (version != _preferenceLoadVersion || !AuthSessionState.IsAuthenticated)
+            {
+                return;
+            }
+
+            _preferences = new ClientDashboardPreferenceSummary
+            {
+                ActiveBroker = activeBrokerTask.Result,
+                SavedBrokerCount = brokersTask.Result.Count,
+                SavedChannelCount = savedChannelsTask.Result.Count,
+                TopicPresetCount = presetsTask.Result.Count,
+                FavoriteCount = favoritesTask.Result.Count,
+                IsLoaded = true
+            };
+        }
+        catch (Exception exception)
+        {
+            if (version != _preferenceLoadVersion)
+            {
+                return;
+            }
+
+            _preferences = ClientDashboardPreferenceSummary.Empty;
+            _preferenceError = $"Loading dashboard preferences failed: {exception.Message}";
+        }
+        finally
+        {
+            if (version == _preferenceLoadVersion)
+            {
+                _isLoadingPreferences = false;
+                RefreshDashboardState();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private Task ReloadPreferencesAsync()
+    {
+        return LoadPreferencesAsync();
+    }
+
+    private void RefreshDashboardState()
+    {
+        _realtimeSnapshot = RealtimeClientState.Snapshot;
+        _vaultSnapshot = VaultSessionState.Snapshot;
+        _summary = DashboardSummaryBuilder.Build(
+            _realtimeSnapshot,
+            LiveMessageFeedService.Current,
+            DecryptedMessageStore.Current,
+            NodeProjectionStore.Current,
+            ChannelProjectionStore.Current);
+    }
+
     private static string DisplayValue(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? "Not set" : value;
-    }
-
-    private static string FormatPayloadSize(int? payloadSizeBytes)
-    {
-        return payloadSizeBytes.HasValue ? $"{payloadSizeBytes.Value} bytes" : "No traffic yet";
     }
 
     private static string FormatTimestamp(DateTimeOffset? value)
@@ -265,11 +690,5 @@
         return value.HasValue
             ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "Not available";
-    }
-
-    private void HandleRealtimeChanged()
-    {
-        _snapshot = RealtimeClientState.Snapshot;
-        InvokeAsync(StateHasChanged);
     }
 }
