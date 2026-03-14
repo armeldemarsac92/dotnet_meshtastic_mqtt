@@ -11,25 +11,28 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     private readonly AuthSessionState _authSessionState;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
-    private readonly RealtimePacketEnvelopeParser _packetEnvelopeParser;
     private readonly RealtimeClientState _realtimeClientState;
     private readonly RealtimeSessionApiClient _realtimeSessionApiClient;
+    private readonly RealtimePacketWorkerClient _realtimePacketWorkerClient;
+    private readonly RealtimePacketWorkerRequestFactory _realtimePacketWorkerRequestFactory;
     private DotNetObjectReference<BrowserRealtimeClient>? _objectReference;
 
     public BrowserRealtimeClient(
         AuthSessionState authSessionState,
         IJSRuntime jsRuntime,
         LiveMessageFeedService liveMessageFeedService,
-        RealtimePacketEnvelopeParser packetEnvelopeParser,
         RealtimeClientState realtimeClientState,
-        RealtimeSessionApiClient realtimeSessionApiClient)
+        RealtimeSessionApiClient realtimeSessionApiClient,
+        RealtimePacketWorkerClient realtimePacketWorkerClient,
+        RealtimePacketWorkerRequestFactory realtimePacketWorkerRequestFactory)
     {
         _authSessionState = authSessionState;
         _liveMessageFeedService = liveMessageFeedService;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
-        _packetEnvelopeParser = packetEnvelopeParser;
         _realtimeClientState = realtimeClientState;
         _realtimeSessionApiClient = realtimeSessionApiClient;
+        _realtimePacketWorkerClient = realtimePacketWorkerClient;
+        _realtimePacketWorkerRequestFactory = realtimePacketWorkerRequestFactory;
     }
 
     public RealtimeClientSnapshot Current => _realtimeClientState.Snapshot;
@@ -159,36 +162,53 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     }
 
     [JSInvokable]
-    public Task HandleMessageAsync(RealtimeMessageEvent messageEvent)
+    public async Task HandleMessageAsync(RealtimeMessageEvent messageEvent)
     {
-        if (!_packetEnvelopeParser.TryParse(messageEvent.PayloadBase64, out var envelope))
+        RealtimePacketWorkerResult processedPacket;
+
+        try
+        {
+            processedPacket = await _realtimePacketWorkerClient.ProcessAsync(
+                _realtimePacketWorkerRequestFactory.Create(messageEvent));
+        }
+        catch (Exception exception)
         {
             SetSnapshot(snapshot => snapshot with
             {
                 IsReady = true,
-                LastError = $"Ignoring malformed realtime packet envelope from {NormalizeText(messageEvent.Topic) ?? "(unknown topic)"}."
+                LastError = $"Ignoring realtime packet from {NormalizeText(messageEvent.Topic) ?? "(unknown topic)"}: {BuildConnectErrorMessage(exception)}"
             });
 
-            return Task.CompletedTask;
+            return;
         }
 
-        var receivedAtUtc = envelope!.ReceivedAtUtc == default
-            ? DateTimeOffset.UtcNow
-            : envelope.ReceivedAtUtc;
+        if (!processedPacket.IsSuccess || processedPacket.RawPacket is null)
+        {
+            SetSnapshot(snapshot => snapshot with
+            {
+                IsReady = true,
+                LastError = BuildPacketWorkerErrorMessage(messageEvent.Topic, processedPacket)
+            });
 
-        _liveMessageFeedService.RecordMessage(envelope, messageEvent.Topic);
+            return;
+        }
+
+        var rawPacket = processedPacket.RawPacket;
+        var receivedAtUtc = rawPacket.ReceivedAtUtc == default
+            ? DateTimeOffset.UtcNow
+            : rawPacket.ReceivedAtUtc;
+
+        _liveMessageFeedService.RecordMessage(rawPacket);
 
         SetSnapshot(snapshot => snapshot with
         {
             IsReady = true,
             MessageCount = snapshot.MessageCount + 1,
             LastError = null,
-            LastMessageTopic = NormalizeText(envelope.Topic),
-            LastPayloadSizeBytes = envelope.Payload.Length,
+            LastMessageTopic = NormalizeText(rawPacket.SourceTopic),
+            LastPayloadSizeBytes = rawPacket.PayloadSizeBytes,
             LastMessageReceivedAtUtc = receivedAtUtc
         });
-
-        return Task.CompletedTask;
     }
 
     [JSInvokable]
@@ -245,6 +265,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _objectReference?.Dispose();
+        await _realtimePacketWorkerClient.DisposeAsync();
 
         if (!_moduleTask.IsValueCreated)
         {
@@ -271,6 +292,23 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         }
 
         return exception.Message.Trim();
+    }
+
+    private static string BuildPacketWorkerErrorMessage(string? downstreamTopic, RealtimePacketWorkerResult result)
+    {
+        var topic = NormalizeText(downstreamTopic) ?? "(unknown topic)";
+
+        if (!string.IsNullOrWhiteSpace(result.ErrorDetail))
+        {
+            return $"Ignoring realtime packet from {topic}: {result.ErrorDetail.Trim()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.FailureClassification))
+        {
+            return $"Ignoring realtime packet from {topic}: {result.FailureClassification.Trim()}.";
+        }
+
+        return $"Ignoring realtime packet from {topic}.";
     }
 
     private Task<IJSObjectReference> GetModuleAsync()

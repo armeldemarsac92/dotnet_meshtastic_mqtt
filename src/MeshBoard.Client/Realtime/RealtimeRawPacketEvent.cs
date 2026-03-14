@@ -1,12 +1,12 @@
-namespace MeshBoard.Client.Messages;
+namespace MeshBoard.Client.Realtime;
 
-public sealed record LiveMessageEnvelope
+public sealed class RealtimeRawPacketEvent
 {
-    public string Id { get; init; } = Guid.NewGuid().ToString("N");
-
     public string WorkspaceId { get; init; } = string.Empty;
 
     public string BrokerServer { get; init; } = string.Empty;
+
+    public string SourceTopic { get; init; } = string.Empty;
 
     public string DownstreamTopic { get; init; } = string.Empty;
 
@@ -15,6 +15,4 @@ public sealed record LiveMessageEnvelope
     public int PayloadSizeBytes { get; init; }
 
     public DateTimeOffset ReceivedAtUtc { get; init; }
-
-    public string SourceTopic { get; init; } = string.Empty;
 }

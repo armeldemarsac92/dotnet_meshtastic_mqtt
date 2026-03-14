@@ -1,4 +1,4 @@
-using MeshBoard.Contracts.Realtime;
+using MeshBoard.Client.Realtime;
 
 namespace MeshBoard.Client.Messages;
 
@@ -25,27 +25,28 @@ public sealed class LiveMessageFeedService
         _state.SetSnapshot(new());
     }
 
-    public void RecordMessage(RealtimePacketEnvelope envelope, string downstreamTopic)
+    public void RecordMessage(RealtimeRawPacketEvent rawPacket)
     {
-        ArgumentNullException.ThrowIfNull(envelope);
+        ArgumentNullException.ThrowIfNull(rawPacket);
 
-        if (string.IsNullOrWhiteSpace(envelope.Topic))
+        if (string.IsNullOrWhiteSpace(rawPacket.SourceTopic))
         {
             throw new InvalidOperationException("A source topic is required.");
         }
 
         var current = _state.Snapshot;
-        var receivedAtUtc = envelope.ReceivedAtUtc == default
+        var receivedAtUtc = rawPacket.ReceivedAtUtc == default
             ? DateTimeOffset.UtcNow
-            : envelope.ReceivedAtUtc;
+            : rawPacket.ReceivedAtUtc;
         var nextMessage = new LiveMessageEnvelope
         {
-            BrokerServer = envelope.BrokerServer?.Trim() ?? string.Empty,
-            DownstreamTopic = downstreamTopic?.Trim() ?? string.Empty,
-            PayloadBase64 = Convert.ToBase64String(envelope.Payload),
-            PayloadSizeBytes = envelope.Payload.Length,
+            WorkspaceId = rawPacket.WorkspaceId?.Trim() ?? string.Empty,
+            BrokerServer = rawPacket.BrokerServer?.Trim() ?? string.Empty,
+            DownstreamTopic = rawPacket.DownstreamTopic?.Trim() ?? string.Empty,
+            PayloadBase64 = rawPacket.PayloadBase64?.Trim() ?? string.Empty,
+            PayloadSizeBytes = rawPacket.PayloadSizeBytes,
             ReceivedAtUtc = receivedAtUtc,
-            SourceTopic = envelope.Topic.Trim()
+            SourceTopic = rawPacket.SourceTopic.Trim()
         };
 
         var messages = current.Messages

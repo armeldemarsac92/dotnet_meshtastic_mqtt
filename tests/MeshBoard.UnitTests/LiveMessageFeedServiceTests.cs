@@ -1,5 +1,5 @@
 using MeshBoard.Client.Messages;
-using MeshBoard.Contracts.Realtime;
+using MeshBoard.Client.Realtime;
 
 namespace MeshBoard.UnitTests;
 
@@ -9,24 +9,27 @@ public sealed class LiveMessageFeedServiceTests
     public void RecordMessage_ShouldUseParsedEnvelopeFields()
     {
         var service = new LiveMessageFeedService(new LiveMessageFeedState());
-        var envelope = new RealtimePacketEnvelope
+        var rawPacket = new RealtimeRawPacketEvent
         {
             WorkspaceId = "workspace-a",
             BrokerServer = "broker.meshboard.test",
-            Topic = "msh/US/2/e/LongFast/!abc",
-            Payload = [10, 20, 30],
+            SourceTopic = "msh/US/2/e/LongFast/!abc",
+            DownstreamTopic = "meshboard/workspaces/workspace-a/live/packets",
+            PayloadBase64 = Convert.ToBase64String([10, 20, 30]),
+            PayloadSizeBytes = 3,
             ReceivedAtUtc = DateTimeOffset.Parse("2026-03-14T14:00:00Z")
         };
 
-        service.RecordMessage(envelope, "meshboard/workspaces/workspace-a/live/packets");
+        service.RecordMessage(rawPacket);
 
         var message = Assert.Single(service.Current.Messages);
+        Assert.Equal("workspace-a", message.WorkspaceId);
         Assert.Equal("broker.meshboard.test", message.BrokerServer);
         Assert.Equal("meshboard/workspaces/workspace-a/live/packets", message.DownstreamTopic);
         Assert.Equal("msh/US/2/e/LongFast/!abc", message.SourceTopic);
         Assert.Equal(3, message.PayloadSizeBytes);
         Assert.Equal(Convert.ToBase64String([10, 20, 30]), message.PayloadBase64);
-        Assert.Equal(envelope.ReceivedAtUtc, message.ReceivedAtUtc);
+        Assert.Equal(rawPacket.ReceivedAtUtc, message.ReceivedAtUtc);
     }
 
     [Fact]
@@ -37,15 +40,16 @@ public sealed class LiveMessageFeedServiceTests
         for (var index = 0; index < 110; index++)
         {
             service.RecordMessage(
-                new RealtimePacketEnvelope
+                new RealtimeRawPacketEvent
                 {
                     WorkspaceId = "workspace-a",
                     BrokerServer = "broker.meshboard.test",
-                    Topic = $"msh/US/2/e/LongFast/{index}",
-                    Payload = [(byte)index],
+                    SourceTopic = $"msh/US/2/e/LongFast/{index}",
+                    DownstreamTopic = "meshboard/workspaces/workspace-a/live/packets",
+                    PayloadBase64 = Convert.ToBase64String([(byte)index]),
+                    PayloadSizeBytes = 1,
                     ReceivedAtUtc = DateTimeOffset.UnixEpoch.AddSeconds(index)
-                },
-                "meshboard/workspaces/workspace-a/live/packets");
+                });
         }
 
         Assert.Equal(100, service.Current.Messages.Count);
