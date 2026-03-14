@@ -1,10 +1,4 @@
 @page "/compose"
-@implements IAsyncDisposable
-@inject IMessageComposerService MessageComposerService
-@inject ISendCapabilityService SendCapabilityService
-@inject IWorkspaceContextAccessor WorkspaceContextAccessor
-@inject ProjectionChangeNotifier ProjectionChangeNotifier
-@inject ServerSelectionNotifier ServerSelectionNotifier
 
 <PageTitle>Compose</PageTitle>
 
@@ -15,230 +9,34 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Message composition</h1>
         </div>
         <p class="max-w-5xl text-base leading-8 text-cinder-800">
-            Send public or private text messages when broker settings and connection state allow it.
+            Compose is intentionally deferred while the browser-first realtime path replaces the legacy server runtime.
         </p>
     </header>
 
     <section class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <article class="liquid-panel rounded-[1.6rem] p-6">
-            <h2 class="font-display text-3xl text-cinder-950">Send Capability</h2>
-            <div class="mt-4 inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] @GetCapabilityBadgeClass()">
-                @(_capabilityStatus.IsEnabled ? "Enabled" : "Blocked")
-            </div>
-
-            @if (_capabilityStatus.BlockingReasons.Count == 0)
-            {
-                <p class="mt-4 text-cinder-800/82">
-                    Send is available. Fill in the message and publish when ready.
-                </p>
-            }
-            else
-            {
-                <ul class="mt-4 list-disc space-y-2 pl-5 text-cinder-800/85">
-                    @foreach (var reason in _capabilityStatus.BlockingReasons)
-                    {
-                        <li>@reason</li>
-                    }
-                </ul>
-            }
-
-            <div class="liquid-subpanel mt-6 space-y-4 rounded-[1.25rem] p-5">
-                <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Compose text message</h3>
-
-                <label class="block space-y-2">
-                    <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Private destination (optional)</span>
-                    <InputText @bind-Value="_composeRequest.ToNodeId"
-                               class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
-                               placeholder="!a1b2c3d4" />
-                </label>
-
-                <label class="block space-y-2">
-                    <span class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Message</span>
-                    <InputTextArea @bind-Value="_composeRequest.Text"
-                                   rows="4"
-                                   class="liquid-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
-                                   placeholder="Type a message to publish to Meshtastic downlink..." />
-                </label>
-
-                <button @onclick="SendAsync"
-                        disabled="@(!_capabilityStatus.IsEnabled || _isSending)"
-                        class="liquid-button liquid-button-accent rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60">
-                    @(_isSending ? "Sending..." : "Send")
-                </button>
-
-                @if (!string.IsNullOrWhiteSpace(_composeStatusMessage))
-                {
-                    <p class="text-sm text-cinder-800/82">@_composeStatusMessage</p>
-                }
-            </div>
+            <h2 class="font-display text-3xl text-cinder-950">Deferred</h2>
+            <p class="mt-4 text-cinder-800/82">
+                The legacy server-side send path is being retired. This page stays read-only until the future outbound
+                design is implemented on top of the browser vault and worker contracts.
+            </p>
+            <ul class="mt-6 list-disc space-y-2 pl-5 text-cinder-800/85">
+                <li>No plaintext downlink flow remains active in the Blazor Server UI.</li>
+                <li>Browser-local keys and worker contracts are being kept compatible with a future outbound design.</li>
+                <li>Broker profiles, presets, favorites, and saved channels now live in the new browser-first flow.</li>
+            </ul>
         </article>
 
         <article class="liquid-panel rounded-[1.6rem] p-6">
-            <h2 class="font-display text-3xl text-cinder-950">Current Context</h2>
+            <h2 class="font-display text-3xl text-cinder-950">Migration Notes</h2>
             <dl class="mt-4 grid gap-3 sm:grid-cols-[9rem_1fr] text-sm">
-                <dt class="text-cinder-800/70">Broker</dt>
-                <dd class="text-cinder-950">@_capabilityStatus.Host:@_capabilityStatus.Port</dd>
-                <dt class="text-cinder-800/70">Connected</dt>
-                <dd class="text-cinder-950">@(_capabilityStatus.IsBrokerConnected ? "Yes" : "No")</dd>
-                <dt class="text-cinder-800/70">Downlink topic</dt>
-                <dd class="text-cinder-950"><code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@(_capabilityStatus.DownlinkTopic == string.Empty ? "(not configured)" : _capabilityStatus.DownlinkTopic)</code></dd>
+                <dt class="text-cinder-800/70">Current state</dt>
+                <dd class="text-cinder-950">Send is disabled in the legacy server-rendered application.</dd>
+                <dt class="text-cinder-800/70">Target path</dt>
+                <dd class="text-cinder-950">Browser client, local key vault, worker-side crypto, and broker-issued realtime sessions.</dd>
+                <dt class="text-cinder-800/70">Next step</dt>
+                <dd class="text-cinder-950">Compose will return only after the outbound trust model has a dedicated ADR and implementation slice.</dd>
             </dl>
-
-            <h3 class="mt-6 text-sm font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Advisories</h3>
-            <ul class="mt-3 list-disc space-y-2 pl-5 text-cinder-800/85">
-                @foreach (var advisory in _capabilityStatus.Advisories)
-                {
-                    <li>@advisory</li>
-                }
-            </ul>
         </article>
     </section>
 </div>
-
-@code {
-    private static readonly TimeSpan FallbackRefreshInterval = TimeSpan.FromSeconds(60);
-    private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private SendCapabilityStatus _capabilityStatus = new();
-    private readonly ComposeTextMessageRequest _composeRequest = new();
-    private CancellationTokenSource? _realtimeRefreshDebounceCancellationTokenSource;
-    private bool _isSending;
-    private string? _composeStatusMessage;
-    private Task? _refreshTask;
-
-    protected override async Task OnInitializedAsync()
-    {
-        ProjectionChangeNotifier.Changed += HandleProjectionChangedAsync;
-        ServerSelectionNotifier.Changed += HandleServerSelectionChangedAsync;
-        await RefreshStatusAsync();
-        _refreshTask = RefreshAsync(_cancellationTokenSource.Token);
-    }
-
-    public ValueTask DisposeAsync()
-    {
-        ProjectionChangeNotifier.Changed -= HandleProjectionChangedAsync;
-        ServerSelectionNotifier.Changed -= HandleServerSelectionChangedAsync;
-        _cancellationTokenSource.Cancel();
-        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
-        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
-        _cancellationTokenSource.Dispose();
-        return ValueTask.CompletedTask;
-    }
-
-    private async Task RefreshAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var timer = new PeriodicTimer(FallbackRefreshInterval);
-
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-            {
-                await RefreshStatusAsync();
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-    }
-
-    private async Task RefreshStatusAsync()
-    {
-        try
-        {
-            _capabilityStatus = await SendCapabilityService.GetStatus(_cancellationTokenSource.Token);
-        }
-        catch (OperationCanceledException) when (_cancellationTokenSource.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
-            _capabilityStatus = new SendCapabilityStatus
-            {
-                BlockingReasons = [$"Failed to load send capability: {exception.Message}"]
-            };
-        }
-    }
-
-    private string GetCapabilityBadgeClass()
-    {
-        return _capabilityStatus.IsEnabled
-            ? "bg-signal-500/12 text-signal-600"
-            : "bg-cinder-900 text-white";
-    }
-
-    private Task HandleServerSelectionChangedAsync(string workspaceId)
-    {
-        if (!string.Equals(workspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal))
-        {
-            return Task.CompletedTask;
-        }
-
-        return ScheduleRealtimeRefreshAsync();
-    }
-
-    private Task HandleProjectionChangedAsync(ProjectionChangeEvent change)
-    {
-        if (!IsRelevantProjectionChange(change))
-        {
-            return Task.CompletedTask;
-        }
-
-        return ScheduleRealtimeRefreshAsync();
-    }
-
-    private bool IsRelevantProjectionChange(ProjectionChangeEvent change)
-    {
-        return string.Equals(change.WorkspaceId, WorkspaceContextAccessor.GetWorkspaceId(), StringComparison.Ordinal) &&
-            change.Kind == ProjectionChangeKind.RuntimeStatusChanged;
-    }
-
-    private async Task ScheduleRealtimeRefreshAsync()
-    {
-        _realtimeRefreshDebounceCancellationTokenSource?.Cancel();
-        _realtimeRefreshDebounceCancellationTokenSource?.Dispose();
-
-        var debounceCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_cancellationTokenSource.Token);
-        _realtimeRefreshDebounceCancellationTokenSource = debounceCancellationTokenSource;
-
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(300), debounceCancellationTokenSource.Token);
-            await RefreshStatusAsync();
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (OperationCanceledException) when (debounceCancellationTokenSource.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            if (ReferenceEquals(_realtimeRefreshDebounceCancellationTokenSource, debounceCancellationTokenSource))
-            {
-                _realtimeRefreshDebounceCancellationTokenSource = null;
-            }
-
-            debounceCancellationTokenSource.Dispose();
-        }
-    }
-
-    private async Task SendAsync()
-    {
-        _isSending = true;
-        _composeStatusMessage = null;
-
-        try
-        {
-            var result = await MessageComposerService.SendTextMessage(_composeRequest, _cancellationTokenSource.Token);
-            _composeStatusMessage = $"{result.StatusMessage} Topic: {result.Topic}";
-            _composeRequest.Text = string.Empty;
-        }
-        catch (Exception exception)
-        {
-            _composeStatusMessage = exception.Message;
-        }
-        finally
-        {
-            _isSending = false;
-            await RefreshStatusAsync();
-        }
-    }
-}
