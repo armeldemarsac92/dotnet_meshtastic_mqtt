@@ -102,6 +102,26 @@ test("processPacketRequest returns decrypted payload metadata when a matching ke
   assert.equal(result.decodedPacket?.destinationNodeNumber, 1234);
 });
 
+test("processPacketRequest returns decoded packet metadata for direct decoded mesh payloads", async () => {
+  const packetBytes = createDecodedMeshPacket({
+    fromNodeNumber: 777,
+    packetId: 91,
+    dataBytes: encodeDataMessage()
+  });
+
+  const result = await processPacketRequest(
+    createWorkerRequest("msh/US/2/e/LongFast/!abcd1234", packetBytes),
+    normalizeKeyRecords([]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decryptResultClassification, workerConstants.decryptResultClassifications.notAttempted);
+  assert.equal(result.failureClassification, null);
+  assert.equal(result.rawPacket?.isEncrypted, false);
+  assert.equal(result.rawPacket?.decryptionAttempted, false);
+  assert.equal(result.decodedPacket?.packetType, "Text Message");
+  assert.equal(result.decodedPacket?.payloadPreview, "hello mesh");
+});
+
 test("processPacketRequest returns unsupported port classification when the data wrapper is valid but unmapped", async () => {
   const topic = "msh/US/2/e/LongFast/!abcd1234";
   const keyBytes = new Uint8Array([0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01]);
@@ -186,6 +206,16 @@ function encodeMeshPacket({ fromNodeNumber, packetId, encryptedBytes }) {
     encodeVarint(fromNodeNumber),
     encodeTag(5, 2),
     encodeLengthDelimited(encryptedBytes),
+    encodeTag(6, 0),
+    encodeVarint(packetId));
+}
+
+function createDecodedMeshPacket({ fromNodeNumber, packetId, dataBytes }) {
+  return concatBytes(
+    encodeTag(1, 0),
+    encodeVarint(fromNodeNumber),
+    encodeTag(4, 2),
+    encodeLengthDelimited(dataBytes),
     encodeTag(6, 0),
     encodeVarint(packetId));
 }
