@@ -1,5 +1,6 @@
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Messages;
+using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Services;
 using MeshBoard.Contracts.Realtime;
 using Microsoft.JSInterop;
@@ -12,6 +13,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
+    private readonly NodeProjectionStore _nodeProjectionStore;
     private readonly RealtimeClientState _realtimeClientState;
     private readonly RealtimeSessionApiClient _realtimeSessionApiClient;
     private readonly RealtimePacketWorkerClient _realtimePacketWorkerClient;
@@ -23,6 +25,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         DecryptedMessageStore decryptedMessageStore,
         IJSRuntime jsRuntime,
         LiveMessageFeedService liveMessageFeedService,
+        NodeProjectionStore nodeProjectionStore,
         RealtimeClientState realtimeClientState,
         RealtimeSessionApiClient realtimeSessionApiClient,
         RealtimePacketWorkerClient realtimePacketWorkerClient,
@@ -32,6 +35,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
+        _nodeProjectionStore = nodeProjectionStore;
         _realtimeClientState = realtimeClientState;
         _realtimeSessionApiClient = realtimeSessionApiClient;
         _realtimePacketWorkerClient = realtimePacketWorkerClient;
@@ -203,6 +207,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
 
         _liveMessageFeedService.RecordMessage(rawPacket, processedPacket.DecodedPacket);
         _decryptedMessageStore.Project(processedPacket);
+        _nodeProjectionStore.Project(processedPacket);
 
         SetSnapshot(snapshot => snapshot with
         {

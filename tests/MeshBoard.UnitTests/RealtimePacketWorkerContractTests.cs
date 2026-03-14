@@ -75,7 +75,16 @@ public sealed class RealtimePacketWorkerContractTests
                 PayloadSizeBytes = 10,
                 PayloadPreview = "hello mesh",
                 SourceNodeNumber = 1234,
-                DestinationNodeNumber = uint.MaxValue
+                DestinationNodeNumber = uint.MaxValue,
+                NodeProjection = new RealtimeNodeProjectionEvent
+                {
+                    NodeId = "!000004d2",
+                    NodeNumber = 1234,
+                    LastHeardAtUtc = DateTimeOffset.Parse("2026-03-14T15:00:00Z"),
+                    LastHeardChannel = "US/LongFast",
+                    PacketType = "Text Message",
+                    PayloadPreview = "hello mesh"
+                }
             }
         };
 
@@ -86,6 +95,8 @@ public sealed class RealtimePacketWorkerContractTests
         Assert.Equal("Text Message", result.DecodedPacket.PacketType);
         Assert.Equal("hello mesh", result.DecodedPacket.PayloadPreview);
         Assert.Equal((uint)1234, result.DecodedPacket.SourceNodeNumber);
+        Assert.Equal("!000004d2", result.DecodedPacket.NodeProjection?.NodeId);
+        Assert.Equal("US/LongFast", result.DecodedPacket.NodeProjection?.LastHeardChannel);
     }
 
     [Fact]

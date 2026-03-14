@@ -2,6 +2,7 @@ using System.Net;
 using MeshBoard.Api.SDK.API;
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Messages;
+using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
 using MeshBoard.Client.Vault;
 using MeshBoard.Contracts.Authentication;
@@ -17,6 +18,7 @@ public sealed class AuthApiClient
     private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly LocalVaultService _localVaultService;
+    private readonly NodeProjectionStore _nodeProjectionStore;
 
     public AuthApiClient(
         IAuthApi authApi,
@@ -25,7 +27,8 @@ public sealed class AuthApiClient
         BrowserRealtimeClient browserRealtimeClient,
         DecryptedMessageStore decryptedMessageStore,
         LiveMessageFeedService liveMessageFeedService,
-        LocalVaultService localVaultService)
+        LocalVaultService localVaultService,
+        NodeProjectionStore nodeProjectionStore)
     {
         _authApi = authApi;
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
@@ -34,6 +37,7 @@ public sealed class AuthApiClient
         _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
         _localVaultService = localVaultService;
+        _nodeProjectionStore = nodeProjectionStore;
     }
 
     public async Task<AuthenticatedUserResponse?> LoginAsync(
@@ -95,6 +99,7 @@ public sealed class AuthApiClient
             _authSessionState.Clear();
             _decryptedMessageStore.Clear();
             _liveMessageFeedService.Clear();
+            _nodeProjectionStore.Clear();
         }
     }
 

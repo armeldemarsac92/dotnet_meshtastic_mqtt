@@ -2,6 +2,7 @@ using MeshBoard.Api.SDK.Abstractions;
 using MeshBoard.Api.SDK.DI;
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Messages;
+using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
 using MeshBoard.Client.Services;
 using MeshBoard.Client.Vault;
@@ -39,6 +40,8 @@ public class Program
         builder.Services.AddScoped<FavoritePreferenceApiClient>();
         builder.Services.AddScoped<LiveMessageFeedService>();
         builder.Services.AddScoped<LiveMessageFeedState>();
+        builder.Services.AddScoped<NodeProjectionStore>();
+        builder.Services.AddScoped<NodeProjectionState>();
         builder.Services.AddScoped<LocalVaultService>();
         builder.Services.AddScoped<RealtimeClientState>();
         builder.Services.AddScoped<IRealtimePacketWorkerKeyRingClient>(sp => sp.GetRequiredService<RealtimePacketWorkerClient>());

@@ -210,7 +210,7 @@ export async function processPacketRequest(request, currentKeyRecords) {
       continue;
     }
 
-    const decodedPacketOutcome = tryCreateDecodedPacketEvent(decryptedBytes);
+    const decodedPacketOutcome = tryCreateDecodedPacketEvent(rawPacket, decryptedBytes);
 
     if (!decodedPacketOutcome) {
       sawProtobufParseFailure = true;
@@ -313,7 +313,7 @@ function createSuccess(
 }
 
 function createDecodedPacketResult(rawPacket, decodedBytes, decryptResultClassification) {
-  const decodedPacketOutcome = tryCreateDecodedPacketEvent(decodedBytes);
+  const decodedPacketOutcome = tryCreateDecodedPacketEvent(rawPacket, decodedBytes);
 
   if (!decodedPacketOutcome) {
     rawPacket.failureClassification = failureKinds.protobufParseFailure;
@@ -632,7 +632,7 @@ function tryParseMeshPacket(payloadBytes) {
   };
 }
 
-function tryCreateDecodedPacketEvent(decodedBytes) {
+function tryCreateDecodedPacketEvent(rawPacket, decodedBytes) {
   const dataMessage = parseDataMessage(decodedBytes);
   if (!dataMessage) {
     return null;
@@ -646,6 +646,10 @@ function tryCreateDecodedPacketEvent(decodedBytes) {
     };
   }
 
+  const nodeProjectionOutcome = tryCreateNodeProjectionEvent(rawPacket, dataMessage, portMetadata);
+  const payloadPreview = nodeProjectionOutcome?.payloadPreview ??
+    buildPayloadPreview(portMetadata, dataMessage.payloadBytes);
+
   return {
     kind: "supported",
     decodedPacket: {
@@ -654,9 +658,10 @@ function tryCreateDecodedPacketEvent(decodedBytes) {
       packetType: portMetadata.packetType,
       payloadBase64: bytesToBase64(dataMessage.payloadBytes),
       payloadSizeBytes: dataMessage.payloadBytes.length,
-      payloadPreview: buildPayloadPreview(portMetadata, dataMessage.payloadBytes),
+      payloadPreview,
       sourceNodeNumber: dataMessage.sourceNodeNumber,
-      destinationNodeNumber: dataMessage.destinationNodeNumber
+      destinationNodeNumber: dataMessage.destinationNodeNumber,
+      nodeProjection: nodeProjectionOutcome?.nodeProjection ?? null
     }
   };
 }
@@ -804,6 +809,499 @@ function parseDataMessage(payloadBytes) {
   };
 }
 
+function tryCreateNodeProjectionEvent(rawPacket, dataMessage, portMetadata) {
+  if (!rawPacket || typeof rawPacket !== "object" || !dataMessage || typeof dataMessage !== "object") {
+    return null;
+  }
+
+  const lastHeardAtUtc = normalizeText(rawPacket.receivedAtUtc) ?? new Date().toISOString();
+  const nodeNumber = dataMessage.sourceNodeNumber ?? rawPacket.fromNodeNumber ?? null;
+  const nodeId = normalizeNodeIdFromNumber(nodeNumber);
+
+  if (!nodeId) {
+    return null;
+  }
+
+  const projection = {
+    nodeId,
+    nodeNumber,
+    lastHeardAtUtc,
+    lastHeardChannel: tryResolveChannelKeyFromTopic(rawPacket.sourceTopic),
+    lastTextMessageAtUtc: dataMessage.portNumValue === portNums.textMessageApp
+      ? lastHeardAtUtc
+      : null,
+    packetType: portMetadata.packetType,
+    payloadPreview: null,
+    shortName: null,
+    longName: null,
+    lastKnownLatitude: null,
+    lastKnownLongitude: null,
+    batteryLevelPercent: null,
+    voltage: null,
+    channelUtilization: null,
+    airUtilTx: null,
+    uptimeSeconds: null,
+    temperatureCelsius: null,
+    relativeHumidity: null,
+    barometricPressure: null
+  };
+
+  let payloadPreview = dataMessage.portNumValue === portNums.textMessageApp
+    ? decodeTextPayload(dataMessage.payloadBytes)
+    : null;
+
+  switch (dataMessage.portNumValue) {
+    case portNums.nodeinfoApp:
+      {
+        const nodeInfo = parseNodeInfoPayload(dataMessage.payloadBytes);
+        if (nodeInfo) {
+          projection.nodeId = nodeInfo.nodeId ?? projection.nodeId;
+          projection.shortName = nodeInfo.shortName;
+          projection.longName = nodeInfo.longName;
+          payloadPreview = buildNodeInfoPreview(nodeInfo);
+        }
+      }
+      break;
+    case portNums.positionApp:
+      {
+        const position = parsePositionPayload(dataMessage.payloadBytes);
+        if (position) {
+          projection.lastKnownLatitude = position.latitude;
+          projection.lastKnownLongitude = position.longitude;
+          payloadPreview = buildPositionPreview(position);
+        }
+      }
+      break;
+    case portNums.telemetryApp:
+      {
+        const telemetry = parseTelemetryPayload(dataMessage.payloadBytes);
+        if (telemetry) {
+          projection.batteryLevelPercent = telemetry.batteryLevelPercent;
+          projection.voltage = telemetry.voltage;
+          projection.channelUtilization = telemetry.channelUtilization;
+          projection.airUtilTx = telemetry.airUtilTx;
+          projection.uptimeSeconds = telemetry.uptimeSeconds;
+          projection.temperatureCelsius = telemetry.temperatureCelsius;
+          projection.relativeHumidity = telemetry.relativeHumidity;
+          projection.barometricPressure = telemetry.barometricPressure;
+          payloadPreview = telemetry.payloadPreview;
+        }
+      }
+      break;
+  }
+
+  projection.payloadPreview = payloadPreview ??
+    buildPayloadPreview(portMetadata, dataMessage.payloadBytes);
+
+  return {
+    nodeProjection: projection,
+    payloadPreview: projection.payloadPreview
+  };
+}
+
+function parseNodeInfoPayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let nodeId = null;
+  let shortName = null;
+  let longName = null;
+  let hasKnownField = false;
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+      case 2:
+      case 3:
+        if (wireType !== 2) {
+          return null;
+        }
+
+        {
+          const field = readLengthDelimited(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const fieldText = decodeProtoString(field.value);
+
+          if (fieldNumber === 1) {
+            nodeId = normalizeNodeId(fieldText);
+          } else if (fieldNumber === 2) {
+            longName = fieldText;
+          } else {
+            shortName = fieldText;
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  return {
+    nodeId,
+    shortName,
+    longName
+  };
+}
+
+function parsePositionPayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let latitude = null;
+  let longitude = null;
+  let hasKnownField = false;
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+      case 2:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readSFixed32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const coordinate = field.value / 10000000;
+
+          if (fieldNumber === 1) {
+            latitude = coordinate;
+          } else {
+            longitude = coordinate;
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  if (latitude === 0 && longitude === 0) {
+    return {
+      latitude: null,
+      longitude: null
+    };
+  }
+
+  return {
+    latitude,
+    longitude
+  };
+}
+
+function parseTelemetryPayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let deviceMetricsBytes = null;
+  let environmentMetricsBytes = null;
+  let hasKnownField = false;
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 2:
+      case 8:
+        if (wireType !== 2) {
+          return null;
+        }
+
+        {
+          const field = readLengthDelimited(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+
+          if (fieldNumber === 2) {
+            deviceMetricsBytes = field.value;
+          } else {
+            environmentMetricsBytes = field.value;
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  const deviceMetrics = parseDeviceMetrics(deviceMetricsBytes);
+  const environmentMetrics = parseEnvironmentMetrics(environmentMetricsBytes);
+  const payloadPreview = buildTelemetryPreview(deviceMetrics, environmentMetrics);
+
+  return {
+    batteryLevelPercent: deviceMetrics?.batteryLevelPercent ?? null,
+    voltage: deviceMetrics?.voltage ?? null,
+    channelUtilization: deviceMetrics?.channelUtilization ?? null,
+    airUtilTx: deviceMetrics?.airUtilTx ?? null,
+    uptimeSeconds: deviceMetrics?.uptimeSeconds ?? null,
+    temperatureCelsius: environmentMetrics?.temperatureCelsius ?? null,
+    relativeHumidity: environmentMetrics?.relativeHumidity ?? null,
+    barometricPressure: environmentMetrics?.barometricPressure ?? null,
+    payloadPreview
+  };
+}
+
+function parseDeviceMetrics(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let hasKnownField = false;
+  let batteryLevelPercent = null;
+  let voltage = null;
+  let channelUtilization = null;
+  let airUtilTx = null;
+  let uptimeSeconds = null;
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+      case 12:
+        if (wireType !== 0) {
+          return null;
+        }
+
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const numericValue = numberOrNull(field.value);
+
+          if (fieldNumber === 1) {
+            batteryLevelPercent = numericValue;
+          } else {
+            uptimeSeconds = numericValue;
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      case 2:
+      case 3:
+      case 4:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readFloat32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+
+          if (fieldNumber === 2) {
+            voltage = field.value;
+          } else if (fieldNumber === 3) {
+            channelUtilization = field.value;
+          } else {
+            airUtilTx = field.value;
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  const normalizedBatteryLevelPercent = typeof batteryLevelPercent === "number" &&
+      Number.isFinite(batteryLevelPercent)
+    ? (batteryLevelPercent === 0 && (voltage === null || voltage === 0) ? null : batteryLevelPercent)
+    : null;
+
+  return {
+    batteryLevelPercent: normalizedBatteryLevelPercent,
+    voltage: normalizeNumericMetric(voltage),
+    channelUtilization: normalizeNumericMetric(channelUtilization),
+    airUtilTx: normalizeNumericMetric(airUtilTx),
+    uptimeSeconds: normalizeNumericMetric(uptimeSeconds)
+  };
+}
+
+function parseEnvironmentMetrics(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let hasKnownField = false;
+  let temperatureCelsius = null;
+  let relativeHumidity = null;
+  let barometricPressure = null;
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+      case 2:
+      case 5:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readFloat32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+
+          if (fieldNumber === 1) {
+            temperatureCelsius = field.value;
+          } else if (fieldNumber === 2) {
+            relativeHumidity = field.value;
+          } else {
+            barometricPressure = field.value;
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  return {
+    temperatureCelsius: normalizeNumericMetric(temperatureCelsius),
+    relativeHumidity: normalizeNumericMetric(relativeHumidity),
+    barometricPressure: normalizeNumericMetric(barometricPressure)
+  };
+}
+
 function parseEnvelope(payloadBase64) {
   const payloadBytes = base64ToBytes(payloadBase64);
   if (!payloadBytes) {
@@ -857,6 +1355,30 @@ function readFixed32(bytes, offset) {
   const view = new DataView(bytes.buffer, bytes.byteOffset + offset, 4);
   return {
     value: view.getUint32(0, true),
+    nextOffset: offset + 4
+  };
+}
+
+function readSFixed32(bytes, offset) {
+  if (!(bytes instanceof Uint8Array) || offset < 0 || offset + 4 > bytes.length) {
+    return null;
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset + offset, 4);
+  return {
+    value: view.getInt32(0, true),
+    nextOffset: offset + 4
+  };
+}
+
+function readFloat32(bytes, offset) {
+  if (!(bytes instanceof Uint8Array) || offset < 0 || offset + 4 > bytes.length) {
+    return null;
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset + offset, 4);
+  return {
+    value: view.getFloat32(0, true),
     nextOffset: offset + 4
   };
 }
@@ -958,6 +1480,82 @@ function buildPayloadPreview(portMetadata, payloadBytes) {
   return `${portMetadata.packetType} payload (${payloadBytes.length} bytes)`;
 }
 
+function buildNodeInfoPreview(nodeInfo) {
+  if (!nodeInfo || typeof nodeInfo !== "object") {
+    return "Node info update";
+  }
+
+  if (nodeInfo.longName && nodeInfo.shortName) {
+    return `Node info: ${nodeInfo.longName} (${nodeInfo.shortName})`;
+  }
+
+  if (nodeInfo.longName) {
+    return `Node info: ${nodeInfo.longName}`;
+  }
+
+  if (nodeInfo.shortName) {
+    return `Node info: ${nodeInfo.shortName}`;
+  }
+
+  return "Node info update";
+}
+
+function buildPositionPreview(position) {
+  if (!position || typeof position !== "object" || position.latitude === null || position.longitude === null) {
+    return "Position update";
+  }
+
+  return `Position: ${position.latitude.toFixed(5)}, ${position.longitude.toFixed(5)}`;
+}
+
+function buildTelemetryPreview(deviceMetrics, environmentMetrics) {
+  const parts = [];
+
+  if (deviceMetrics) {
+    if (deviceMetrics.batteryLevelPercent !== null) {
+      parts.push(`${deviceMetrics.batteryLevelPercent}% battery`);
+    }
+
+    if (deviceMetrics.voltage !== null) {
+      parts.push(`${deviceMetrics.voltage.toFixed(2)}V`);
+    }
+
+    if (deviceMetrics.channelUtilization !== null) {
+      parts.push(`${deviceMetrics.channelUtilization.toFixed(1)}% channel`);
+    }
+
+    if (deviceMetrics.airUtilTx !== null) {
+      parts.push(`${deviceMetrics.airUtilTx.toFixed(1)}% TX`);
+    }
+
+    if (deviceMetrics.uptimeSeconds !== null) {
+      parts.push(`uptime ${formatDuration(deviceMetrics.uptimeSeconds)}`);
+    }
+  }
+
+  if (parts.length > 0) {
+    return `Device metrics: ${parts.join(", ")}`;
+  }
+
+  if (environmentMetrics) {
+    if (environmentMetrics.temperatureCelsius !== null) {
+      parts.push(`${environmentMetrics.temperatureCelsius.toFixed(1)}C`);
+    }
+
+    if (environmentMetrics.relativeHumidity !== null) {
+      parts.push(`${environmentMetrics.relativeHumidity.toFixed(1)}% RH`);
+    }
+
+    if (environmentMetrics.barometricPressure !== null) {
+      parts.push(`${environmentMetrics.barometricPressure.toFixed(1)} hPa`);
+    }
+  }
+
+  return parts.length > 0
+    ? `Environment metrics: ${parts.join(", ")}`
+    : "Telemetry update";
+}
+
 function decodeTextPayload(payloadBytes) {
   if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
     return "Text message payload (0 bytes)";
@@ -996,6 +1594,96 @@ function getPortMetadata(portNumValue) {
         packetType: metadata.packetType
       }
     : null;
+}
+
+function tryResolveChannelKeyFromTopic(sourceTopic) {
+  const normalizedTopic = normalizeText(sourceTopic);
+  if (!normalizedTopic) {
+    return null;
+  }
+
+  const segments = normalizedTopic
+    .split("/")
+    .map(segment => segment.trim())
+    .filter(Boolean);
+
+  if (segments.length < 5 || !equalsIgnoreCase(segments[0], "msh")) {
+    return null;
+  }
+
+  const region = normalizeText(segments[1]);
+  const channel = normalizeText(segments[4]);
+
+  if (!region || !channel || channel === "#" || channel === "+") {
+    return null;
+  }
+
+  return `${region}/${channel}`;
+}
+
+function normalizeNodeId(value) {
+  const normalizedValue = normalizeText(value);
+  if (!normalizedValue) {
+    return null;
+  }
+
+  if (normalizedValue.startsWith("!")) {
+    return normalizedValue.toLowerCase();
+  }
+
+  if (normalizedValue.startsWith("0x")) {
+    const numericValue = Number.parseInt(normalizedValue.slice(2), 16);
+    return Number.isFinite(numericValue) ? normalizeNodeIdFromNumber(numericValue) : normalizedValue;
+  }
+
+  const numericValue = Number.parseInt(normalizedValue, 10);
+  return Number.isFinite(numericValue) ? normalizeNodeIdFromNumber(numericValue) : normalizedValue;
+}
+
+function normalizeNodeIdFromNumber(value) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    return null;
+  }
+
+  return `!${value.toString(16).padStart(8, "0")}`;
+}
+
+function decodeProtoString(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+    return null;
+  }
+
+  try {
+    return normalizeText(textDecoder.decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+function normalizeNumericMetric(value) {
+  return typeof value === "number" && Number.isFinite(value) && value !== 0
+    ? value
+    : null;
+}
+
+function formatDuration(totalSeconds) {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
+    return "0m";
+  }
+
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (days >= 1) {
+    return `${days}d ${hours}h`;
+  }
+
+  if (hours >= 1) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes}m`;
 }
 
 function equalsIgnoreCase(left, right) {

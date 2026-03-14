@@ -1,0 +1,373 @@
+@page "/nodes"
+@attribute [Authorize]
+@implements IDisposable
+@inject FavoritePreferenceApiClient FavoritePreferenceApiClient
+@inject NodeProjectionStore NodeProjectionStore
+
+<PageTitle>Nodes</PageTitle>
+
+<div class="space-y-6">
+    <header class="shell-panel rounded-[2rem] p-8">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Discovery</p>
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Observed nodes</h1>
+                <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
+                    This view is driven entirely by local node projections built from the realtime stream. The browser
+                    merges node info, position, telemetry, and text traffic without server-owned decrypted node tables.
+                </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="ReloadFavoritesAsync"
+                        disabled="@_isLoadingFavorites">
+                    Refresh favorites
+                </button>
+
+                <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="ClearNodes"
+                        disabled="@(_snapshot.Nodes.Count == 0)">
+                    Clear node cache
+                </button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_commandError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_favoriteStatusMessage))
+        {
+            <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_favoriteStatusMessage</p>
+        }
+
+        <div class="mt-6 grid gap-4 md:grid-cols-3">
+            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Visible nodes</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FilteredNodes.Count</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Projected nodes in memory: @_snapshot.Nodes.Count</p>
+            </article>
+
+            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Favorites</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_favoriteNodeIds.Count</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Favorites are still persisted through the API.</p>
+            </article>
+
+            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last projection</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_snapshot.LastProjectedAtUtc)</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Total projection events: @_snapshot.TotalProjected</p>
+            </article>
+        </div>
+    </header>
+
+    <section class="shell-panel grid gap-4 rounded-[2rem] p-6 lg:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_0.8fr]">
+        <label class="space-y-2">
+            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
+            <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                   @bind="_query.SearchText"
+                   @bind:event="oninput"
+                   placeholder="Node id, name, channel, last packet" />
+        </label>
+
+        <label class="space-y-2">
+            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Sort</span>
+            <select class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                    @bind="_query.SortBy">
+                <option value="@NodeSortOption.LastHeardDesc">Last heard</option>
+                <option value="@NodeSortOption.NameAsc">Name</option>
+                <option value="@NodeSortOption.BatteryDesc">Battery</option>
+            </select>
+        </label>
+
+        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
+            <input type="checkbox" @bind="_query.OnlyWithLocation" />
+            <span>Only with location</span>
+        </label>
+
+        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
+            <input type="checkbox" @bind="_query.OnlyWithTelemetry" />
+            <span>Only with telemetry</span>
+        </label>
+
+        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
+            <input type="checkbox" @bind="_query.OnlyFavorites" />
+            <span>Only favorites</span>
+        </label>
+    </section>
+
+    <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <div class="border-b border-rose-200 bg-rose-50 px-8 py-4 text-sm text-rose-700">@_loadError</div>
+        }
+
+        @if (FilteredNodes.Count == 0)
+        {
+            <div class="p-8 text-sm leading-7 text-cinder-800/78">
+                No locally projected nodes match the current filters yet. Keep the realtime connection open and wait
+                for node info, position, telemetry, or text packets to arrive.
+            </div>
+        }
+        else
+        {
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-fixed border-collapse">
+                    <colgroup>
+                        <col class="w-[10%]" />
+                        <col class="w-[21%]" />
+                        <col class="w-[14%]" />
+                        <col class="w-[15%]" />
+                        <col class="w-[16%]" />
+                        <col class="w-[14%]" />
+                        <col class="w-[10%]" />
+                    </colgroup>
+                    <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                        <tr>
+                            <th class="px-5 py-4">Favorite</th>
+                            <th class="px-5 py-4">Node</th>
+                            <th class="px-5 py-4">Channel</th>
+                            <th class="px-5 py-4">Position</th>
+                            <th class="px-5 py-4">Device</th>
+                            <th class="px-5 py-4">Environment</th>
+                            <th class="px-5 py-4">Last heard</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var node in FilteredNodes)
+                        {
+                            <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                                <td class="px-5 py-4 align-top">
+                                    <button class="shell-button @(IsFavorite(node.NodeId) ? "shell-button-accent" : string.Empty) rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                                            @onclick="() => ToggleFavoriteAsync(node)"
+                                            disabled="@(_favoriteActionNodeId == node.NodeId)">
+                                        @(IsFavorite(node.NodeId) ? "Saved" : "Save")
+                                    </button>
+                                </td>
+                                <td class="px-5 py-4 align-top">
+                                    <div class="font-medium text-cinder-950">@node.DisplayName</div>
+                                    <div class="mt-2 text-xs text-cinder-800/62">@node.NodeId</div>
+                                    @if (!string.IsNullOrWhiteSpace(node.LastPacketType))
+                                    {
+                                        <div class="mt-2 text-xs text-signal-600">@node.LastPacketType</div>
+                                    }
+                                </td>
+                                <td class="px-5 py-4 align-top">@(string.IsNullOrWhiteSpace(node.LastHeardChannel) ? "Unknown" : node.LastHeardChannel)</td>
+                                <td class="px-5 py-4 align-top text-cinder-800/82">@FormatPosition(node)</td>
+                                <td class="px-5 py-4 align-top text-cinder-800/82">@FormatDeviceTelemetry(node)</td>
+                                <td class="px-5 py-4 align-top text-cinder-800/82">@FormatEnvironmentTelemetry(node)</td>
+                                <td class="px-5 py-4 align-top">
+                                    <div>@FormatTimestamp(node.LastHeardAtUtc)</div>
+                                    <div class="mt-2 text-xs text-cinder-800/62">@node.ObservedPacketCount packets</div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private string? _commandError;
+    private string? _favoriteActionNodeId;
+    private readonly HashSet<string> _favoriteNodeIds = new(StringComparer.OrdinalIgnoreCase);
+    private string? _favoriteStatusMessage;
+    private bool _isLoadingFavorites = true;
+    private string? _loadError;
+    private readonly NodeQuery _query = new();
+    private NodeProjectionSnapshot _snapshot = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _snapshot = NodeProjectionStore.Current;
+        NodeProjectionStore.Changed += HandleProjectionChanged;
+        await LoadFavoritesAsync();
+    }
+
+    public void Dispose()
+    {
+        NodeProjectionStore.Changed -= HandleProjectionChanged;
+    }
+
+    private IReadOnlyList<NodeProjectionEnvelope> FilteredNodes =>
+        NodeProjectionStore.ApplyQuery(_snapshot, _query, _favoriteNodeIds);
+
+    private bool IsFavorite(string nodeId)
+    {
+        return _favoriteNodeIds.Contains(nodeId);
+    }
+
+    private async Task LoadFavoritesAsync()
+    {
+        _isLoadingFavorites = true;
+        _loadError = null;
+
+        try
+        {
+            var favorites = await FavoritePreferenceApiClient.GetFavoritesAsync();
+            _favoriteNodeIds.Clear();
+
+            foreach (var favorite in favorites)
+            {
+                _favoriteNodeIds.Add(favorite.NodeId);
+            }
+        }
+        catch (Exception exception)
+        {
+            _loadError = exception.Message;
+        }
+        finally
+        {
+            _isLoadingFavorites = false;
+        }
+    }
+
+    private async Task ReloadFavoritesAsync()
+    {
+        await LoadFavoritesAsync();
+    }
+
+    private void ClearNodes()
+    {
+        NodeProjectionStore.Clear();
+        _commandError = null;
+        _favoriteStatusMessage = "Cleared the local node projection cache.";
+    }
+
+    private async Task ToggleFavoriteAsync(NodeProjectionEnvelope node)
+    {
+        _commandError = null;
+        _favoriteStatusMessage = null;
+        _favoriteActionNodeId = node.NodeId;
+
+        try
+        {
+            if (IsFavorite(node.NodeId))
+            {
+                await FavoritePreferenceApiClient.RemoveFavoriteAsync(node.NodeId);
+                _favoriteNodeIds.Remove(node.NodeId);
+                _favoriteStatusMessage = $"Removed {node.NodeId} from favorites.";
+            }
+            else
+            {
+                await FavoritePreferenceApiClient.SaveFavoriteAsync(
+                    new SaveFavoriteNodeRequest
+                    {
+                        NodeId = node.NodeId,
+                        ShortName = node.ShortName,
+                        LongName = node.LongName
+                    });
+
+                _favoriteNodeIds.Add(node.NodeId);
+                _favoriteStatusMessage = $"Saved {node.NodeId} as favorite.";
+            }
+        }
+        catch (Exception exception)
+        {
+            _commandError = exception.Message;
+        }
+        finally
+        {
+            _favoriteActionNodeId = null;
+        }
+    }
+
+    private void HandleProjectionChanged()
+    {
+        _snapshot = NodeProjectionStore.Current;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Unknown";
+    }
+
+    private static string FormatPosition(NodeProjectionEnvelope node)
+    {
+        if (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue)
+        {
+            return "No position yet";
+        }
+
+        return FormattableString.Invariant($"{node.LastKnownLatitude.Value:F5}, {node.LastKnownLongitude.Value:F5}");
+    }
+
+    private static string FormatDeviceTelemetry(NodeProjectionEnvelope node)
+    {
+        var parts = new List<string>();
+
+        if (node.BatteryLevelPercent.HasValue)
+        {
+            parts.Add($"{node.BatteryLevelPercent.Value}% battery");
+        }
+
+        if (node.Voltage.HasValue)
+        {
+            parts.Add(FormattableString.Invariant($"{node.Voltage.Value:F2}V"));
+        }
+
+        if (node.ChannelUtilization.HasValue)
+        {
+            parts.Add(FormattableString.Invariant($"{node.ChannelUtilization.Value:F1}% channel"));
+        }
+
+        if (node.AirUtilTx.HasValue)
+        {
+            parts.Add(FormattableString.Invariant($"{node.AirUtilTx.Value:F1}% TX"));
+        }
+
+        if (node.UptimeSeconds.HasValue)
+        {
+            parts.Add($"uptime {FormatDuration(node.UptimeSeconds.Value)}");
+        }
+
+        return parts.Count == 0 ? "No device metrics yet" : string.Join(", ", parts);
+    }
+
+    private static string FormatEnvironmentTelemetry(NodeProjectionEnvelope node)
+    {
+        var parts = new List<string>();
+
+        if (node.TemperatureCelsius.HasValue)
+        {
+            parts.Add(FormattableString.Invariant($"{node.TemperatureCelsius.Value:F1}C"));
+        }
+
+        if (node.RelativeHumidity.HasValue)
+        {
+            parts.Add(FormattableString.Invariant($"{node.RelativeHumidity.Value:F1}% RH"));
+        }
+
+        if (node.BarometricPressure.HasValue)
+        {
+            parts.Add(FormattableString.Invariant($"{node.BarometricPressure.Value:F1} hPa"));
+        }
+
+        return parts.Count == 0 ? "No environment metrics yet" : string.Join(", ", parts);
+    }
+
+    private static string FormatDuration(long uptimeSeconds)
+    {
+        var uptime = TimeSpan.FromSeconds(uptimeSeconds);
+
+        if (uptime.TotalDays >= 1)
+        {
+            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        }
+
+        if (uptime.TotalHours >= 1)
+        {
+            return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+        }
+
+        return $"{uptime.Minutes}m";
+    }
+}

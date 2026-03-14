@@ -122,6 +122,96 @@ test("processPacketRequest returns decoded packet metadata for direct decoded me
   assert.equal(result.decodedPacket?.payloadPreview, "hello mesh");
 });
 
+test("processPacketRequest emits node projection metadata for node info payloads", async () => {
+  const packetBytes = createDecodedMeshPacket({
+    fromNodeNumber: 0x00001234,
+    packetId: 92,
+    dataBytes: encodeDataMessage({
+      portNumValue: 4,
+      sourceNodeNumber: 0x00001234,
+      payloadBytes: encodeNodeInfoPayload({
+        nodeId: "!00001234",
+        longName: "Field Relay",
+        shortName: "RELAY"
+      })
+    })
+  });
+
+  const result = await processPacketRequest(
+    createWorkerRequest("msh/US/2/e/LongFast/!abcd1234", packetBytes),
+    normalizeKeyRecords([]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decodedPacket?.packetType, "Node Info");
+  assert.equal(result.decodedPacket?.payloadPreview, "Node info: Field Relay (RELAY)");
+  assert.equal(result.decodedPacket?.nodeProjection?.nodeId, "!00001234");
+  assert.equal(result.decodedPacket?.nodeProjection?.nodeNumber, 0x00001234);
+  assert.equal(result.decodedPacket?.nodeProjection?.shortName, "RELAY");
+  assert.equal(result.decodedPacket?.nodeProjection?.longName, "Field Relay");
+  assert.equal(result.decodedPacket?.nodeProjection?.lastHeardChannel, "US/LongFast");
+  assert.equal(result.decodedPacket?.nodeProjection?.packetType, "Node Info");
+  assert.equal(result.decodedPacket?.nodeProjection?.payloadPreview, "Node info: Field Relay (RELAY)");
+});
+
+test("processPacketRequest emits node projection metrics for position and telemetry payloads", async () => {
+  const positionPacketBytes = createDecodedMeshPacket({
+    fromNodeNumber: 0x00005678,
+    packetId: 93,
+    dataBytes: encodeDataMessage({
+      portNumValue: 3,
+      sourceNodeNumber: 0x00005678,
+      payloadBytes: encodePositionPayload({
+        latitude: 48.85661,
+        longitude: 2.35222
+      })
+    })
+  });
+
+  const telemetryPacketBytes = createDecodedMeshPacket({
+    fromNodeNumber: 0x00005678,
+    packetId: 94,
+    dataBytes: encodeDataMessage({
+      portNumValue: 67,
+      sourceNodeNumber: 0x00005678,
+      payloadBytes: encodeTelemetryPayload({
+        batteryLevelPercent: 89,
+        voltage: 4.12,
+        channelUtilization: 11.5,
+        airUtilTx: 2.7,
+        uptimeSeconds: 7200,
+        temperatureCelsius: 21.5,
+        relativeHumidity: 48.2,
+        barometricPressure: 1013.6
+      })
+    })
+  });
+
+  const positionResult = await processPacketRequest(
+    createWorkerRequest("msh/EU_868/2/e/LongFast/!abcd1234", positionPacketBytes),
+    normalizeKeyRecords([]));
+  const telemetryResult = await processPacketRequest(
+    createWorkerRequest("msh/EU_868/2/e/LongFast/!abcd1234", telemetryPacketBytes),
+    normalizeKeyRecords([]));
+
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.nodeId, "!00005678");
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.nodeNumber, 0x00005678);
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.lastKnownLatitude, 48.85661);
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.lastKnownLongitude, 2.35222);
+  assert.equal(positionResult.decodedPacket?.payloadPreview, "Position: 48.85661, 2.35222");
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.payloadPreview, "Position: 48.85661, 2.35222");
+
+  assert.equal(telemetryResult.decodedPacket?.nodeProjection?.batteryLevelPercent, 89);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.voltage ?? 0) - 4.12) < 0.0001);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.channelUtilization ?? 0) - 11.5) < 0.0001);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.airUtilTx ?? 0) - 2.7) < 0.0001);
+  assert.equal(telemetryResult.decodedPacket?.nodeProjection?.uptimeSeconds, 7200);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.temperatureCelsius ?? 0) - 21.5) < 0.0001);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.relativeHumidity ?? 0) - 48.2) < 0.0001);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.barometricPressure ?? 0) - 1013.6) < 0.0001);
+  assert.match(telemetryResult.decodedPacket?.payloadPreview ?? "", /^Device metrics:/);
+  assert.match(telemetryResult.decodedPacket?.nodeProjection?.payloadPreview ?? "", /^Device metrics:/);
+});
+
 test("processPacketRequest returns unsupported port classification when the data wrapper is valid but unmapped", async () => {
   const topic = "msh/US/2/e/LongFast/!abcd1234";
   const keyBytes = new Uint8Array([0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01]);
@@ -220,8 +310,14 @@ function createDecodedMeshPacket({ fromNodeNumber, packetId, dataBytes }) {
     encodeVarint(packetId));
 }
 
-function encodeDataMessage({ portNumValue = 1, text = "hello mesh" } = {}) {
-  const payload = new TextEncoder().encode(text);
+function encodeDataMessage({
+  portNumValue = 1,
+  text = "hello mesh",
+  payloadBytes = null,
+  destinationNodeNumber = 1234,
+  sourceNodeNumber = 5678
+} = {}) {
+  const payload = payloadBytes ?? new TextEncoder().encode(text);
 
   return concatBytes(
     encodeTag(1, 0),
@@ -229,9 +325,63 @@ function encodeDataMessage({ portNumValue = 1, text = "hello mesh" } = {}) {
     encodeTag(2, 2),
     encodeLengthDelimited(payload),
     encodeTag(4, 5),
-    encodeFixed32(1234),
+    encodeFixed32(destinationNodeNumber),
     encodeTag(5, 5),
-    encodeFixed32(5678));
+    encodeFixed32(sourceNodeNumber));
+}
+
+function encodeNodeInfoPayload({ nodeId, longName, shortName }) {
+  return concatBytes(
+    encodeTag(1, 2),
+    encodeLengthDelimited(new TextEncoder().encode(nodeId)),
+    encodeTag(2, 2),
+    encodeLengthDelimited(new TextEncoder().encode(longName)),
+    encodeTag(3, 2),
+    encodeLengthDelimited(new TextEncoder().encode(shortName)));
+}
+
+function encodePositionPayload({ latitude, longitude }) {
+  return concatBytes(
+    encodeTag(1, 5),
+    encodeSFixed32(Math.round(latitude * 10000000)),
+    encodeTag(2, 5),
+    encodeSFixed32(Math.round(longitude * 10000000)));
+}
+
+function encodeTelemetryPayload({
+  batteryLevelPercent,
+  voltage,
+  channelUtilization,
+  airUtilTx,
+  uptimeSeconds,
+  temperatureCelsius,
+  relativeHumidity,
+  barometricPressure
+}) {
+  const deviceMetrics = concatBytes(
+    encodeTag(1, 0),
+    encodeVarint(batteryLevelPercent),
+    encodeTag(2, 5),
+    encodeFloat32(voltage),
+    encodeTag(3, 5),
+    encodeFloat32(channelUtilization),
+    encodeTag(4, 5),
+    encodeFloat32(airUtilTx),
+    encodeTag(12, 0),
+    encodeVarint(uptimeSeconds));
+  const environmentMetrics = concatBytes(
+    encodeTag(1, 5),
+    encodeFloat32(temperatureCelsius),
+    encodeTag(2, 5),
+    encodeFloat32(relativeHumidity),
+    encodeTag(5, 5),
+    encodeFloat32(barometricPressure));
+
+  return concatBytes(
+    encodeTag(2, 2),
+    encodeLengthDelimited(deviceMetrics),
+    encodeTag(8, 2),
+    encodeLengthDelimited(environmentMetrics));
 }
 
 function buildNonce(fromNodeNumber, packetId) {
@@ -253,6 +403,18 @@ function encodeLengthDelimited(bytes) {
 function encodeFixed32(value) {
   const bytes = new Uint8Array(4);
   new DataView(bytes.buffer).setUint32(0, value, true);
+  return bytes;
+}
+
+function encodeSFixed32(value) {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setInt32(0, value, true);
+  return bytes;
+}
+
+function encodeFloat32(value) {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setFloat32(0, value, true);
   return bytes;
 }
 
