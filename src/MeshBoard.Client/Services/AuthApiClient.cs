@@ -1,6 +1,7 @@
 using System.Net;
 using MeshBoard.Api.SDK.API;
 using MeshBoard.Client.Authentication;
+using MeshBoard.Client.Channels;
 using MeshBoard.Client.Messages;
 using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
@@ -15,6 +16,7 @@ public sealed class AuthApiClient
     private readonly AntiforgeryTokenProvider _antiforgeryTokenProvider;
     private readonly AuthSessionState _authSessionState;
     private readonly BrowserRealtimeClient _browserRealtimeClient;
+    private readonly ChannelProjectionStore _channelProjectionStore;
     private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly LocalVaultService _localVaultService;
@@ -25,6 +27,7 @@ public sealed class AuthApiClient
         AntiforgeryTokenProvider antiforgeryTokenProvider,
         AuthSessionState authSessionState,
         BrowserRealtimeClient browserRealtimeClient,
+        ChannelProjectionStore channelProjectionStore,
         DecryptedMessageStore decryptedMessageStore,
         LiveMessageFeedService liveMessageFeedService,
         LocalVaultService localVaultService,
@@ -34,6 +37,7 @@ public sealed class AuthApiClient
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
         _authSessionState = authSessionState;
         _browserRealtimeClient = browserRealtimeClient;
+        _channelProjectionStore = channelProjectionStore;
         _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
         _localVaultService = localVaultService;
@@ -97,6 +101,7 @@ public sealed class AuthApiClient
 
             _antiforgeryTokenProvider.Clear();
             _authSessionState.Clear();
+            _channelProjectionStore.Clear();
             _decryptedMessageStore.Clear();
             _liveMessageFeedService.Clear();
             _nodeProjectionStore.Clear();

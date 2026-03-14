@@ -1,4 +1,5 @@
 using MeshBoard.Client.Authentication;
+using MeshBoard.Client.Channels;
 using MeshBoard.Client.Messages;
 using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Services;
@@ -10,6 +11,7 @@ namespace MeshBoard.Client.Realtime;
 public sealed class BrowserRealtimeClient : IAsyncDisposable
 {
     private readonly AuthSessionState _authSessionState;
+    private readonly ChannelProjectionStore _channelProjectionStore;
     private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
@@ -22,6 +24,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
 
     public BrowserRealtimeClient(
         AuthSessionState authSessionState,
+        ChannelProjectionStore channelProjectionStore,
         DecryptedMessageStore decryptedMessageStore,
         IJSRuntime jsRuntime,
         LiveMessageFeedService liveMessageFeedService,
@@ -32,6 +35,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         RealtimePacketWorkerRequestFactory realtimePacketWorkerRequestFactory)
     {
         _authSessionState = authSessionState;
+        _channelProjectionStore = channelProjectionStore;
         _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
@@ -206,6 +210,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
             : rawPacket.ReceivedAtUtc;
 
         _liveMessageFeedService.RecordMessage(rawPacket, processedPacket.DecodedPacket);
+        _channelProjectionStore.Project(processedPacket);
         _decryptedMessageStore.Project(processedPacket);
         _nodeProjectionStore.Project(processedPacket);
 

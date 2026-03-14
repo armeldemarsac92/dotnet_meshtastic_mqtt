@@ -1,6 +1,7 @@
 using MeshBoard.Api.SDK.Abstractions;
 using MeshBoard.Api.SDK.DI;
 using MeshBoard.Client.Authentication;
+using MeshBoard.Client.Channels;
 using MeshBoard.Client.Messages;
 using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
@@ -35,6 +36,8 @@ public class Program
         builder.Services.AddScoped<IVaultRuntimeKeyRecordProvider>(sp => sp.GetRequiredService<BrowserVaultStore>());
         builder.Services.AddScoped<BrokerPreferenceApiClient>();
         builder.Services.AddScoped<ChannelPreferenceApiClient>();
+        builder.Services.AddScoped<ChannelProjectionStore>();
+        builder.Services.AddScoped<ChannelProjectionState>();
         builder.Services.AddScoped<DecryptedMessageStore>();
         builder.Services.AddScoped<DecryptedMessageState>();
         builder.Services.AddScoped<FavoritePreferenceApiClient>();
