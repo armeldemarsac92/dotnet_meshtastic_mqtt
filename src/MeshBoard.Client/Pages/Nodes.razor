@@ -99,77 +99,159 @@
         </label>
     </section>
 
-    <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
-        @if (!string.IsNullOrWhiteSpace(_loadError))
-        {
-            <div class="border-b border-rose-200 bg-rose-50 px-8 py-4 text-sm text-rose-700">@_loadError</div>
-        }
+    <div class="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+        <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
+            @if (!string.IsNullOrWhiteSpace(_loadError))
+            {
+                <div class="border-b border-rose-200 bg-rose-50 px-8 py-4 text-sm text-rose-700">@_loadError</div>
+            }
 
-        @if (FilteredNodes.Count == 0)
-        {
-            <div class="p-8 text-sm leading-7 text-cinder-800/78">
-                No locally projected nodes match the current filters yet. Keep the realtime connection open and wait
-                for node info, position, telemetry, or text packets to arrive.
-            </div>
-        }
-        else
-        {
-            <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed border-collapse">
-                    <colgroup>
-                        <col class="w-[10%]" />
-                        <col class="w-[21%]" />
-                        <col class="w-[14%]" />
-                        <col class="w-[15%]" />
-                        <col class="w-[16%]" />
-                        <col class="w-[14%]" />
-                        <col class="w-[10%]" />
-                    </colgroup>
-                    <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
-                        <tr>
-                            <th class="px-5 py-4">Favorite</th>
-                            <th class="px-5 py-4">Node</th>
-                            <th class="px-5 py-4">Channel</th>
-                            <th class="px-5 py-4">Position</th>
-                            <th class="px-5 py-4">Device</th>
-                            <th class="px-5 py-4">Environment</th>
-                            <th class="px-5 py-4">Last heard</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var node in FilteredNodes)
-                        {
-                            <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
-                                <td class="px-5 py-4 align-top">
-                                    <button class="shell-button @(IsFavorite(node.NodeId) ? "shell-button-accent" : string.Empty) rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
-                                            @onclick="() => ToggleFavoriteAsync(node)"
-                                            disabled="@(_favoriteActionNodeId == node.NodeId)">
-                                        @(IsFavorite(node.NodeId) ? "Saved" : "Save")
-                                    </button>
-                                </td>
-                                <td class="px-5 py-4 align-top">
-                                    <div class="font-medium text-cinder-950">@node.DisplayName</div>
-                                    <div class="mt-2 text-xs text-cinder-800/62">@node.NodeId</div>
-                                    @if (!string.IsNullOrWhiteSpace(node.LastPacketType))
-                                    {
-                                        <div class="mt-2 text-xs text-signal-600">@node.LastPacketType</div>
-                                    }
-                                </td>
-                                <td class="px-5 py-4 align-top">@(string.IsNullOrWhiteSpace(node.LastHeardChannel) ? "Unknown" : node.LastHeardChannel)</td>
-                                <td class="px-5 py-4 align-top text-cinder-800/82">@FormatPosition(node)</td>
-                                <td class="px-5 py-4 align-top text-cinder-800/82">@FormatDeviceTelemetry(node)</td>
-                                <td class="px-5 py-4 align-top text-cinder-800/82">@FormatEnvironmentTelemetry(node)</td>
-                                <td class="px-5 py-4 align-top">
-                                    <div>@FormatTimestamp(node.LastHeardAtUtc)</div>
-                                    <div class="mt-2 text-xs text-cinder-800/62">@node.ObservedPacketCount packets</div>
-                                </td>
+            @if (FilteredNodes.Count == 0)
+            {
+                <div class="p-8 text-sm leading-7 text-cinder-800/78">
+                    No locally projected nodes match the current filters yet. Keep the realtime connection open and wait
+                    for node info, position, telemetry, or text packets to arrive.
+                </div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="min-w-full table-fixed border-collapse">
+                        <colgroup>
+                            <col class="w-[10%]" />
+                            <col class="w-[21%]" />
+                            <col class="w-[14%]" />
+                            <col class="w-[15%]" />
+                            <col class="w-[16%]" />
+                            <col class="w-[14%]" />
+                            <col class="w-[10%]" />
+                        </colgroup>
+                        <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                            <tr>
+                                <th class="px-5 py-4">Favorite</th>
+                                <th class="px-5 py-4">Node</th>
+                                <th class="px-5 py-4">Channel</th>
+                                <th class="px-5 py-4">Position</th>
+                                <th class="px-5 py-4">Device</th>
+                                <th class="px-5 py-4">Environment</th>
+                                <th class="px-5 py-4">Last heard</th>
                             </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var node in FilteredNodes)
+                            {
+                                var isSelected = string.Equals(_selectedNodeId, node.NodeId, StringComparison.OrdinalIgnoreCase);
+
+                                <tr class="border-t border-sand-100/80 text-sm text-cinder-900 @(isSelected ? "bg-signal-50/50" : string.Empty)">
+                                    <td class="px-5 py-4 align-top">
+                                        <button class="shell-button @(IsFavorite(node.NodeId) ? "shell-button-accent" : string.Empty) rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                                                @onclick="() => ToggleFavoriteAsync(node)"
+                                                disabled="@(_favoriteActionNodeId == node.NodeId)">
+                                            @(IsFavorite(node.NodeId) ? "Saved" : "Save")
+                                        </button>
+                                    </td>
+                                    <td class="px-5 py-4 align-top">
+                                        <button type="button"
+                                                class="text-left"
+                                                @onclick="() => SelectNode(node.NodeId)">
+                                            <div class="font-medium text-cinder-950">@node.DisplayName</div>
+                                            <div class="mt-2 text-xs text-cinder-800/62">@node.NodeId</div>
+                                            @if (!string.IsNullOrWhiteSpace(node.LastPacketType))
+                                            {
+                                                <div class="mt-2 text-xs text-signal-600">@node.LastPacketType</div>
+                                            }
+                                        </button>
+                                    </td>
+                                    <td class="px-5 py-4 align-top">@(string.IsNullOrWhiteSpace(node.LastHeardChannel) ? "Unknown" : node.LastHeardChannel)</td>
+                                    <td class="px-5 py-4 align-top text-cinder-800/82">@FormatPosition(node)</td>
+                                    <td class="px-5 py-4 align-top text-cinder-800/82">@FormatDeviceTelemetry(node)</td>
+                                    <td class="px-5 py-4 align-top text-cinder-800/82">@FormatEnvironmentTelemetry(node)</td>
+                                    <td class="px-5 py-4 align-top">
+                                        <div>@FormatTimestamp(node.LastHeardAtUtc)</div>
+                                        <div class="mt-2 text-xs text-cinder-800/62">@node.ObservedPacketCount packets</div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <aside class="shell-panel rounded-[2rem] p-8">
+            @if (SelectedNode is null)
+            {
+                <div class="space-y-3">
+                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Node details</p>
+                    <h2 class="font-display text-3xl text-cinder-950">No node selected</h2>
+                    <p class="text-sm leading-7 text-cinder-800/82">
+                        Select a projected node to inspect the current local view of its channel, position, and telemetry.
+                    </p>
+                </div>
+            }
+            else
+            {
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Node details</p>
+                        <h2 class="mt-2 font-display text-3xl text-cinder-950">@SelectedNode.DisplayName</h2>
+                        <p class="mt-2 text-sm text-cinder-800/72">@SelectedNode.NodeId</p>
+                    </div>
+
+                    <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ClearSelectedNode">
+                        Close
+                    </button>
+                </div>
+
+                <div class="mt-6 grid gap-4">
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Live state</p>
+                        <dl class="mt-4 space-y-3 text-sm text-cinder-900">
+                            <div class="flex items-center justify-between gap-4">
+                                <dt class="text-cinder-800/68">Last heard</dt>
+                                <dd>@FormatTimestamp(SelectedNode.LastHeardAtUtc)</dd>
+                            </div>
+                            <div class="flex items-center justify-between gap-4">
+                                <dt class="text-cinder-800/68">Channel</dt>
+                                <dd>@(string.IsNullOrWhiteSpace(SelectedNode.LastHeardChannel) ? "Unknown" : SelectedNode.LastHeardChannel)</dd>
+                            </div>
+                            <div class="flex items-center justify-between gap-4">
+                                <dt class="text-cinder-800/68">Last packet</dt>
+                                <dd>@(string.IsNullOrWhiteSpace(SelectedNode.LastPacketType) ? "Unknown" : SelectedNode.LastPacketType)</dd>
+                            </div>
+                            <div class="flex items-center justify-between gap-4">
+                                <dt class="text-cinder-800/68">Observed packets</dt>
+                                <dd>@SelectedNode.ObservedPacketCount</dd>
+                            </div>
+                        </dl>
+
+                        @if (!string.IsNullOrWhiteSpace(SelectedNode.LastPayloadPreview))
+                        {
+                            <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-7 text-cinder-900">
+                                @SelectedNode.LastPayloadPreview
+                            </div>
                         }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </section>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Location</p>
+                        <p class="mt-4 text-sm leading-7 text-cinder-900">@FormatPosition(SelectedNode)</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Device metrics</p>
+                        <p class="mt-4 text-sm leading-7 text-cinder-900">@FormatDeviceTelemetry(SelectedNode)</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Environment metrics</p>
+                        <p class="mt-4 text-sm leading-7 text-cinder-900">@FormatEnvironmentTelemetry(SelectedNode)</p>
+                    </article>
+                </div>
+            }
+        </aside>
+    </div>
 </div>
 
 @code {
@@ -180,6 +262,7 @@
     private bool _isLoadingFavorites = true;
     private string? _loadError;
     private readonly NodeQuery _query = new();
+    private string? _selectedNodeId;
     private NodeProjectionSnapshot _snapshot = new();
 
     protected override async Task OnInitializedAsync()
@@ -196,6 +279,11 @@
 
     private IReadOnlyList<NodeProjectionEnvelope> FilteredNodes =>
         NodeProjectionStore.ApplyQuery(_snapshot, _query, _favoriteNodeIds);
+
+    private NodeProjectionEnvelope? SelectedNode =>
+        string.IsNullOrWhiteSpace(_selectedNodeId)
+            ? null
+            : _snapshot.Nodes.FirstOrDefault(node => string.Equals(node.NodeId, _selectedNodeId, StringComparison.OrdinalIgnoreCase));
 
     private bool IsFavorite(string nodeId)
     {
@@ -280,7 +368,24 @@
     private void HandleProjectionChanged()
     {
         _snapshot = NodeProjectionStore.Current;
+
+        if (!string.IsNullOrWhiteSpace(_selectedNodeId) &&
+            !_snapshot.Nodes.Any(node => string.Equals(node.NodeId, _selectedNodeId, StringComparison.OrdinalIgnoreCase)))
+        {
+            _selectedNodeId = null;
+        }
+
         InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectNode(string nodeId)
+    {
+        _selectedNodeId = nodeId;
+    }
+
+    private void ClearSelectedNode()
+    {
+        _selectedNodeId = null;
     }
 
     private static string FormatTimestamp(DateTimeOffset? value)
