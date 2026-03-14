@@ -38,6 +38,7 @@ public class Program
         builder.Services.AddScoped<LiveMessageFeedState>();
         builder.Services.AddScoped<LocalVaultService>();
         builder.Services.AddScoped<RealtimeClientState>();
+        builder.Services.AddScoped<RealtimePacketEnvelopeParser>();
         builder.Services.AddScoped<RealtimeSessionApiClient>();
         builder.Services.AddScoped<TopicPresetPreferenceApiClient>();
         builder.Services.AddScoped<VaultSessionState>();

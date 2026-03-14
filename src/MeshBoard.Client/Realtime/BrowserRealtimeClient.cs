@@ -11,6 +11,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     private readonly AuthSessionState _authSessionState;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
+    private readonly RealtimePacketEnvelopeParser _packetEnvelopeParser;
     private readonly RealtimeClientState _realtimeClientState;
     private readonly RealtimeSessionApiClient _realtimeSessionApiClient;
     private DotNetObjectReference<BrowserRealtimeClient>? _objectReference;
@@ -19,12 +20,14 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         AuthSessionState authSessionState,
         IJSRuntime jsRuntime,
         LiveMessageFeedService liveMessageFeedService,
+        RealtimePacketEnvelopeParser packetEnvelopeParser,
         RealtimeClientState realtimeClientState,
         RealtimeSessionApiClient realtimeSessionApiClient)
     {
         _authSessionState = authSessionState;
         _liveMessageFeedService = liveMessageFeedService;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
+        _packetEnvelopeParser = packetEnvelopeParser;
         _realtimeClientState = realtimeClientState;
         _realtimeSessionApiClient = realtimeSessionApiClient;
     }
@@ -158,22 +161,30 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     [JSInvokable]
     public Task HandleMessageAsync(RealtimeMessageEvent messageEvent)
     {
-        var receivedAtUtc = messageEvent.ReceivedAtUtc == default
-            ? DateTimeOffset.UtcNow
-            : messageEvent.ReceivedAtUtc;
+        if (!_packetEnvelopeParser.TryParse(messageEvent.PayloadBase64, out var envelope))
+        {
+            SetSnapshot(snapshot => snapshot with
+            {
+                IsReady = true,
+                LastError = $"Ignoring malformed realtime packet envelope from {NormalizeText(messageEvent.Topic) ?? "(unknown topic)"}."
+            });
 
-        _liveMessageFeedService.RecordMessage(
-            messageEvent.Topic,
-            messageEvent.PayloadBase64,
-            messageEvent.PayloadSizeBytes,
-            receivedAtUtc);
+            return Task.CompletedTask;
+        }
+
+        var receivedAtUtc = envelope!.ReceivedAtUtc == default
+            ? DateTimeOffset.UtcNow
+            : envelope.ReceivedAtUtc;
+
+        _liveMessageFeedService.RecordMessage(envelope, messageEvent.Topic);
 
         SetSnapshot(snapshot => snapshot with
         {
             IsReady = true,
             MessageCount = snapshot.MessageCount + 1,
-            LastMessageTopic = NormalizeText(messageEvent.Topic),
-            LastPayloadSizeBytes = messageEvent.PayloadSizeBytes,
+            LastError = null,
+            LastMessageTopic = NormalizeText(envelope.Topic),
+            LastPayloadSizeBytes = envelope.Payload.Length,
             LastMessageReceivedAtUtc = receivedAtUtc
         });
 

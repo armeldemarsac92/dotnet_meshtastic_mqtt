@@ -79,15 +79,17 @@
             <div class="overflow-x-auto">
                 <table class="min-w-full table-fixed border-collapse">
                     <colgroup>
+                        <col class="w-[16%]" />
                         <col class="w-[18%]" />
-                        <col class="w-[28%]" />
-                        <col class="w-[12%]" />
-                        <col class="w-[42%]" />
+                        <col class="w-[24%]" />
+                        <col class="w-[10%]" />
+                        <col class="w-[32%]" />
                     </colgroup>
                     <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <tr>
                             <th class="px-5 py-4">Received</th>
-                            <th class="px-5 py-4">Topic</th>
+                            <th class="px-5 py-4">Broker</th>
+                            <th class="px-5 py-4">Source topic</th>
                             <th class="px-5 py-4">Bytes</th>
                             <th class="px-5 py-4">Payload</th>
                         </tr>
@@ -97,7 +99,14 @@
                         {
                             <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
                                 <td class="px-5 py-4 align-top whitespace-nowrap">@message.ReceivedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                                <td class="px-5 py-4 align-top break-words font-medium">@message.Topic</td>
+                                <td class="px-5 py-4 align-top break-words">@message.BrokerServer</td>
+                                <td class="px-5 py-4 align-top break-words font-medium">
+                                    <div>@message.SourceTopic</div>
+                                    @if (!string.IsNullOrWhiteSpace(message.DownstreamTopic))
+                                    {
+                                        <div class="mt-2 text-xs font-normal text-cinder-800/62">@message.DownstreamTopic</div>
+                                    }
+                                </td>
                                 <td class="px-5 py-4 align-top">@message.PayloadSizeBytes</td>
                                 <td class="px-5 py-4 align-top">
                                     <code class="block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">

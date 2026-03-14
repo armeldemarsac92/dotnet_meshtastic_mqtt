@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\MeshBoard.Client\MeshBoard.Client.csproj" />
     <ProjectReference Include="..\..\src\MeshBoard.Application\MeshBoard.Application.csproj" />
     <ProjectReference Include="..\..\src\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
     <ProjectReference Include="..\..\src\MeshBoard.Infrastructure.Meshtastic\MeshBoard.Infrastructure.Meshtastic.csproj" />

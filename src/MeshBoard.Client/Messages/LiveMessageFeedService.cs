@@ -1,3 +1,5 @@
+using MeshBoard.Contracts.Realtime;
+
 namespace MeshBoard.Client.Messages;
 
 public sealed class LiveMessageFeedService
@@ -23,20 +25,27 @@ public sealed class LiveMessageFeedService
         _state.SetSnapshot(new());
     }
 
-    public void RecordMessage(string topic, string payloadBase64, int payloadSizeBytes, DateTimeOffset receivedAtUtc)
+    public void RecordMessage(RealtimePacketEnvelope envelope, string downstreamTopic)
     {
-        if (string.IsNullOrWhiteSpace(topic))
+        ArgumentNullException.ThrowIfNull(envelope);
+
+        if (string.IsNullOrWhiteSpace(envelope.Topic))
         {
-            throw new InvalidOperationException("A message topic is required.");
+            throw new InvalidOperationException("A source topic is required.");
         }
 
         var current = _state.Snapshot;
+        var receivedAtUtc = envelope.ReceivedAtUtc == default
+            ? DateTimeOffset.UtcNow
+            : envelope.ReceivedAtUtc;
         var nextMessage = new LiveMessageEnvelope
         {
-            PayloadBase64 = payloadBase64?.Trim() ?? string.Empty,
-            PayloadSizeBytes = payloadSizeBytes,
+            BrokerServer = envelope.BrokerServer?.Trim() ?? string.Empty,
+            DownstreamTopic = downstreamTopic?.Trim() ?? string.Empty,
+            PayloadBase64 = Convert.ToBase64String(envelope.Payload),
+            PayloadSizeBytes = envelope.Payload.Length,
             ReceivedAtUtc = receivedAtUtc,
-            Topic = topic.Trim()
+            SourceTopic = envelope.Topic.Trim()
         };
 
         var messages = current.Messages
