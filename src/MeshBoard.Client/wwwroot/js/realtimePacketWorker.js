@@ -1,11 +1,13 @@
 const textDecoder = new TextDecoder();
+let currentKeyRecords = [];
 
 self.onmessage = event => {
   const requestId = event?.data?.requestId;
-  const request = event?.data?.request;
+  const kind = event?.data?.kind;
+  const payload = event?.data?.payload;
 
   try {
-    const result = processPacket(request);
+    const result = dispatch(kind, payload);
     self.postMessage({ requestId, result });
   } catch (error) {
     self.postMessage({
@@ -20,6 +22,19 @@ self.onmessage = event => {
     });
   }
 };
+
+function dispatch(kind, payload) {
+  switch (kind) {
+    case "processPacket":
+      return processPacket(payload);
+    case "replaceKeyRecords":
+      return replaceKeyRecords(payload);
+    case "clearKeyRecords":
+      return clearKeyRecords();
+    default:
+      return createFailure("MalformedPayload", "The realtime packet worker request kind is not supported.");
+  }
+}
 
 function processPacket(request) {
   if (!request || typeof request !== "object") {
@@ -68,6 +83,31 @@ function processPacket(request) {
       receivedAtUtc: normalizeText(envelope.receivedAtUtc) ?? receivedAtUtc
     }
   };
+}
+
+function replaceKeyRecords(payload) {
+  if (!Array.isArray(payload)) {
+    return createFailure("MalformedPayload", "The realtime key ring payload is invalid.");
+  }
+
+  currentKeyRecords = payload
+    .filter(record => record && typeof record === "object")
+    .map(record => ({
+      id: normalizeText(record.id) ?? "",
+      name: normalizeText(record.name) ?? "",
+      topicPattern: normalizeText(record.topicPattern) ?? "",
+      brokerServerProfileId: normalizeText(record.brokerServerProfileId),
+      normalizedKeyBase64: normalizeText(record.normalizedKeyBase64) ?? "",
+      keyLengthBytes: Number.isFinite(record.keyLengthBytes) ? Number(record.keyLengthBytes) : 0
+    }))
+    .filter(record => record.id && record.topicPattern && record.normalizedKeyBase64);
+
+  return null;
+}
+
+function clearKeyRecords() {
+  currentKeyRecords = [];
+  return null;
 }
 
 function createFailure(failureClassification, errorDetail) {

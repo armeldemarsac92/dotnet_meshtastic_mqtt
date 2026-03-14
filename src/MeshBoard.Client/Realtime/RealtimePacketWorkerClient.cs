@@ -2,7 +2,7 @@ using Microsoft.JSInterop;
 
 namespace MeshBoard.Client.Realtime;
 
-public sealed class RealtimePacketWorkerClient : IAsyncDisposable
+public sealed class RealtimePacketWorkerClient : IRealtimePacketWorkerKeyRingClient, IAsyncDisposable
 {
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
 
@@ -19,6 +19,22 @@ public sealed class RealtimePacketWorkerClient : IAsyncDisposable
 
         var module = await GetModuleAsync();
         return await module.InvokeAsync<RealtimePacketWorkerResult>("processPacket", cancellationToken, request);
+    }
+
+    public async Task ClearKeyRecordsAsync(CancellationToken cancellationToken = default)
+    {
+        var module = await GetModuleAsync();
+        await module.InvokeVoidAsync("clearKeyRecords", cancellationToken);
+    }
+
+    public async Task ReplaceKeyRecordsAsync(
+        IReadOnlyList<RealtimePacketWorkerKeyRecord> keyRecords,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(keyRecords);
+
+        var module = await GetModuleAsync();
+        await module.InvokeVoidAsync("replaceKeyRecords", cancellationToken, keyRecords);
     }
 
     public async ValueTask DisposeAsync()

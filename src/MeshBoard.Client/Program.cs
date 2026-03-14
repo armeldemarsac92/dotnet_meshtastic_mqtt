@@ -31,6 +31,7 @@ public class Program
         builder.Services.AddScoped<AuthApiClient>();
         builder.Services.AddScoped<BrowserRealtimeClient>();
         builder.Services.AddScoped<BrowserVaultStore>();
+        builder.Services.AddScoped<IVaultRuntimeKeyRecordProvider>(sp => sp.GetRequiredService<BrowserVaultStore>());
         builder.Services.AddScoped<BrokerPreferenceApiClient>();
         builder.Services.AddScoped<ChannelPreferenceApiClient>();
         builder.Services.AddScoped<FavoritePreferenceApiClient>();
@@ -38,6 +39,8 @@ public class Program
         builder.Services.AddScoped<LiveMessageFeedState>();
         builder.Services.AddScoped<LocalVaultService>();
         builder.Services.AddScoped<RealtimeClientState>();
+        builder.Services.AddScoped<IRealtimePacketWorkerKeyRingClient>(sp => sp.GetRequiredService<RealtimePacketWorkerClient>());
+        builder.Services.AddScoped<RealtimePacketWorkerKeyRingSyncService>();
         builder.Services.AddScoped<RealtimePacketWorkerRequestFactory>();
         builder.Services.AddScoped<RealtimePacketWorkerClient>();
         builder.Services.AddScoped<RealtimeSessionApiClient>();

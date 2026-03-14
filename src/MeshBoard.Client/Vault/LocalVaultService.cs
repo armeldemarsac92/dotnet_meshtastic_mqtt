@@ -1,3 +1,4 @@
+using MeshBoard.Client.Realtime;
 using MeshBoard.Contracts.Topics;
 
 namespace MeshBoard.Client.Vault;
@@ -5,11 +6,16 @@ namespace MeshBoard.Client.Vault;
 public sealed class LocalVaultService
 {
     private readonly BrowserVaultStore _browserVaultStore;
+    private readonly RealtimePacketWorkerKeyRingSyncService _realtimePacketWorkerKeyRingSyncService;
     private readonly VaultSessionState _vaultSessionState;
 
-    public LocalVaultService(BrowserVaultStore browserVaultStore, VaultSessionState vaultSessionState)
+    public LocalVaultService(
+        BrowserVaultStore browserVaultStore,
+        RealtimePacketWorkerKeyRingSyncService realtimePacketWorkerKeyRingSyncService,
+        VaultSessionState vaultSessionState)
     {
         _browserVaultStore = browserVaultStore;
+        _realtimePacketWorkerKeyRingSyncService = realtimePacketWorkerKeyRingSyncService;
         _vaultSessionState = vaultSessionState;
     }
 
@@ -23,22 +29,26 @@ public sealed class LocalVaultService
     public async Task CreateVaultAsync(string passphrase, CancellationToken cancellationToken = default)
     {
         ValidatePassphrase(passphrase);
-        await RefreshAsync(() => _browserVaultStore.CreateVaultAsync(passphrase, cancellationToken));
+        await RefreshAsync(
+            () => _browserVaultStore.CreateVaultAsync(passphrase, cancellationToken),
+            cancellationToken);
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await RefreshAsync(() => _browserVaultStore.GetStatusAsync(cancellationToken));
+        await RefreshAsync(() => _browserVaultStore.GetStatusAsync(cancellationToken), cancellationToken);
     }
 
     public async Task LockAsync(CancellationToken cancellationToken = default)
     {
-        await RefreshAsync(() => _browserVaultStore.LockAsync(cancellationToken));
+        await RefreshAsync(() => _browserVaultStore.LockAsync(cancellationToken), cancellationToken);
     }
 
     public async Task RequestPersistentStorageAsync(CancellationToken cancellationToken = default)
     {
-        await RefreshAsync(() => _browserVaultStore.RequestPersistentStorageAsync(cancellationToken));
+        await RefreshAsync(
+            () => _browserVaultStore.RequestPersistentStorageAsync(cancellationToken),
+            cancellationToken);
     }
 
     public async Task RemoveKeyRecordAsync(string id, CancellationToken cancellationToken = default)
@@ -48,7 +58,7 @@ public sealed class LocalVaultService
             throw new InvalidOperationException("The vault key identifier is missing.");
         }
 
-        await RefreshAsync(() => _browserVaultStore.RemoveKeyRecordAsync(id, cancellationToken));
+        await RefreshAsync(() => _browserVaultStore.RemoveKeyRecordAsync(id, cancellationToken), cancellationToken);
     }
 
     public async Task SaveKeyRecordAsync(
@@ -80,7 +90,7 @@ public sealed class LocalVaultService
         };
 
         ValidateKeyRecord(mutation);
-        await RefreshAsync(() => _browserVaultStore.SaveKeyRecordAsync(mutation, cancellationToken));
+        await RefreshAsync(() => _browserVaultStore.SaveKeyRecordAsync(mutation, cancellationToken), cancellationToken);
     }
 
     public async Task UnlockAsync(string passphrase, CancellationToken cancellationToken = default)
@@ -90,14 +100,15 @@ public sealed class LocalVaultService
             throw new InvalidOperationException("Enter the vault passphrase.");
         }
 
-        await RefreshAsync(() => _browserVaultStore.UnlockAsync(passphrase, cancellationToken));
+        await RefreshAsync(() => _browserVaultStore.UnlockAsync(passphrase, cancellationToken), cancellationToken);
     }
 
-    private async Task RefreshAsync(Func<Task<VaultStatusSnapshot>> action)
+    private async Task RefreshAsync(Func<Task<VaultStatusSnapshot>> action, CancellationToken cancellationToken)
     {
         var snapshot = await action();
         snapshot.IsReady = true;
         _vaultSessionState.SetSnapshot(snapshot);
+        await _realtimePacketWorkerKeyRingSyncService.SyncAsync(snapshot.IsUnlocked, cancellationToken);
     }
 
     private static void ValidatePassphrase(string passphrase)

@@ -21,13 +21,15 @@ export function processPacket(request) {
     return Promise.reject(new Error("The realtime packet worker request is missing."));
   }
 
-  const requestId = ++nextRequestId;
-  const activeWorker = getWorker();
+  return invokeWorker("processPacket", request);
+}
 
-  return new Promise((resolve, reject) => {
-    pendingRequests.set(requestId, { resolve, reject });
-    activeWorker.postMessage({ requestId, request });
-  });
+export function clearKeyRecords() {
+  return invokeWorker("clearKeyRecords", null);
+}
+
+export function replaceKeyRecords(keyRecords) {
+  return invokeWorker("replaceKeyRecords", keyRecords ?? []);
 }
 
 function getWorker() {
@@ -40,6 +42,16 @@ function getWorker() {
   worker.onerror = handleWorkerError;
   worker.onmessageerror = () => rejectAll(new Error("The realtime packet worker returned an unreadable message."));
   return worker;
+}
+
+function invokeWorker(kind, payload) {
+  const requestId = ++nextRequestId;
+  const activeWorker = getWorker();
+
+  return new Promise((resolve, reject) => {
+    pendingRequests.set(requestId, { resolve, reject });
+    activeWorker.postMessage({ requestId, kind, payload });
+  });
 }
 
 function handleMessage(event) {

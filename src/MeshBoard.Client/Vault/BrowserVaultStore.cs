@@ -2,7 +2,7 @@ using Microsoft.JSInterop;
 
 namespace MeshBoard.Client.Vault;
 
-public sealed class BrowserVaultStore : IAsyncDisposable
+public sealed class BrowserVaultStore : IVaultRuntimeKeyRecordProvider, IAsyncDisposable
 {
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
 
@@ -21,6 +21,12 @@ public sealed class BrowserVaultStore : IAsyncDisposable
     {
         var module = await GetModuleAsync();
         return await module.InvokeAsync<List<LocalVaultKeyRecordSummary>>("getKeyRecords", cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<LocalVaultRuntimeKeyRecord>> GetRuntimeKeyRecordsAsync(CancellationToken cancellationToken = default)
+    {
+        var module = await GetModuleAsync();
+        return await module.InvokeAsync<List<LocalVaultRuntimeKeyRecord>>("getRuntimeKeyRecords", cancellationToken);
     }
 
     public async Task<VaultStatusSnapshot> GetStatusAsync(CancellationToken cancellationToken = default)

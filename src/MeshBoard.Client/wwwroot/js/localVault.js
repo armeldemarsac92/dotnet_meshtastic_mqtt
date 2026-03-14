@@ -79,6 +79,29 @@ export async function getKeyRecords() {
         .sort((left, right) => right.updatedAtUtc.localeCompare(left.updatedAtUtc));
 }
 
+export async function getRuntimeKeyRecords() {
+    ensureUnlocked();
+
+    const database = await getDatabase();
+    const records = await readAllRecords(database, keyStoreName);
+    const runtimeRecords = [];
+
+    for (const record of records) {
+        const normalizedKeyBase64 = await unwrapKeyBase64(record.wrappedKey);
+
+        runtimeRecords.push({
+            id: record.id,
+            name: record.name,
+            topicPattern: record.topicPattern,
+            brokerServerProfileId: record.brokerServerProfileId ?? null,
+            normalizedKeyBase64,
+            keyLengthBytes: record.keyLengthBytes
+        });
+    }
+
+    return runtimeRecords.sort((left, right) => right.name.localeCompare(left.name));
+}
+
 export async function requestPersistentStorage() {
     if (navigator.storage && typeof navigator.storage.persisted === "function") {
         const persisted = await navigator.storage.persisted();
@@ -274,6 +297,21 @@ async function wrapKeyBase64(keyBase64) {
         ivBase64Url: toBase64Url(iv),
         cipherTextBase64Url: toBase64Url(new Uint8Array(cipherText))
     };
+}
+
+async function unwrapKeyBase64(wrappedKey) {
+    if (!wrappedKey || typeof wrappedKey !== "object") {
+        throw new Error("The wrapped local vault key is invalid.");
+    }
+
+    const iv = fromBase64Url(wrappedKey.ivBase64Url);
+    const cipherText = fromBase64Url(wrappedKey.cipherTextBase64Url);
+    const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        sessionWrappingKey,
+        cipherText);
+
+    return new TextDecoder().decode(decrypted);
 }
 
 function fromBase64Url(value) {
