@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <PackageReference Include="MQTTnet" Version="5.1.0.1559" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\MeshBoard.Application\MeshBoard.Application.csproj" />
     <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
     <ProjectReference Include="..\MeshBoard.Infrastructure.Meshtastic\MeshBoard.Infrastructure.Meshtastic.csproj" />
