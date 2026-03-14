@@ -7,7 +7,6 @@ using MeshBoard.Web.Components;
 using MeshBoard.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Components.Server.Circuits;
 using MeshBoard.Contracts.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -42,7 +41,6 @@ builder.Services.AddScoped<IWorkspaceContextAccessor, AuthenticatedWorkspaceCont
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddSingleton<CircuitHandler, ActiveCircuitMetricsCircuitHandler>();
 builder.Services.AddSingleton<ServerSelectionNotifier>();
 builder.Services.AddSingleton<ProjectionChangeNotifier>();
 
