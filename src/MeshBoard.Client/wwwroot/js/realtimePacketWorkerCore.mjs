@@ -951,7 +951,7 @@ function bytesToBase64(bytes) {
 }
 
 function buildPayloadPreview(portMetadata, payloadBytes) {
-  if (portMetadata.portNumValue === 1) {
+  if (portMetadata.portNumValue === portNums.textMessageApp) {
     return decodeTextPayload(payloadBytes);
   }
 
@@ -988,26 +988,14 @@ function normalizePreviewText(value) {
 }
 
 function getPortMetadata(portNumValue) {
-  switch (portNumValue) {
-    case 1:
-      return { portNumValue, portNumName: "TEXT_MESSAGE_APP", packetType: "Text Message" };
-    case 3:
-      return { portNumValue, portNumName: "POSITION_APP", packetType: "Position Update" };
-    case 4:
-      return { portNumValue, portNumName: "NODEINFO_APP", packetType: "Node Info" };
-    case 5:
-      return { portNumValue, portNumName: "ROUTING_APP", packetType: "Routing" };
-    case 7:
-      return { portNumValue, portNumName: "TEXT_MESSAGE_COMPRESSED_APP", packetType: "Compressed Text Message" };
-    case 8:
-      return { portNumValue, portNumName: "WAYPOINT_APP", packetType: "Waypoint" };
-    case 67:
-      return { portNumValue, portNumName: "TELEMETRY_APP", packetType: "Telemetry" };
-    case 73:
-      return { portNumValue, portNumName: "MAP_REPORT_APP", packetType: "Map Report" };
-    default:
-      return null;
-  }
+  const metadata = packetTypesByPortNum[portNumValue];
+  return metadata
+    ? {
+        portNumValue,
+        portNumName: metadata.name,
+        packetType: metadata.packetType
+      }
+    : null;
 }
 
 function equalsIgnoreCase(left, right) {
