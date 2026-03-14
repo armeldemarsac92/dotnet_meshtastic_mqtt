@@ -45,7 +45,11 @@ builder.Services.AddRazorComponents()
 builder.Services.AddSingleton<CircuitHandler, ActiveCircuitMetricsCircuitHandler>();
 builder.Services.AddSingleton<ServerSelectionNotifier>();
 builder.Services.AddSingleton<ProjectionChangeNotifier>();
-builder.Services.AddHostedService<ProjectionChangeDispatchHostedService>();
+
+if (builder.Configuration.GetValue<bool>("WebUiRuntime:EnableProjectionDispatch"))
+{
+    builder.Services.AddHostedService<ProjectionChangeDispatchHostedService>();
+}
 
 var app = builder.Build();
 
