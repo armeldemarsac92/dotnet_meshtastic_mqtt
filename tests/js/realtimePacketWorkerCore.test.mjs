@@ -28,6 +28,7 @@ test("processPacketRequest returns no matching key when encrypted packet has no 
   assert.equal(result.failureClassification, workerConstants.failureKinds.noMatchingKey);
   assert.equal(result.rawPacket?.isEncrypted, true);
   assert.equal(result.rawPacket?.decryptionAttempted, false);
+  assert.equal(result.decodedPacket, null);
 });
 
 test("processPacketRequest returns protobuf parse failure when all candidate keys are wrong", async () => {
@@ -58,6 +59,7 @@ test("processPacketRequest returns protobuf parse failure when all candidate key
   assert.equal(result.failureClassification, workerConstants.failureKinds.protobufParseFailure);
   assert.equal(result.rawPacket?.decryptionAttempted, true);
   assert.equal(result.rawPacket?.decryptionSucceeded, false);
+  assert.equal(result.decodedPacket, null);
 });
 
 test("processPacketRequest returns decrypted payload metadata when a matching key succeeds", async () => {
@@ -92,6 +94,41 @@ test("processPacketRequest returns decrypted payload metadata when a matching ke
   assert.equal(result.rawPacket?.decryptedPayloadBase64, bytesToBase64(dataBytes));
   assert.equal(result.rawPacket?.packetId, 91);
   assert.equal(result.rawPacket?.fromNodeNumber, 777);
+  assert.equal(result.decodedPacket?.portNumValue, 1);
+  assert.equal(result.decodedPacket?.portNumName, "TEXT_MESSAGE_APP");
+  assert.equal(result.decodedPacket?.packetType, "Text Message");
+  assert.equal(result.decodedPacket?.payloadPreview, "hello mesh");
+  assert.equal(result.decodedPacket?.sourceNodeNumber, 5678);
+  assert.equal(result.decodedPacket?.destinationNodeNumber, 1234);
+});
+
+test("processPacketRequest returns unsupported port classification when the data wrapper is valid but unmapped", async () => {
+  const topic = "msh/US/2/e/LongFast/!abcd1234";
+  const keyBytes = new Uint8Array([0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01]);
+  const packetBytes = await createEncryptedMeshPacket({
+    fromNodeNumber: 777,
+    packetId: 91,
+    keyBytes,
+    dataBytes: encodeDataMessage({ portNumValue: 999, text: "unsupported" })
+  });
+
+  const result = await processPacketRequest(
+    createWorkerRequest(topic, packetBytes),
+    normalizeKeyRecords([
+      {
+        id: "matching-key",
+        name: "LongFast",
+        topicPattern: "msh/US/2/e/LongFast/#",
+        normalizedKeyBase64: bytesToBase64(keyBytes),
+        keyLengthBytes: keyBytes.length
+      }
+    ]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decryptResultClassification, workerConstants.decryptResultClassifications.decrypted);
+  assert.equal(result.failureClassification, workerConstants.failureKinds.unsupportedPortNum);
+  assert.equal(result.rawPacket?.decryptionSucceeded, true);
+  assert.equal(result.decodedPacket, null);
 });
 
 test("processPacketRequest returns malformed payload when the downstream envelope is invalid", async () => {
@@ -153,12 +190,12 @@ function encodeMeshPacket({ fromNodeNumber, packetId, encryptedBytes }) {
     encodeVarint(packetId));
 }
 
-function encodeDataMessage() {
-  const payload = new TextEncoder().encode("hello mesh");
+function encodeDataMessage({ portNumValue = 1, text = "hello mesh" } = {}) {
+  const payload = new TextEncoder().encode(text);
 
   return concatBytes(
     encodeTag(1, 0),
-    encodeVarint(1),
+    encodeVarint(portNumValue),
     encodeTag(2, 2),
     encodeLengthDelimited(payload),
     encodeTag(4, 5),

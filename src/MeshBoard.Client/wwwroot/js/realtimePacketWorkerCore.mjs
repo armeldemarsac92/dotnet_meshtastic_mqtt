@@ -11,6 +11,50 @@ const failureKinds = Object.freeze({
   protobufParseFailure: "ProtobufParseFailure",
   unsupportedPortNum: "UnsupportedPortNum"
 });
+const portNums = Object.freeze({
+  textMessageApp: 1,
+  positionApp: 3,
+  nodeinfoApp: 4,
+  routingApp: 5,
+  textMessageCompressedApp: 7,
+  waypointApp: 8,
+  telemetryApp: 67,
+  mapReportApp: 73
+});
+const packetTypesByPortNum = Object.freeze({
+  [portNums.textMessageApp]: {
+    name: "TEXT_MESSAGE_APP",
+    packetType: "Text Message"
+  },
+  [portNums.positionApp]: {
+    name: "POSITION_APP",
+    packetType: "Position Update"
+  },
+  [portNums.nodeinfoApp]: {
+    name: "NODEINFO_APP",
+    packetType: "Node Info"
+  },
+  [portNums.routingApp]: {
+    name: "ROUTING_APP",
+    packetType: "Routing"
+  },
+  [portNums.textMessageCompressedApp]: {
+    name: "TEXT_MESSAGE_COMPRESSED_APP",
+    packetType: "Compressed Text"
+  },
+  [portNums.waypointApp]: {
+    name: "WAYPOINT_APP",
+    packetType: "Waypoint"
+  },
+  [portNums.telemetryApp]: {
+    name: "TELEMETRY_APP",
+    packetType: "Telemetry"
+  },
+  [portNums.mapReportApp]: {
+    name: "MAP_REPORT_APP",
+    packetType: "Map Report"
+  }
+});
 
 export function getRealtimePacketWorkerConstants() {
   return {
@@ -101,6 +145,13 @@ export async function processPacketRequest(request, currentKeyRecords) {
   rawPacket.fromNodeNumber = packetMetadata.fromNodeNumber;
   rawPacket.isEncrypted = packetMetadata.payloadVariant === "encrypted";
 
+  if (packetMetadata.payloadVariant === "decoded") {
+    return createDecodedPacketResult(
+      rawPacket,
+      packetMetadata.decodedBytes,
+      decryptResultClassifications.notAttempted);
+  }
+
   if (packetMetadata.payloadVariant !== "encrypted") {
     return createSuccess(
       decryptResultClassifications.notAttempted,
@@ -159,7 +210,9 @@ export async function processPacketRequest(request, currentKeyRecords) {
       continue;
     }
 
-    if (!isValidDataMessage(decryptedBytes)) {
+    const decodedPacketOutcome = tryCreateDecodedPacketEvent(decryptedBytes);
+
+    if (!decodedPacketOutcome) {
       sawProtobufParseFailure = true;
       continue;
     }
@@ -171,11 +224,21 @@ export async function processPacketRequest(request, currentKeyRecords) {
     rawPacket.decryptResultClassification = decryptResultClassifications.decrypted;
     rawPacket.failureClassification = null;
 
+    if (decodedPacketOutcome.kind === "unsupported-port") {
+      rawPacket.failureClassification = failureKinds.unsupportedPortNum;
+      return createSuccess(
+        decryptResultClassifications.decrypted,
+        rawPacket,
+        failureKinds.unsupportedPortNum,
+        `The Meshtastic portnum ${decodedPacketOutcome.portNumValue} is not supported yet.`);
+    }
+
     return createSuccess(
       decryptResultClassifications.decrypted,
       rawPacket,
       null,
-      null);
+      null,
+      decodedPacketOutcome.decodedPacket);
   }
 
   rawPacket.decryptionAttempted = true;
@@ -228,18 +291,56 @@ function createFailure(failureClassification, errorDetail) {
     decryptResultClassification: decryptResultClassifications.notAttempted,
     failureClassification,
     errorDetail,
-    rawPacket: null
+    rawPacket: null,
+    decodedPacket: null
   };
 }
 
-function createSuccess(decryptResultClassification, rawPacket, failureClassification = null, errorDetail = null) {
+function createSuccess(
+  decryptResultClassification,
+  rawPacket,
+  failureClassification = null,
+  errorDetail = null,
+  decodedPacket = null) {
   return {
     isSuccess: true,
     decryptResultClassification,
     failureClassification,
     errorDetail,
-    rawPacket
+    rawPacket,
+    decodedPacket
   };
+}
+
+function createDecodedPacketResult(rawPacket, decodedBytes, decryptResultClassification) {
+  const decodedPacketOutcome = tryCreateDecodedPacketEvent(decodedBytes);
+
+  if (!decodedPacketOutcome) {
+    rawPacket.failureClassification = failureKinds.protobufParseFailure;
+    return createSuccess(
+      decryptResultClassification,
+      rawPacket,
+      failureKinds.protobufParseFailure,
+      "The Meshtastic decoded payload could not be parsed.");
+  }
+
+  if (decodedPacketOutcome.kind === "unsupported-port") {
+    rawPacket.failureClassification = failureKinds.unsupportedPortNum;
+    return createSuccess(
+      decryptResultClassification,
+      rawPacket,
+      failureKinds.unsupportedPortNum,
+      `The Meshtastic portnum ${decodedPacketOutcome.portNumValue} is not supported yet.`);
+  }
+
+  rawPacket.failureClassification = null;
+
+  return createSuccess(
+    decryptResultClassification,
+    rawPacket,
+    null,
+    null,
+    decodedPacketOutcome.decodedPacket);
 }
 
 async function decryptPacket(cipherTextBytes, keyBytes, counterBytes) {
@@ -416,7 +517,7 @@ function tryParseMeshPacket(payloadBytes) {
   let fromNodeNumber = null;
   let packetId = null;
   let encryptedBytes = null;
-  let hasDecodedPayload = false;
+  let decodedBytes = null;
 
   while (offset < payloadBytes.length) {
     const tag = readVarint(payloadBytes, offset);
@@ -456,7 +557,7 @@ function tryParseMeshPacket(payloadBytes) {
           }
 
           offset = field.nextOffset;
-          hasDecodedPayload = field.value.length > 0;
+          decodedBytes = field.value.length > 0 ? field.value : null;
         }
         break;
       case 5:
@@ -507,16 +608,18 @@ function tryParseMeshPacket(payloadBytes) {
       payloadVariant: "encrypted",
       fromNodeNumber,
       packetId,
-      encryptedBytes
+      encryptedBytes,
+      decodedBytes: null
     };
   }
 
-  if (hasDecodedPayload) {
+  if (decodedBytes) {
     return {
       payloadVariant: "decoded",
       fromNodeNumber,
       packetId,
-      encryptedBytes: null
+      encryptedBytes: null,
+      decodedBytes
     };
   }
 
@@ -524,22 +627,56 @@ function tryParseMeshPacket(payloadBytes) {
     payloadVariant: "unknown",
     fromNodeNumber,
     packetId,
-    encryptedBytes: null
+    encryptedBytes: null,
+    decodedBytes: null
   };
 }
 
-function isValidDataMessage(payloadBytes) {
+function tryCreateDecodedPacketEvent(decodedBytes) {
+  const dataMessage = parseDataMessage(decodedBytes);
+  if (!dataMessage) {
+    return null;
+  }
+
+  const portMetadata = getPortMetadata(dataMessage.portNumValue);
+  if (!portMetadata) {
+    return {
+      kind: "unsupported-port",
+      portNumValue: dataMessage.portNumValue
+    };
+  }
+
+  return {
+    kind: "supported",
+    decodedPacket: {
+      portNumValue: dataMessage.portNumValue,
+      portNumName: portMetadata.portNumName,
+      packetType: portMetadata.packetType,
+      payloadBase64: bytesToBase64(dataMessage.payloadBytes),
+      payloadSizeBytes: dataMessage.payloadBytes.length,
+      payloadPreview: buildPayloadPreview(portMetadata, dataMessage.payloadBytes),
+      sourceNodeNumber: dataMessage.sourceNodeNumber,
+      destinationNodeNumber: dataMessage.destinationNodeNumber
+    }
+  };
+}
+
+function parseDataMessage(payloadBytes) {
   if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
-    return false;
+    return null;
   }
 
   let offset = 0;
   let hasKnownField = false;
+  let portNumValue = null;
+  let payloadFieldBytes = new Uint8Array();
+  let destinationNodeNumber = null;
+  let sourceNodeNumber = null;
 
   while (offset < payloadBytes.length) {
     const tag = readVarint(payloadBytes, offset);
     if (!tag) {
-      return false;
+      return null;
     }
 
     offset = tag.nextOffset;
@@ -548,30 +685,46 @@ function isValidDataMessage(payloadBytes) {
 
     switch (fieldNumber) {
       case 1:
-      case 3:
         if (wireType !== 0) {
-          return false;
+          return null;
         }
 
         {
           const field = readVarint(payloadBytes, offset);
           if (!field) {
-            return false;
+            return null;
           }
 
           offset = field.nextOffset;
+          portNumValue = numberOrNull(field.value);
           hasKnownField = true;
         }
         break;
       case 2:
         if (wireType !== 2) {
-          return false;
+          return null;
         }
 
         {
           const field = readLengthDelimited(payloadBytes, offset);
           if (!field) {
-            return false;
+            return null;
+          }
+
+          offset = field.nextOffset;
+          payloadFieldBytes = field.value;
+          hasKnownField = true;
+        }
+        break;
+      case 3:
+        if (wireType !== 0) {
+          return null;
+        }
+
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
           }
 
           offset = field.nextOffset;
@@ -579,25 +732,58 @@ function isValidDataMessage(payloadBytes) {
         }
         break;
       case 4:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readFixed32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          destinationNodeNumber = field.value;
+          hasKnownField = true;
+        }
+        break;
       case 5:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readFixed32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          sourceNodeNumber = field.value;
+          hasKnownField = true;
+        }
+        break;
       case 6:
       case 7:
         if (wireType !== 5) {
-          return false;
+          return null;
         }
 
-        offset += 4;
-        if (offset > payloadBytes.length) {
-          return false;
-        }
+        {
+          const field = readFixed32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
 
-        hasKnownField = true;
+          offset = field.nextOffset;
+          hasKnownField = true;
+        }
         break;
       default:
         {
           const nextOffset = skipField(payloadBytes, offset, wireType);
           if (nextOffset < 0) {
-            return false;
+            return null;
           }
 
           offset = nextOffset;
@@ -606,7 +792,16 @@ function isValidDataMessage(payloadBytes) {
     }
   }
 
-  return hasKnownField;
+  if (!hasKnownField || portNumValue === null) {
+    return null;
+  }
+
+  return {
+    portNumValue,
+    payloadBytes: payloadFieldBytes,
+    sourceNodeNumber,
+    destinationNodeNumber
+  };
 }
 
 function parseEnvelope(payloadBase64) {
@@ -651,6 +846,18 @@ function readLengthDelimited(bytes, offset) {
   return {
     value: bytes.slice(start, end),
     nextOffset: end
+  };
+}
+
+function readFixed32(bytes, offset) {
+  if (!(bytes instanceof Uint8Array) || offset < 0 || offset + 4 > bytes.length) {
+    return null;
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset + offset, 4);
+  return {
+    value: view.getUint32(0, true),
+    nextOffset: offset + 4
   };
 }
 
@@ -741,6 +948,66 @@ function bytesToBase64(bytes) {
   }
 
   return btoa(binary);
+}
+
+function buildPayloadPreview(portMetadata, payloadBytes) {
+  if (portMetadata.portNumValue === 1) {
+    return decodeTextPayload(payloadBytes);
+  }
+
+  return `${portMetadata.packetType} payload (${payloadBytes.length} bytes)`;
+}
+
+function decodeTextPayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return "Text message payload (0 bytes)";
+  }
+
+  try {
+    const text = normalizePreviewText(textDecoder.decode(payloadBytes));
+    return text.length > 0
+      ? text
+      : `Text message payload (${payloadBytes.length} bytes)`;
+  } catch {
+    return `Text message payload (${payloadBytes.length} bytes)`;
+  }
+}
+
+function normalizePreviewText(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const normalized = value
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized.length <= 160
+    ? normalized
+    : `${normalized.slice(0, 160)}...`;
+}
+
+function getPortMetadata(portNumValue) {
+  switch (portNumValue) {
+    case 1:
+      return { portNumValue, portNumName: "TEXT_MESSAGE_APP", packetType: "Text Message" };
+    case 3:
+      return { portNumValue, portNumName: "POSITION_APP", packetType: "Position Update" };
+    case 4:
+      return { portNumValue, portNumName: "NODEINFO_APP", packetType: "Node Info" };
+    case 5:
+      return { portNumValue, portNumName: "ROUTING_APP", packetType: "Routing" };
+    case 7:
+      return { portNumValue, portNumName: "TEXT_MESSAGE_COMPRESSED_APP", packetType: "Compressed Text Message" };
+    case 8:
+      return { portNumValue, portNumName: "WAYPOINT_APP", packetType: "Waypoint" };
+    case 67:
+      return { portNumValue, portNumName: "TELEMETRY_APP", packetType: "Telemetry" };
+    case 73:
+      return { portNumValue, portNumName: "MAP_REPORT_APP", packetType: "Map Report" };
+    default:
+      return null;
+  }
 }
 
 function equalsIgnoreCase(left, right) {

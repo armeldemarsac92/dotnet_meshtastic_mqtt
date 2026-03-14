@@ -198,7 +198,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
             ? DateTimeOffset.UtcNow
             : rawPacket.ReceivedAtUtc;
 
-        _liveMessageFeedService.RecordMessage(rawPacket);
+        _liveMessageFeedService.RecordMessage(rawPacket, processedPacket.DecodedPacket);
 
         SetSnapshot(snapshot => snapshot with
         {

@@ -11,4 +11,6 @@ public sealed class RealtimePacketWorkerResult
     public string? ErrorDetail { get; init; }
 
     public RealtimeRawPacketEvent? RawPacket { get; init; }
+
+    public RealtimeDecodedPacketEvent? DecodedPacket { get; init; }
 }

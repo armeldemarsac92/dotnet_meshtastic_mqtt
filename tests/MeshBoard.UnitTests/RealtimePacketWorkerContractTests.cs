@@ -60,6 +60,35 @@ public sealed class RealtimePacketWorkerContractTests
     }
 
     [Fact]
+    public void WorkerResult_WhenDecodedPacketExists_ShouldExposeSupportedPortMetadata()
+    {
+        var result = new RealtimePacketWorkerResult
+        {
+            IsSuccess = true,
+            DecryptResultClassification = RealtimePacketWorkerDecryptResultClassifications.Decrypted,
+            DecodedPacket = new RealtimeDecodedPacketEvent
+            {
+                PortNumValue = 1,
+                PortNumName = "TEXT_MESSAGE_APP",
+                PacketType = "Text Message",
+                PayloadBase64 = Convert.ToBase64String("hello mesh"u8.ToArray()),
+                PayloadSizeBytes = 10,
+                PayloadPreview = "hello mesh",
+                SourceNodeNumber = 1234,
+                DestinationNodeNumber = uint.MaxValue
+            }
+        };
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.DecodedPacket);
+        Assert.Equal(1, result.DecodedPacket!.PortNumValue);
+        Assert.Equal("TEXT_MESSAGE_APP", result.DecodedPacket.PortNumName);
+        Assert.Equal("Text Message", result.DecodedPacket.PacketType);
+        Assert.Equal("hello mesh", result.DecodedPacket.PayloadPreview);
+        Assert.Equal((uint)1234, result.DecodedPacket.SourceNodeNumber);
+    }
+
+    [Fact]
     public void WorkerResult_WhenFailureOccurs_ShouldAllowBoundedFailureClassification()
     {
         var result = new RealtimePacketWorkerResult

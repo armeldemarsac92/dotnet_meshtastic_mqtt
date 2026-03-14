@@ -26,8 +26,19 @@ public sealed class LiveMessageFeedServiceTests
             PacketId = 18,
             FromNodeNumber = 99
         };
+        var decodedPacket = new RealtimeDecodedPacketEvent
+        {
+            PortNumValue = 1,
+            PortNumName = "TEXT_MESSAGE_APP",
+            PacketType = "Text Message",
+            PayloadBase64 = Convert.ToBase64String("hello mesh"u8.ToArray()),
+            PayloadSizeBytes = 10,
+            PayloadPreview = "hello mesh",
+            SourceNodeNumber = 5678,
+            DestinationNodeNumber = 1234
+        };
 
-        service.RecordMessage(rawPacket);
+        service.RecordMessage(rawPacket, decodedPacket);
 
         var message = Assert.Single(service.Current.Messages);
         Assert.Equal("workspace-a", message.WorkspaceId);
@@ -44,6 +55,14 @@ public sealed class LiveMessageFeedServiceTests
         Assert.Equal(RealtimePacketWorkerFailureKinds.NoMatchingKey, message.FailureClassification);
         Assert.Equal((uint)18, message.PacketId);
         Assert.Equal((uint)99, message.FromNodeNumber);
+        Assert.Equal(1, message.PortNumValue);
+        Assert.Equal("TEXT_MESSAGE_APP", message.PortNumName);
+        Assert.Equal("Text Message", message.PacketType);
+        Assert.Equal("hello mesh", message.PayloadPreview);
+        Assert.Equal(decodedPacket.PayloadBase64, message.DecodedPayloadBase64);
+        Assert.Equal(10, message.DecodedPayloadSizeBytes);
+        Assert.Equal((uint)5678, message.DecodedSourceNodeNumber);
+        Assert.Equal((uint)1234, message.DecodedDestinationNodeNumber);
     }
 
     [Fact]

@@ -37,4 +37,20 @@ public sealed record LiveMessageEnvelope
     public uint? FromNodeNumber { get; init; }
 
     public uint? PacketId { get; init; }
+
+    public int? PortNumValue { get; init; }
+
+    public string? PortNumName { get; init; }
+
+    public string? PacketType { get; init; }
+
+    public string? PayloadPreview { get; init; }
+
+    public string? DecodedPayloadBase64 { get; init; }
+
+    public int? DecodedPayloadSizeBytes { get; init; }
+
+    public uint? DecodedSourceNodeNumber { get; init; }
+
+    public uint? DecodedDestinationNodeNumber { get; init; }
 }

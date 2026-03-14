@@ -25,7 +25,9 @@ public sealed class LiveMessageFeedService
         _state.SetSnapshot(new());
     }
 
-    public void RecordMessage(RealtimeRawPacketEvent rawPacket)
+    public void RecordMessage(
+        RealtimeRawPacketEvent rawPacket,
+        RealtimeDecodedPacketEvent? decodedPacket = null)
     {
         ArgumentNullException.ThrowIfNull(rawPacket);
 
@@ -61,7 +63,23 @@ public sealed class LiveMessageFeedService
                 ? null
                 : rawPacket.MatchedKeyId.Trim(),
             FromNodeNumber = rawPacket.FromNodeNumber,
-            PacketId = rawPacket.PacketId
+            PacketId = rawPacket.PacketId,
+            PortNumValue = decodedPacket?.PortNumValue,
+            PortNumName = string.IsNullOrWhiteSpace(decodedPacket?.PortNumName)
+                ? null
+                : decodedPacket.PortNumName.Trim(),
+            PacketType = string.IsNullOrWhiteSpace(decodedPacket?.PacketType)
+                ? null
+                : decodedPacket.PacketType.Trim(),
+            PayloadPreview = string.IsNullOrWhiteSpace(decodedPacket?.PayloadPreview)
+                ? null
+                : decodedPacket.PayloadPreview.Trim(),
+            DecodedPayloadBase64 = string.IsNullOrWhiteSpace(decodedPacket?.PayloadBase64)
+                ? null
+                : decodedPacket.PayloadBase64.Trim(),
+            DecodedPayloadSizeBytes = decodedPacket?.PayloadSizeBytes,
+            DecodedSourceNodeNumber = decodedPacket?.SourceNodeNumber,
+            DecodedDestinationNodeNumber = decodedPacket?.DestinationNodeNumber
         };
 
         var messages = current.Messages

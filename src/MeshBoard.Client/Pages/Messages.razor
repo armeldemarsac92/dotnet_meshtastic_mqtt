@@ -12,7 +12,7 @@
         <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Traffic</p>
-                <h1 class="mt-2 font-display text-4xl text-cinder-950">Live encrypted packets</h1>
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Live packet decode feed</h1>
                 <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
                     This feed is memory-only in wave 1. The browser keeps recent raw envelopes locally so future
                     decrypt and projection layers can stay on-device without server-owned plaintext history.
@@ -102,15 +102,34 @@
                                 <td class="px-5 py-4 align-top break-words">@message.BrokerServer</td>
                                 <td class="px-5 py-4 align-top break-words font-medium">
                                     <div>@message.SourceTopic</div>
+                                    @if (!string.IsNullOrWhiteSpace(message.PacketType))
+                                    {
+                                        <div class="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-signal-600">@message.PacketType</div>
+                                    }
                                     @if (!string.IsNullOrWhiteSpace(message.DownstreamTopic))
                                     {
                                         <div class="mt-2 text-xs font-normal text-cinder-800/62">@message.DownstreamTopic</div>
                                     }
+                                    @if (!string.IsNullOrWhiteSpace(message.PortNumName))
+                                    {
+                                        <div class="mt-2 text-xs font-normal text-cinder-800/62">
+                                            Port: @message.PortNumName
+                                            @if (message.PortNumValue.HasValue)
+                                            {
+                                                <span>(@message.PortNumValue.Value)</span>
+                                            }
+                                        </div>
+                                    }
                                 </td>
                                 <td class="px-5 py-4 align-top">@message.PayloadSizeBytes</td>
                                 <td class="px-5 py-4 align-top">
+                                    <div class="mb-2 text-xs text-cinder-800/68">@DescribePacketState(message)</div>
+                                    @if (!string.IsNullOrWhiteSpace(message.PayloadPreview))
+                                    {
+                                        <div class="mb-2 text-sm font-medium text-cinder-950">@message.PayloadPreview</div>
+                                    }
                                     <code class="block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">
-                                        @TruncatePayload(message.PayloadBase64)
+                                        @TruncatePayload(GetDisplayedPayload(message))
                                     </code>
                                 </td>
                             </tr>
@@ -213,5 +232,54 @@
         return payloadBase64.Length <= 180
             ? payloadBase64
             : $"{payloadBase64[..180]}...";
+    }
+
+    private static string DescribePacketState(LiveMessageEnvelope message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.FailureClassification))
+        {
+            return message.FailureClassification switch
+            {
+                RealtimePacketWorkerFailureKinds.NoMatchingKey => "Encrypted packet with no matching local key",
+                RealtimePacketWorkerFailureKinds.DecryptFailure => "Encrypted packet, but all local decrypt attempts failed",
+                RealtimePacketWorkerFailureKinds.ProtobufParseFailure => "Decrypted locally, but the Meshtastic Data wrapper was invalid",
+                RealtimePacketWorkerFailureKinds.UnsupportedPortNum => "Decoded locally, but this Meshtastic port is not handled yet",
+                _ => message.FailureClassification
+            };
+        }
+
+        if (message.DecryptionSucceeded && !string.IsNullOrWhiteSpace(message.PacketType))
+        {
+            return "Encrypted packet decrypted and decoded locally";
+        }
+
+        if (message.DecryptionSucceeded)
+        {
+            return "Encrypted packet decrypted locally";
+        }
+
+        if (!message.IsEncrypted && !string.IsNullOrWhiteSpace(message.PacketType))
+        {
+            return "Decoded packet received without local decryption";
+        }
+
+        return message.IsEncrypted
+            ? "Encrypted packet awaiting local decode"
+            : "Raw packet observed";
+    }
+
+    private static string GetDisplayedPayload(LiveMessageEnvelope message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.DecodedPayloadBase64))
+        {
+            return message.DecodedPayloadBase64;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.DecryptedPayloadBase64))
+        {
+            return message.DecryptedPayloadBase64;
+        }
+
+        return message.PayloadBase64;
     }
 }
