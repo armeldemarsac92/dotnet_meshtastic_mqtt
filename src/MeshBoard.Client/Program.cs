@@ -2,6 +2,7 @@ using MeshBoard.Api.SDK.Abstractions;
 using MeshBoard.Api.SDK.DI;
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Channels;
+using MeshBoard.Client.Maps;
 using MeshBoard.Client.Messages;
 using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
@@ -43,6 +44,8 @@ public class Program
         builder.Services.AddScoped<FavoritePreferenceApiClient>();
         builder.Services.AddScoped<LiveMessageFeedService>();
         builder.Services.AddScoped<LiveMessageFeedState>();
+        builder.Services.AddScoped<MapProjectionStore>();
+        builder.Services.AddScoped<MapProjectionState>();
         builder.Services.AddScoped<NodeProjectionStore>();
         builder.Services.AddScoped<NodeProjectionState>();
         builder.Services.AddScoped<LocalVaultService>();

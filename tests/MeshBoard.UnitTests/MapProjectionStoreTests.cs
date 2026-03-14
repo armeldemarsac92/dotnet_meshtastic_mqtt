@@ -1,5 +1,4 @@
 using MeshBoard.Client.Maps;
-using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
 
 namespace MeshBoard.UnitTests;
@@ -7,86 +6,72 @@ namespace MeshBoard.UnitTests;
 public sealed class MapProjectionStoreTests
 {
     [Fact]
-    public void Project_ShouldCreateLocatedNodeFromRealtimePacket()
+    public void Project_ShouldCreateLocatedNodeAndPulse()
     {
         var store = new MapProjectionStore(new MapProjectionState());
 
-        store.Project(CreatePacketResult(latitude: 48.8566, longitude: 2.3522));
+        store.Project(CreatePacketResult(latitude: 48.8566, longitude: 2.3522, channel: "US/LongFast"));
 
         var node = Assert.Single(store.Current.Nodes);
-        var pulse = Assert.Single(store.Current.ActivityPulses);
         Assert.Equal("!0000162e", node.NodeId);
-        Assert.Equal("Atlas", node.DisplayName);
-        Assert.Equal("US/LongFast", node.Channel);
         Assert.Equal(48.8566, node.Latitude, 4);
         Assert.Equal(2.3522, node.Longitude, 4);
-        Assert.Equal(1, pulse.PulseCount);
+        Assert.Equal("US/LongFast", node.Channel);
+        Assert.Equal("Position Update", node.LastPacketType);
+        Assert.Single(store.DrainActivityPulses());
     }
 
     [Fact]
-    public void Project_WhenFollowUpPacketHasNoLocation_ShouldRetainExistingCoordinates()
+    public void Project_ShouldIgnoreNodeWithoutCoordinatesUntilLocationExists()
     {
         var store = new MapProjectionStore(new MapProjectionState());
 
-        store.Project(CreatePacketResult(latitude: 48.8566, longitude: 2.3522));
-        store.Project(CreatePacketResult(
-            packetType: "Telemetry",
-            latitude: null,
-            longitude: null,
-            batteryLevelPercent: 93,
-            receivedAtUtc: DateTimeOffset.Parse("2026-03-14T17:02:00Z")));
+        store.Project(CreatePacketResult(latitude: null, longitude: null));
+
+        Assert.Empty(store.Current.Nodes);
+        Assert.Empty(store.DrainActivityPulses());
+    }
+
+    [Fact]
+    public void Project_ShouldMergeTelemetryAfterLocationExists()
+    {
+        var store = new MapProjectionStore(new MapProjectionState());
+
+        store.Project(CreatePacketResult(latitude: 48.8566, longitude: 2.3522, packetType: "Position Update"));
+        store.Project(CreatePacketResult(latitude: null, longitude: null, packetType: "Telemetry", batteryLevelPercent: 92));
 
         var node = Assert.Single(store.Current.Nodes);
-        Assert.Equal(48.8566, node.Latitude, 4);
-        Assert.Equal(2.3522, node.Longitude, 4);
-        Assert.Equal(93, node.BatteryLevelPercent);
+        Assert.Equal(92, node.BatteryLevelPercent);
         Assert.Equal(2, node.ObservedPacketCount);
         Assert.Equal("Telemetry", node.LastPacketType);
+        Assert.Equal(2, store.DrainActivityPulses().Single().PulseCount);
     }
 
     [Fact]
-    public void ReconcileFromNodeProjections_ShouldGeneratePulseForObservedPacketDelta()
+    public void ApplyQuery_ShouldFilterBySearchAndFocusedChannel()
     {
         var store = new MapProjectionStore(new MapProjectionState());
 
-        store.SeedFromNodeProjections(
-            [
-                CreateNodeProjectionEnvelope(observedPacketCount: 2)
-            ]);
-        store.ReconcileFromNodeProjections(
-            [
-                CreateNodeProjectionEnvelope(observedPacketCount: 5, batteryLevelPercent: 88)
-            ]);
+        store.Project(CreatePacketResult(latitude: 48.8566, longitude: 2.3522, channel: "US/LongFast", shortName: "ATLS"));
+        store.Project(CreatePacketResult(nodeId: "!00001000", nodeNumber: 4096, latitude: 43.2965, longitude: 5.3698, channel: "EU/FieldOps", shortName: "FIELD", sourceTopic: "msh/EU/2/e/FieldOps/!00001000"));
 
-        var node = Assert.Single(store.Current.Nodes);
-        var pulse = Assert.Single(store.Current.ActivityPulses);
-        Assert.Equal(88, node.BatteryLevelPercent);
-        Assert.Equal(5, node.ObservedPacketCount);
-        Assert.Equal(3, pulse.PulseCount);
-    }
+        var searchFiltered = MapProjectionStore.ApplyQuery(store.Current, "field", null);
+        var channelFiltered = MapProjectionStore.ApplyQuery(store.Current, string.Empty, "US/LongFast");
 
-    [Fact]
-    public void ReconcileFromNodeProjections_ShouldBoundRetainedNodes()
-    {
-        var store = new MapProjectionStore(new MapProjectionState());
-
-        store.SeedFromNodeProjections(
-            Enumerable.Range(0, 1_050)
-                .Select(index => CreateNodeProjectionEnvelope(
-                    nodeId: $"!{index:x8}",
-                    observedPacketCount: index + 1,
-                    latitude: 40 + (index * 0.001),
-                    longitude: -70 - (index * 0.001))));
-
-        Assert.Equal(1_000, store.Current.Nodes.Count);
-        Assert.DoesNotContain(store.Current.Nodes, node => node.NodeId == "!00000000");
+        Assert.Single(searchFiltered);
+        Assert.Equal("!00001000", searchFiltered[0].NodeId);
+        Assert.Single(channelFiltered);
+        Assert.Equal("!0000162e", channelFiltered[0].NodeId);
     }
 
     private static RealtimePacketWorkerResult CreatePacketResult(
         string nodeId = "!0000162e",
         uint nodeNumber = 5678,
+        string sourceTopic = "msh/US/2/e/LongFast/!0000162e",
+        string channel = "US/LongFast",
         string packetType = "Position Update",
         DateTimeOffset? receivedAtUtc = null,
+        string? shortName = null,
         double? latitude = 48.8566,
         double? longitude = 2.3522,
         int? batteryLevelPercent = null)
@@ -101,7 +86,7 @@ public sealed class MapProjectionStoreTests
             {
                 WorkspaceId = "workspace-a",
                 BrokerServer = "broker.meshboard.test",
-                SourceTopic = "msh/US/2/e/LongFast/!0000162e",
+                SourceTopic = sourceTopic,
                 DownstreamTopic = "meshboard/workspaces/workspace-a/live/packets",
                 PayloadBase64 = "AQID",
                 PayloadSizeBytes = 3,
@@ -124,8 +109,8 @@ public sealed class MapProjectionStoreTests
                     NodeId = nodeId,
                     NodeNumber = nodeNumber,
                     LastHeardAtUtc = timestamp,
-                    LastHeardChannel = "US/LongFast",
-                    ShortName = "ATLS",
+                    LastHeardChannel = channel,
+                    ShortName = shortName,
                     LongName = "Atlas",
                     PacketType = packetType,
                     PayloadPreview = "Position update",
@@ -134,29 +119,6 @@ public sealed class MapProjectionStoreTests
                     BatteryLevelPercent = batteryLevelPercent
                 }
             }
-        };
-    }
-
-    private static NodeProjectionEnvelope CreateNodeProjectionEnvelope(
-        string nodeId = "!0000162e",
-        int observedPacketCount = 1,
-        double latitude = 48.8566,
-        double longitude = 2.3522,
-        int? batteryLevelPercent = null)
-    {
-        return new NodeProjectionEnvelope
-        {
-            NodeId = nodeId,
-            BrokerServer = "broker.meshboard.test",
-            ShortName = "ATLS",
-            LongName = "Atlas",
-            LastHeardAtUtc = DateTimeOffset.Parse("2026-03-14T17:00:00Z").AddMinutes(observedPacketCount),
-            LastHeardChannel = "US/LongFast",
-            LastPacketType = "Position Update",
-            LastKnownLatitude = latitude,
-            LastKnownLongitude = longitude,
-            BatteryLevelPercent = batteryLevelPercent,
-            ObservedPacketCount = observedPacketCount
         };
     }
 }

@@ -1,5 +1,6 @@
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Channels;
+using MeshBoard.Client.Maps;
 using MeshBoard.Client.Messages;
 using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Services;
@@ -14,6 +15,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     private readonly ChannelProjectionStore _channelProjectionStore;
     private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
+    private readonly MapProjectionStore _mapProjectionStore;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
     private readonly NodeProjectionStore _nodeProjectionStore;
     private readonly RealtimeClientState _realtimeClientState;
@@ -28,6 +30,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         DecryptedMessageStore decryptedMessageStore,
         IJSRuntime jsRuntime,
         LiveMessageFeedService liveMessageFeedService,
+        MapProjectionStore mapProjectionStore,
         NodeProjectionStore nodeProjectionStore,
         RealtimeClientState realtimeClientState,
         RealtimeSessionApiClient realtimeSessionApiClient,
@@ -38,6 +41,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         _channelProjectionStore = channelProjectionStore;
         _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
+        _mapProjectionStore = mapProjectionStore;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
         _nodeProjectionStore = nodeProjectionStore;
         _realtimeClientState = realtimeClientState;
@@ -212,6 +216,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         _liveMessageFeedService.RecordMessage(rawPacket, processedPacket.DecodedPacket);
         _channelProjectionStore.Project(processedPacket);
         _decryptedMessageStore.Project(processedPacket);
+        _mapProjectionStore.Project(processedPacket);
         _nodeProjectionStore.Project(processedPacket);
 
         SetSnapshot(snapshot => snapshot with

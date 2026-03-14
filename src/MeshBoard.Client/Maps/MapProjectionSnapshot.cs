@@ -2,13 +2,11 @@ namespace MeshBoard.Client.Maps;
 
 public sealed record MapProjectionSnapshot
 {
-    public static readonly IReadOnlyList<MapNodePoint> EmptyNodes = Array.Empty<MapNodePoint>();
+    public static readonly IReadOnlyList<MapProjectionEnvelope> EmptyNodes = Array.Empty<MapProjectionEnvelope>();
 
     public static readonly IReadOnlyList<MapNodeActivity> EmptyActivityPulses = Array.Empty<MapNodeActivity>();
 
-    public IReadOnlyList<MapNodePoint> Nodes { get; init; } = EmptyNodes;
-
-    public IReadOnlyList<MapNodeActivity> ActivityPulses { get; init; } = EmptyActivityPulses;
+    public IReadOnlyList<MapProjectionEnvelope> Nodes { get; init; } = EmptyNodes;
 
     public DateTimeOffset? LastProjectedAtUtc { get; init; }
 
