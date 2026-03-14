@@ -46,7 +46,22 @@ public sealed class LiveMessageFeedService
             PayloadBase64 = rawPacket.PayloadBase64?.Trim() ?? string.Empty,
             PayloadSizeBytes = rawPacket.PayloadSizeBytes,
             ReceivedAtUtc = receivedAtUtc,
-            SourceTopic = rawPacket.SourceTopic.Trim()
+            SourceTopic = rawPacket.SourceTopic.Trim(),
+            IsEncrypted = rawPacket.IsEncrypted,
+            DecryptionAttempted = rawPacket.DecryptionAttempted,
+            DecryptionSucceeded = rawPacket.DecryptionSucceeded,
+            DecryptResultClassification = rawPacket.DecryptResultClassification?.Trim() ?? RealtimePacketWorkerDecryptResultClassifications.NotAttempted,
+            FailureClassification = string.IsNullOrWhiteSpace(rawPacket.FailureClassification)
+                ? null
+                : rawPacket.FailureClassification.Trim(),
+            DecryptedPayloadBase64 = string.IsNullOrWhiteSpace(rawPacket.DecryptedPayloadBase64)
+                ? null
+                : rawPacket.DecryptedPayloadBase64.Trim(),
+            MatchedKeyId = string.IsNullOrWhiteSpace(rawPacket.MatchedKeyId)
+                ? null
+                : rawPacket.MatchedKeyId.Trim(),
+            FromNodeNumber = rawPacket.FromNodeNumber,
+            PacketId = rawPacket.PacketId
         };
 
         var messages = current.Messages

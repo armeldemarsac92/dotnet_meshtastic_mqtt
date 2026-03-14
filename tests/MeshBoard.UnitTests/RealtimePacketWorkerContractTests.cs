@@ -36,7 +36,14 @@ public sealed class RealtimePacketWorkerContractTests
                 DownstreamTopic = "meshboard/workspaces/workspace-a/live/packets",
                 PayloadBase64 = "AQID",
                 PayloadSizeBytes = 3,
-                ReceivedAtUtc = DateTimeOffset.Parse("2026-03-14T15:00:00Z")
+                ReceivedAtUtc = DateTimeOffset.Parse("2026-03-14T15:00:00Z"),
+                IsEncrypted = true,
+                DecryptionAttempted = true,
+                DecryptionSucceeded = false,
+                DecryptResultClassification = RealtimePacketWorkerDecryptResultClassifications.EncryptedButNotDecrypted,
+                FailureClassification = RealtimePacketWorkerFailureKinds.NoMatchingKey,
+                FromNodeNumber = 1337,
+                PacketId = 42
             }
         };
 
@@ -45,6 +52,11 @@ public sealed class RealtimePacketWorkerContractTests
         Assert.NotNull(result.RawPacket);
         Assert.Equal("workspace-a", result.RawPacket!.WorkspaceId);
         Assert.Equal(3, result.RawPacket.PayloadSizeBytes);
+        Assert.True(result.RawPacket.IsEncrypted);
+        Assert.Equal(RealtimePacketWorkerDecryptResultClassifications.EncryptedButNotDecrypted, result.RawPacket.DecryptResultClassification);
+        Assert.Equal(RealtimePacketWorkerFailureKinds.NoMatchingKey, result.RawPacket.FailureClassification);
+        Assert.Equal((uint)1337, result.RawPacket.FromNodeNumber);
+        Assert.Equal((uint)42, result.RawPacket.PacketId);
     }
 
     [Fact]

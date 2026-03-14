@@ -182,7 +182,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
             return;
         }
 
-        if (!processedPacket.IsSuccess || processedPacket.RawPacket is null)
+        if (processedPacket.RawPacket is null)
         {
             SetSnapshot(snapshot => snapshot with
             {
