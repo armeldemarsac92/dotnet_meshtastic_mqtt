@@ -14,6 +14,7 @@ public sealed class AuthApiClient
     private readonly AntiforgeryTokenProvider _antiforgeryTokenProvider;
     private readonly AuthSessionState _authSessionState;
     private readonly BrowserRealtimeClient _browserRealtimeClient;
+    private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly LocalVaultService _localVaultService;
 
@@ -22,6 +23,7 @@ public sealed class AuthApiClient
         AntiforgeryTokenProvider antiforgeryTokenProvider,
         AuthSessionState authSessionState,
         BrowserRealtimeClient browserRealtimeClient,
+        DecryptedMessageStore decryptedMessageStore,
         LiveMessageFeedService liveMessageFeedService,
         LocalVaultService localVaultService)
     {
@@ -29,6 +31,7 @@ public sealed class AuthApiClient
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
         _authSessionState = authSessionState;
         _browserRealtimeClient = browserRealtimeClient;
+        _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
         _localVaultService = localVaultService;
     }
@@ -90,6 +93,7 @@ public sealed class AuthApiClient
 
             _antiforgeryTokenProvider.Clear();
             _authSessionState.Clear();
+            _decryptedMessageStore.Clear();
             _liveMessageFeedService.Clear();
         }
     }

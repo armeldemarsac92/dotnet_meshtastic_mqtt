@@ -9,6 +9,7 @@ namespace MeshBoard.Client.Realtime;
 public sealed class BrowserRealtimeClient : IAsyncDisposable
 {
     private readonly AuthSessionState _authSessionState;
+    private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
     private readonly RealtimeClientState _realtimeClientState;
@@ -19,6 +20,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
 
     public BrowserRealtimeClient(
         AuthSessionState authSessionState,
+        DecryptedMessageStore decryptedMessageStore,
         IJSRuntime jsRuntime,
         LiveMessageFeedService liveMessageFeedService,
         RealtimeClientState realtimeClientState,
@@ -27,6 +29,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         RealtimePacketWorkerRequestFactory realtimePacketWorkerRequestFactory)
     {
         _authSessionState = authSessionState;
+        _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
         _realtimeClientState = realtimeClientState;
@@ -199,6 +202,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
             : rawPacket.ReceivedAtUtc;
 
         _liveMessageFeedService.RecordMessage(rawPacket, processedPacket.DecodedPacket);
+        _decryptedMessageStore.Project(processedPacket);
 
         SetSnapshot(snapshot => snapshot with
         {

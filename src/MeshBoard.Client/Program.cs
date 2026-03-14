@@ -34,6 +34,8 @@ public class Program
         builder.Services.AddScoped<IVaultRuntimeKeyRecordProvider>(sp => sp.GetRequiredService<BrowserVaultStore>());
         builder.Services.AddScoped<BrokerPreferenceApiClient>();
         builder.Services.AddScoped<ChannelPreferenceApiClient>();
+        builder.Services.AddScoped<DecryptedMessageStore>();
+        builder.Services.AddScoped<DecryptedMessageState>();
         builder.Services.AddScoped<FavoritePreferenceApiClient>();
         builder.Services.AddScoped<LiveMessageFeedService>();
         builder.Services.AddScoped<LiveMessageFeedState>();

@@ -2,7 +2,7 @@
 @attribute [Authorize]
 @implements IDisposable
 @inject BrowserRealtimeClient BrowserRealtimeClient
-@inject LiveMessageFeedService LiveMessageFeedService
+@inject DecryptedMessageStore DecryptedMessageStore
 @inject RealtimeClientState RealtimeClientState
 
 <PageTitle>Messages</PageTitle>
@@ -12,10 +12,10 @@
         <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Traffic</p>
-                <h1 class="mt-2 font-display text-4xl text-cinder-950">Live packet decode feed</h1>
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Live decoded message stream</h1>
                 <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
-                    This feed is memory-only in wave 1. The browser keeps recent raw envelopes locally so future
-                    decrypt and projection layers can stay on-device without server-owned plaintext history.
+                    This view is powered by local client projections. The browser filters and renders decoded
+                    Meshtastic packets directly from the live stream without server-owned plaintext history.
                 </p>
             </div>
 
@@ -34,8 +34,8 @@
 
                 <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
                         @onclick="ClearFeed"
-                        disabled="@(_feedSnapshot.Messages.Count == 0)">
-                    Clear buffer
+                        disabled="@(_messageSnapshot.Messages.Count == 0)">
+                    Clear stream
                 </button>
             </div>
         </div>
@@ -54,24 +54,52 @@
 
             <article class="shell-subpanel rounded-[1.6rem] p-5">
                 <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Buffer size</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_feedSnapshot.Messages.Count / 100</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Total observed this session: @_feedSnapshot.TotalReceived</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FilteredMessages.Count / 100</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Total projected this session: @_messageSnapshot.TotalProjected</p>
             </article>
 
             <article class="shell-subpanel rounded-[1.6rem] p-5">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last packet</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_feedSnapshot.LastReceivedAtUtc)</p>
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last projection</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_messageSnapshot.LastProjectedAtUtc)</p>
                 <p class="mt-2 text-sm text-cinder-800/72">Subscriptions: @_connectionSnapshot.ActiveSubscriptionCount</p>
             </article>
         </div>
     </header>
 
+    <section class="shell-panel rounded-[2rem] p-6">
+        <div class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
+                <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                       @bind="_searchText"
+                       @bind:event="oninput"
+                       placeholder="Topic, preview, broker, port" />
+            </label>
+
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker</span>
+                <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                       @bind="_brokerFilter"
+                       @bind:event="oninput"
+                       placeholder="Filter by broker" />
+            </label>
+
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packet type</span>
+                <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                       @bind="_packetTypeFilter"
+                       @bind:event="oninput"
+                       placeholder="Text, Telemetry, Node Info" />
+            </label>
+        </div>
+    </section>
+
     <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
-        @if (_feedSnapshot.Messages.Count == 0)
+        @if (FilteredMessages.Count == 0)
         {
             <div class="p-8 text-sm leading-7 text-cinder-800/78">
-                No live packets are buffered yet. Open the realtime connection and keep at least one saved channel
-                authorized for the broker session.
+                No locally decoded packets match the current view yet. Open the realtime connection and keep at least
+                one saved channel authorized for the broker session.
             </div>
         }
         else
@@ -79,57 +107,44 @@
             <div class="overflow-x-auto">
                 <table class="min-w-full table-fixed border-collapse">
                     <colgroup>
+                        <col class="w-[14%]" />
                         <col class="w-[16%]" />
-                        <col class="w-[18%]" />
-                        <col class="w-[24%]" />
-                        <col class="w-[10%]" />
+                        <col class="w-[16%]" />
+                        <col class="w-[22%]" />
                         <col class="w-[32%]" />
                     </colgroup>
                     <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <tr>
                             <th class="px-5 py-4">Received</th>
                             <th class="px-5 py-4">Broker</th>
+                            <th class="px-5 py-4">Packet</th>
                             <th class="px-5 py-4">Source topic</th>
-                            <th class="px-5 py-4">Bytes</th>
-                            <th class="px-5 py-4">Payload</th>
+                            <th class="px-5 py-4">Preview</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var message in _feedSnapshot.Messages)
+                        @foreach (var message in FilteredMessages)
                         {
                             <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
                                 <td class="px-5 py-4 align-top whitespace-nowrap">@message.ReceivedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
                                 <td class="px-5 py-4 align-top break-words">@message.BrokerServer</td>
+                                <td class="px-5 py-4 align-top">
+                                    <div class="font-medium text-cinder-950">@message.PacketType</div>
+                                    <div class="mt-2 text-xs text-cinder-800/62">@message.PortNumName (@message.PortNumValue)</div>
+                                    <div class="mt-2 text-xs text-cinder-800/68">@DescribeProjectionState(message)</div>
+                                </td>
                                 <td class="px-5 py-4 align-top break-words font-medium">
                                     <div>@message.SourceTopic</div>
-                                    @if (!string.IsNullOrWhiteSpace(message.PacketType))
-                                    {
-                                        <div class="mt-2 text-xs font-semibold uppercase tracking-[0.14em] text-signal-600">@message.PacketType</div>
-                                    }
                                     @if (!string.IsNullOrWhiteSpace(message.DownstreamTopic))
                                     {
                                         <div class="mt-2 text-xs font-normal text-cinder-800/62">@message.DownstreamTopic</div>
                                     }
-                                    @if (!string.IsNullOrWhiteSpace(message.PortNumName))
-                                    {
-                                        <div class="mt-2 text-xs font-normal text-cinder-800/62">
-                                            Port: @message.PortNumName
-                                            @if (message.PortNumValue.HasValue)
-                                            {
-                                                <span>(@message.PortNumValue.Value)</span>
-                                            }
-                                        </div>
-                                    }
                                 </td>
-                                <td class="px-5 py-4 align-top">@message.PayloadSizeBytes</td>
                                 <td class="px-5 py-4 align-top">
-                                    <div class="mb-2 text-xs text-cinder-800/68">@DescribePacketState(message)</div>
-                                    @if (!string.IsNullOrWhiteSpace(message.PayloadPreview))
-                                    {
-                                        <div class="mb-2 text-sm font-medium text-cinder-950">@message.PayloadPreview</div>
-                                    }
+                                    <div class="mb-2 text-sm font-medium text-cinder-950">@message.PayloadPreview</div>
+                                    <div class="mb-2 text-xs text-cinder-800/68">Payload size: @message.PayloadSizeBytes bytes</div>
                                     <code class="block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">
-                                        @TruncatePayload(GetDisplayedPayload(message))
+                                        @TruncatePayload(message.PayloadBase64)
                                     </code>
                                 </td>
                             </tr>
@@ -143,21 +158,24 @@
 
 @code {
     private string? _commandError;
+    private string _brokerFilter = string.Empty;
     private RealtimeClientSnapshot _connectionSnapshot = new();
-    private LiveMessageFeedSnapshot _feedSnapshot = new();
+    private DecryptedMessageSnapshot _messageSnapshot = new();
+    private string _packetTypeFilter = string.Empty;
+    private string _searchText = string.Empty;
 
     protected override void OnInitialized()
     {
         _connectionSnapshot = RealtimeClientState.Snapshot;
-        _feedSnapshot = LiveMessageFeedService.Current;
+        _messageSnapshot = DecryptedMessageStore.Current;
         RealtimeClientState.Changed += HandleConnectionChanged;
-        LiveMessageFeedService.Changed += HandleFeedChanged;
+        DecryptedMessageStore.Changed += HandleFeedChanged;
     }
 
     public void Dispose()
     {
         RealtimeClientState.Changed -= HandleConnectionChanged;
-        LiveMessageFeedService.Changed -= HandleFeedChanged;
+        DecryptedMessageStore.Changed -= HandleFeedChanged;
     }
 
     private string ConnectLabel => _connectionSnapshot.IsConnecting
@@ -172,7 +190,7 @@
 
     private void ClearFeed()
     {
-        LiveMessageFeedService.Clear();
+        DecryptedMessageStore.Clear();
     }
 
     private async Task ConnectAsync()
@@ -223,8 +241,43 @@
 
     private void HandleFeedChanged()
     {
-        _feedSnapshot = LiveMessageFeedService.Current;
+        _messageSnapshot = DecryptedMessageStore.Current;
         InvokeAsync(StateHasChanged);
+    }
+
+    private IReadOnlyList<DecryptedMessageEnvelope> FilteredMessages =>
+        _messageSnapshot.Messages
+            .Where(MatchesBrokerFilter)
+            .Where(MatchesPacketTypeFilter)
+            .Where(MatchesSearchText)
+            .ToArray();
+
+    private bool MatchesBrokerFilter(DecryptedMessageEnvelope message)
+    {
+        return string.IsNullOrWhiteSpace(_brokerFilter) ||
+            message.BrokerServer.Contains(_brokerFilter.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool MatchesPacketTypeFilter(DecryptedMessageEnvelope message)
+    {
+        return string.IsNullOrWhiteSpace(_packetTypeFilter) ||
+            message.PacketType.Contains(_packetTypeFilter.Trim(), StringComparison.OrdinalIgnoreCase) ||
+            message.PortNumName.Contains(_packetTypeFilter.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool MatchesSearchText(DecryptedMessageEnvelope message)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            return true;
+        }
+
+        var filter = _searchText.Trim();
+
+        return message.SourceTopic.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            message.PayloadPreview.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            message.BrokerServer.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            message.PortNumName.Contains(filter, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string TruncatePayload(string payloadBase64)
@@ -234,52 +287,10 @@
             : $"{payloadBase64[..180]}...";
     }
 
-    private static string DescribePacketState(LiveMessageEnvelope message)
+    private static string DescribeProjectionState(DecryptedMessageEnvelope message)
     {
-        if (!string.IsNullOrWhiteSpace(message.FailureClassification))
-        {
-            return message.FailureClassification switch
-            {
-                RealtimePacketWorkerFailureKinds.NoMatchingKey => "Encrypted packet with no matching local key",
-                RealtimePacketWorkerFailureKinds.DecryptFailure => "Encrypted packet, but all local decrypt attempts failed",
-                RealtimePacketWorkerFailureKinds.ProtobufParseFailure => "Decrypted locally, but the Meshtastic Data wrapper was invalid",
-                RealtimePacketWorkerFailureKinds.UnsupportedPortNum => "Decoded locally, but this Meshtastic port is not handled yet",
-                _ => message.FailureClassification
-            };
-        }
-
-        if (message.DecryptionSucceeded && !string.IsNullOrWhiteSpace(message.PacketType))
-        {
-            return "Encrypted packet decrypted and decoded locally";
-        }
-
-        if (message.DecryptionSucceeded)
-        {
-            return "Encrypted packet decrypted locally";
-        }
-
-        if (!message.IsEncrypted && !string.IsNullOrWhiteSpace(message.PacketType))
-        {
-            return "Decoded packet received without local decryption";
-        }
-
         return message.IsEncrypted
-            ? "Encrypted packet awaiting local decode"
-            : "Raw packet observed";
-    }
-
-    private static string GetDisplayedPayload(LiveMessageEnvelope message)
-    {
-        if (!string.IsNullOrWhiteSpace(message.DecodedPayloadBase64))
-        {
-            return message.DecodedPayloadBase64;
-        }
-
-        if (!string.IsNullOrWhiteSpace(message.DecryptedPayloadBase64))
-        {
-            return message.DecryptedPayloadBase64;
-        }
-
-        return message.PayloadBase64;
+            ? "Projected from locally decrypted traffic"
+            : "Projected from decoded transport packet";
     }
 }
