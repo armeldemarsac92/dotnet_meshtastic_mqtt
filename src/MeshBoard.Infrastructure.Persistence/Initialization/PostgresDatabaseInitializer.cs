@@ -1,6 +1,6 @@
 using Dapper;
 using MeshBoard.Infrastructure.Persistence.Context;
-using MeshBoard.Infrastructure.Persistence.SQL;
+using MeshBoard.Infrastructure.Persistence.Migrations.Postgres;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Infrastructure.Persistence.Initialization;
@@ -20,16 +20,21 @@ internal sealed class PostgresDatabaseInitializer : IPersistenceInitializer
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to initialize the PostgreSQL preference schema");
+        _logger.LogInformation("Attempting to initialize the PostgreSQL preference schema migrations");
 
         await using var connection = _connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                PostgresPreferenceSchemaQueries.CreateSchema,
-                cancellationToken: cancellationToken));
+        foreach (var resourceName in ProductMigrationScriptCatalog.GetOrderedResourceNames())
+        {
+            _logger.LogInformation("Applying PostgreSQL product migration script {ResourceName}", resourceName);
 
-        _logger.LogInformation("Initialized the PostgreSQL preference schema successfully");
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    ProductMigrationScriptCatalog.ReadScript(resourceName),
+                    cancellationToken: cancellationToken));
+        }
+
+        _logger.LogInformation("Initialized the PostgreSQL preference schema migrations successfully");
     }
 }

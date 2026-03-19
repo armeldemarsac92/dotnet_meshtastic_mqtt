@@ -8,14 +8,24 @@ public sealed class ProductPersistenceSchemaTests
     public void PostgresPreferenceSchema_ShouldContainOnlyRetainedProductTables()
     {
         var persistenceAssembly = typeof(ServiceCollectionExtensions).Assembly;
-        var schemaType = persistenceAssembly.GetType(
-            "MeshBoard.Infrastructure.Persistence.SQL.PostgresPreferenceSchemaQueries",
-            throwOnError: true)!;
-        var createSchema = (string?)schemaType
-            .GetProperty("CreateSchema", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)?
-            .GetValue(null);
+        var resourcePrefix = "MeshBoard.Infrastructure.Persistence.Migrations.Postgres.Product.";
+        var resourceNames = persistenceAssembly
+            .GetManifestResourceNames()
+            .Where(resourceName => resourceName.StartsWith(resourcePrefix, StringComparison.Ordinal))
+            .OrderBy(resourceName => resourceName, StringComparer.Ordinal)
+            .ToList();
+        var createSchema = string.Join(
+            Environment.NewLine,
+            resourceNames.Select(
+                resourceName =>
+                {
+                    using var stream = persistenceAssembly.GetManifestResourceStream(resourceName)
+                        ?? throw new InvalidOperationException($"Migration script resource '{resourceName}' was not found.");
+                    using var reader = new StreamReader(stream);
+                    return reader.ReadToEnd();
+                }));
 
-        Assert.NotNull(createSchema);
+        Assert.NotEmpty(resourceNames);
         Assert.Contains("CREATE TABLE IF NOT EXISTS users", createSchema, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE IF NOT EXISTS broker_server_profiles", createSchema, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE IF NOT EXISTS favorite_nodes", createSchema, StringComparison.Ordinal);
