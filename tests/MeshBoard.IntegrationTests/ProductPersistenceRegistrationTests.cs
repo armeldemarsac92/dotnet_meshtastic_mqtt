@@ -83,9 +83,7 @@ public sealed class ProductPersistenceRegistrationTests
                     [$"{PersistenceOptions.SectionName}:ConnectionString"] =
                         provider.Equals("SQLite", StringComparison.OrdinalIgnoreCase)
                             ? "Data Source=/tmp/meshboard-product-tests.db"
-                            : "Host=localhost;Database=meshboard;Username=meshboard;Password=meshboard",
-                    [$"{BrokerOptions.SectionName}:DefaultTopicPattern"] = "msh/US/2/e/#",
-                    [$"{BrokerOptions.SectionName}:DownlinkTopic"] = "msh/US/2/json/mqtt/"
+                            : "Host=localhost;Database=meshboard;Username=meshboard;Password=meshboard"
                 })
             .Build();
     }

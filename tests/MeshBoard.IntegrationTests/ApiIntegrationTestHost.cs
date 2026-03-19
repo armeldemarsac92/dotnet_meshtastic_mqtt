@@ -79,14 +79,13 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
         builder.ConfigureAppConfiguration(
             (_, configurationBuilder) =>
             {
+                configurationBuilder.Sources.Clear();
                 configurationBuilder.AddInMemoryCollection(
                 [
                     new KeyValuePair<string, string?>("Persistence:Provider", "SQLite"),
                     new KeyValuePair<string, string?>("Persistence:ConnectionString", $"Data Source={_databasePath}"),
                     new KeyValuePair<string, string?>("Persistence:SeedLegacyDefaultWorkspace", "false"),
                     new KeyValuePair<string, string?>("Persistence:MessageRetentionDays", "30"),
-                    new KeyValuePair<string, string?>("Broker:DefaultTopicPattern", "msh/US/2/e/#"),
-                    new KeyValuePair<string, string?>("Broker:DownlinkTopic", "msh/US/2/json/mqtt/"),
                     new KeyValuePair<string, string?>("RealtimeSession:BrokerUrl", RealtimeBrokerUrl),
                     new KeyValuePair<string, string?>("RealtimeSession:Audience", RealtimeAudience),
                     new KeyValuePair<string, string?>("RealtimeSession:Issuer", RealtimeIssuer),

@@ -16,7 +16,7 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        AddCommonOptions(services, configuration);
+        AddPersistenceOptions(services, configuration);
         RegisterProviderInfrastructure(services, GetProvider(configuration), includeLegacyRuntime: false);
         RegisterProductRepositories(services);
 
@@ -29,7 +29,8 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        AddCommonOptions(services, configuration);
+        AddPersistenceOptions(services, configuration);
+        AddLegacyBrokerOptions(services, configuration);
         var provider = GetProvider(configuration);
 
         if (!string.Equals(provider, "SQLite", StringComparison.OrdinalIgnoreCase))
@@ -47,12 +48,15 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    private static void AddCommonOptions(IServiceCollection services, IConfiguration configuration)
+    private static void AddPersistenceOptions(IServiceCollection services, IConfiguration configuration)
     {
         services
             .AddOptions<PersistenceOptions>()
             .Bind(configuration.GetSection(PersistenceOptions.SectionName));
+    }
 
+    private static void AddLegacyBrokerOptions(IServiceCollection services, IConfiguration configuration)
+    {
         services
             .AddOptions<BrokerOptions>()
             .Bind(configuration.GetSection(BrokerOptions.SectionName));
@@ -71,7 +75,7 @@ public static class ServiceCollectionExtensions
         switch (NormalizeProvider(provider))
         {
             case "sqlite":
-                services.AddScoped<IPersistenceConnectionFactory, SqlitePersistenceConnectionFactory>();
+                services.AddSingleton<IPersistenceConnectionFactory, SqlitePersistenceConnectionFactory>();
                 services.AddSingleton<IPersistenceInitializer, SqliteDatabaseInitializer>();
                 break;
             case "postgresql":
@@ -81,7 +85,7 @@ public static class ServiceCollectionExtensions
                         "Legacy runtime persistence remains SQLite-only. Use AddProductPersistenceInfrastructure for the API product path.");
                 }
 
-                services.AddScoped<IPersistenceConnectionFactory, PostgresPersistenceConnectionFactory>();
+                services.AddSingleton<IPersistenceConnectionFactory, PostgresPersistenceConnectionFactory>();
                 services.AddSingleton<IPersistenceInitializer, PostgresDatabaseInitializer>();
                 break;
             default:
