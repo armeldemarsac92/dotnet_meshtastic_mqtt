@@ -27,7 +27,6 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IReadModelMetricsService, InMemoryReadModelMetricsService>();
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
         services.AddSingleton(TimeProvider.System);
-        services.AddScoped<IBrokerMonitorService, BrokerMonitorService>();
         services.AddScoped<IBrokerRuntimeCommandQueryService, BrokerRuntimeCommandQueryService>();
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
         services.AddScoped<ICachedChannelDetailService, CachedChannelDetailService>();
@@ -35,7 +34,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICachedNodeDetailService, CachedNodeDetailService>();
         services.AddScoped<IChannelReadService, ChannelReadService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
-        services.AddScoped<IHomeDashboardService, HomeDashboardService>();
         services.AddScoped<IMessageComposerService, MessageComposerService>();
         services.AddScoped<IMessageRetentionService, MessageRetentionService>();
         services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
@@ -45,7 +43,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISendCapabilityService, SendCapabilityService>();
         services.AddScoped<ITopicExplorerService, TopicExplorerService>();
         services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
-        services.AddScoped<ITopicProbeService, TopicProbeService>();
         services.AddScoped<ITopicPresetService, TopicPresetService>();
         services.AddScoped<IUserAccountService, UserAccountService>();
         services.AddScoped<IWorkspaceProvisioningService, WorkspaceProvisioningService>();
