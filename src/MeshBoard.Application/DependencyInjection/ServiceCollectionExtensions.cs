@@ -22,6 +22,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
+        services.AddScoped<IProductBrokerPreferenceService, ProductBrokerPreferenceService>();
+        services.AddScoped<IProductTopicPresetPreferenceService, ProductTopicPresetPreferenceService>();
         services.AddScoped<ISavedChannelPreferenceService, SavedChannelPreferenceService>();
         services.AddScoped<ITopicPresetService, TopicPresetService>();
         services.AddScoped<IUserAccountService, UserAccountService>();

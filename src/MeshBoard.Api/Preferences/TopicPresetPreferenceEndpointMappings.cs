@@ -16,13 +16,13 @@ internal static class TopicPresetPreferenceEndpointMappings
         group.MapGet(
             "/",
             async Task<IResult> (
-                ITopicPresetService topicPresetService,
+                IProductTopicPresetPreferenceService topicPresetPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 try
                 {
-                    var presets = await topicPresetService.GetTopicPresets(cancellationToken);
-                    return Results.Ok(presets.Select(preset => preset.ToSavedTopicPreset()).ToList());
+                    var presets = await topicPresetPreferenceService.GetTopicPresetPreferences(cancellationToken);
+                    return Results.Ok(presets);
                 }
                 catch (NotFoundException exception)
                 {
@@ -41,19 +41,18 @@ internal static class TopicPresetPreferenceEndpointMappings
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
                 SaveTopicPresetPreferenceRequest request,
-                ITopicPresetService topicPresetService,
+                IProductTopicPresetPreferenceService topicPresetPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 await antiforgery.ValidateRequestAsync(httpContext);
 
                 try
                 {
-                    var existingPreset = await topicPresetService.GetTopicPresetByPattern(request.TopicPattern, cancellationToken);
-                    var savedPreset = await topicPresetService.SaveTopicPreset(
-                        request.ToSaveTopicPresetRequest(existingPreset),
+                    var savedPreset = await topicPresetPreferenceService.SaveTopicPresetPreference(
+                        request,
                         cancellationToken);
 
-                    return Results.Ok(savedPreset.ToSavedTopicPreset());
+                    return Results.Ok(savedPreset);
                 }
                 catch (BadRequestException exception)
                 {

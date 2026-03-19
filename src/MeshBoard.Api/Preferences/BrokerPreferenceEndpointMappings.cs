@@ -16,11 +16,11 @@ internal static class BrokerPreferenceEndpointMappings
         group.MapGet(
             "/",
             async Task<IResult> (
-                IBrokerServerProfileService brokerServerProfileService,
+                IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
             {
-                var profiles = await brokerServerProfileService.GetServerProfiles(cancellationToken);
-                return Results.Ok(profiles.Select(profile => profile.ToSavedBrokerServerProfile()).ToList());
+                var profiles = await brokerPreferenceService.GetBrokerPreferences(cancellationToken);
+                return Results.Ok(profiles);
             });
 
         group.MapPost(
@@ -29,20 +29,20 @@ internal static class BrokerPreferenceEndpointMappings
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
                 SaveBrokerPreferenceRequest request,
-                IBrokerServerProfileService brokerServerProfileService,
+                IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 await antiforgery.ValidateRequestAsync(httpContext);
 
                 try
                 {
-                    var savedProfile = await brokerServerProfileService.SaveServerProfile(
-                        request.ToSaveBrokerServerProfileRequest(),
+                    var savedProfile = await brokerPreferenceService.CreateBrokerPreference(
+                        request,
                         cancellationToken);
 
                     return Results.Created(
                         $"/api/preferences/brokers/{savedProfile.Id}",
-                        savedProfile.ToSavedBrokerServerProfile());
+                        savedProfile);
                 }
                 catch (BadRequestException exception)
                 {
@@ -58,14 +58,14 @@ internal static class BrokerPreferenceEndpointMappings
                 IAntiforgery antiforgery,
                 Guid id,
                 SaveBrokerPreferenceRequest request,
-                IBrokerServerProfileService brokerServerProfileService,
+                IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 await antiforgery.ValidateRequestAsync(httpContext);
 
                 try
                 {
-                    var existingProfile = await brokerServerProfileService.GetServerProfileById(id, cancellationToken);
+                    var existingProfile = await brokerPreferenceService.GetBrokerPreferenceById(id, cancellationToken);
                     if (existingProfile is null)
                     {
                         return Results.NotFound(
@@ -75,11 +75,12 @@ internal static class BrokerPreferenceEndpointMappings
                                 $"Broker server profile '{id}' was not found."));
                     }
 
-                    var savedProfile = await brokerServerProfileService.SaveServerProfile(
-                        request.ToSaveBrokerServerProfileRequest(existingProfile),
+                    var savedProfile = await brokerPreferenceService.UpdateBrokerPreference(
+                        id,
+                        request,
                         cancellationToken);
 
-                    return Results.Ok(savedProfile.ToSavedBrokerServerProfile());
+                    return Results.Ok(savedProfile);
                 }
                 catch (BadRequestException exception)
                 {
@@ -91,13 +92,13 @@ internal static class BrokerPreferenceEndpointMappings
         group.MapGet(
             "/active",
             async Task<IResult> (
-                IBrokerServerProfileService brokerServerProfileService,
+                IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 try
                 {
-                    var activeProfile = await brokerServerProfileService.GetActiveServerProfile(cancellationToken);
-                    return Results.Ok(activeProfile.ToSavedBrokerServerProfile());
+                    var activeProfile = await brokerPreferenceService.GetActiveBrokerPreference(cancellationToken);
+                    return Results.Ok(activeProfile);
                 }
                 catch (NotFoundException exception)
                 {
@@ -116,15 +117,15 @@ internal static class BrokerPreferenceEndpointMappings
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
                 Guid id,
-                IBrokerServerProfileService brokerServerProfileService,
+                IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 await antiforgery.ValidateRequestAsync(httpContext);
 
                 try
                 {
-                    var activeProfile = await brokerServerProfileService.SetActiveServerProfile(id, cancellationToken);
-                    return Results.Ok(activeProfile.ToSavedBrokerServerProfile());
+                    var activeProfile = await brokerPreferenceService.ActivateBrokerPreference(id, cancellationToken);
+                    return Results.Ok(activeProfile);
                 }
                 catch (NotFoundException exception)
                 {
