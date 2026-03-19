@@ -310,6 +310,75 @@ public sealed class ApiEndpointIntegrationTests
     }
 
     [Fact]
+    public async Task VernemqAuthOnRegisterM5_WhenSessionTokenIsExpired_ShouldReturnNotAllowed()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        var user = await RegisterAsync(client, host);
+        var expiredToken = CreateRealtimeBrokerToken(
+            user.Id,
+            user.WorkspaceId,
+            "meshboard-expired-client",
+            DateTimeOffset.UtcNow.AddMinutes(-10),
+            DateTimeOffset.UtcNow.AddMinutes(-5),
+            [RealtimeTopicNames.BuildWorkspaceLiveWildcard(user.WorkspaceId)]);
+
+        using var response = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-register-m5",
+            new
+            {
+                client_id = "meshboard-expired-client",
+                clean_start = true,
+                password = "meshboard-expired-client",
+                username = expiredToken
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("not_allowed", payload.RootElement.GetProperty("result").GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task VernemqAuthOnSubscribeM5_WhenClientIdDoesNotMatchToken_ShouldRejectRequestedTopics()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        var user = await RegisterAsync(client, host);
+        var mismatchedToken = CreateRealtimeBrokerToken(
+            user.Id,
+            user.WorkspaceId,
+            "meshboard-token-client",
+            DateTimeOffset.UtcNow.AddMinutes(-1),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            [RealtimeTopicNames.BuildWorkspaceLiveWildcard(user.WorkspaceId)]);
+
+        using var response = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-subscribe-m5",
+            new
+            {
+                client_id = "meshboard-request-client",
+                username = mismatchedToken,
+                topics = new object[]
+                {
+                    new
+                    {
+                        qos = 1,
+                        topic = RealtimeTopicNames.BuildWorkspacePacketTopic(user.WorkspaceId)
+                    }
+                }
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var topic = Assert.Single(payload.RootElement.GetProperty("modifiers").GetProperty("topics").EnumerateArray().ToArray());
+        Assert.Equal(135, topic.GetProperty("qos").GetInt32());
+    }
+
+    [Fact]
     public async Task Preferences_WhenAuthenticated_ShouldReturnProvisionedBrokerAndTopicPresetData()
     {
         await using var host = new ApiIntegrationTestHost();
@@ -750,12 +819,70 @@ public sealed class ApiEndpointIntegrationTests
         return Encoding.UTF8.GetString(DecodeBase64UrlToBytes(value));
     }
 
+    private static string CreateRealtimeBrokerToken(
+        string userId,
+        string workspaceId,
+        string clientId,
+        DateTimeOffset issuedAtUtc,
+        DateTimeOffset expiresAtUtc,
+        IReadOnlyList<string> subscribeTopicPatterns)
+    {
+        var header = new Dictionary<string, object?>
+        {
+            ["alg"] = "RS256",
+            ["kid"] = ApiIntegrationTestHost.RealtimeKeyId,
+            ["typ"] = "JWT"
+        };
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["iss"] = ApiIntegrationTestHost.RealtimeIssuer,
+            ["aud"] = ApiIntegrationTestHost.RealtimeAudience,
+            ["sub"] = userId,
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["iat"] = issuedAtUtc.ToUnixTimeSeconds(),
+            ["nbf"] = issuedAtUtc.ToUnixTimeSeconds(),
+            ["exp"] = expiresAtUtc.ToUnixTimeSeconds(),
+            ["workspace_id"] = workspaceId,
+            ["user_id"] = userId,
+            ["client_id"] = clientId,
+            ["allowed_topic_patterns"] = subscribeTopicPatterns,
+            ["acl"] = new Dictionary<string, object?>
+            {
+                ["subscribe"] = subscribeTopicPatterns,
+                ["publish"] = Array.Empty<string>()
+            }
+        };
+
+        var encodedHeader = EncodeBase64Url(JsonSerializer.SerializeToUtf8Bytes(header));
+        var encodedPayload = EncodeBase64Url(JsonSerializer.SerializeToUtf8Bytes(payload));
+        var signingInput = $"{encodedHeader}.{encodedPayload}";
+
+        using var rsa = RSA.Create();
+        rsa.ImportFromPem(ApiIntegrationTestHost.RealtimeSigningPrivateKeyPem.AsSpan());
+
+        var signature = rsa.SignData(
+            Encoding.UTF8.GetBytes(signingInput),
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+
+        return $"{signingInput}.{EncodeBase64Url(signature)}";
+    }
+
     private static byte[] DecodeBase64UrlToBytes(string value)
     {
         var normalized = value.Replace('-', '+').Replace('_', '/');
         normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '=');
 
         return Convert.FromBase64String(normalized);
+    }
+
+    private static string EncodeBase64Url(byte[] value)
+    {
+        return Convert.ToBase64String(value)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 
     private static string GetSingleOrFirstString(JsonElement element, string propertyName)
