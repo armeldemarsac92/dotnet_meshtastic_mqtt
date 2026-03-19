@@ -6,6 +6,7 @@ public sealed class MapProjectionStore
 {
     private const int MaxRetainedNodes = 5_000;
     private readonly Dictionary<string, int> _pendingActivityPulseCounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ProjectionPacketDeduper _packetDeduper = new(4_096);
     private readonly MapProjectionState _state;
 
     public MapProjectionStore(MapProjectionState state)
@@ -23,6 +24,7 @@ public sealed class MapProjectionStore
 
     public void Clear()
     {
+        _packetDeduper.Clear();
         _pendingActivityPulseCounts.Clear();
         _state.SetSnapshot(new());
     }
@@ -45,27 +47,34 @@ public sealed class MapProjectionStore
             return;
         }
 
+        if (!_packetDeduper.TryTrack(rawPacket, packetResult.DecodedPacket))
+        {
+            return;
+        }
+
         var nodeId = NormalizeRequiredText(projection.NodeId);
         var current = _state.Snapshot;
         var existing = current.Nodes.FirstOrDefault(
             node => string.Equals(node.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
-        var latitude = projection.LastKnownLatitude ?? existing?.Latitude;
-        var longitude = projection.LastKnownLongitude ?? existing?.Longitude;
+        var observedAtUtc = projection.LastHeardAtUtc == default
+            ? rawPacket.ReceivedAtUtc == default
+                ? DateTimeOffset.UtcNow
+                : rawPacket.ReceivedAtUtc
+            : projection.LastHeardAtUtc;
+        var isLatest = existing is null ||
+            !existing.LastHeardAtUtc.HasValue ||
+            observedAtUtc >= existing.LastHeardAtUtc.Value;
+        var latitude = MergeNullableValue(isLatest, projection.LastKnownLatitude, existing?.Latitude);
+        var longitude = MergeNullableValue(isLatest, projection.LastKnownLongitude, existing?.Longitude);
 
         if (!latitude.HasValue || !longitude.HasValue)
         {
             return;
         }
 
-        var observedAtUtc = projection.LastHeardAtUtc == default
-            ? rawPacket.ReceivedAtUtc == default
-                ? DateTimeOffset.UtcNow
-                : rawPacket.ReceivedAtUtc
-            : projection.LastHeardAtUtc;
-
         var nextNode = existing is null
             ? CreateNode(projection, decodedPacket, rawPacket, latitude.Value, longitude.Value, observedAtUtc)
-            : Merge(existing, projection, decodedPacket, rawPacket, latitude.Value, longitude.Value, observedAtUtc);
+            : Merge(existing, projection, decodedPacket, rawPacket, latitude.Value, longitude.Value, observedAtUtc, isLatest);
 
         var nodes = current.Nodes
             .Where(node => !string.Equals(node.NodeId, nextNode.NodeId, StringComparison.OrdinalIgnoreCase))
@@ -176,22 +185,21 @@ public sealed class MapProjectionStore
         RealtimeRawPacketEvent rawPacket,
         double latitude,
         double longitude,
-        DateTimeOffset observedAtUtc)
+        DateTimeOffset observedAtUtc,
+        bool isLatest)
     {
         return existing with
         {
-            BrokerServer = string.IsNullOrWhiteSpace(rawPacket.BrokerServer)
-                ? existing.BrokerServer
-                : rawPacket.BrokerServer.Trim(),
-            ShortName = PreferNormalizedText(projection.ShortName, existing.ShortName),
-            LongName = PreferNormalizedText(projection.LongName, existing.LongName),
-            Channel = PreferNormalizedText(projection.LastHeardChannel, existing.Channel),
+            BrokerServer = MergeRequiredText(isLatest, rawPacket.BrokerServer, existing.BrokerServer),
+            ShortName = MergeNullableText(isLatest, projection.ShortName, existing.ShortName),
+            LongName = MergeNullableText(isLatest, projection.LongName, existing.LongName),
+            Channel = MergeNullableText(isLatest, projection.LastHeardChannel, existing.Channel),
             Latitude = latitude,
             Longitude = longitude,
-            BatteryLevelPercent = projection.BatteryLevelPercent ?? existing.BatteryLevelPercent,
+            BatteryLevelPercent = MergeNullableValue(isLatest, projection.BatteryLevelPercent, existing.BatteryLevelPercent),
             LastHeardAtUtc = Max(existing.LastHeardAtUtc, observedAtUtc),
-            LastPacketType = PreferNormalizedText(decodedPacket.PacketType, existing.LastPacketType),
-            LastPayloadPreview = PreferNormalizedText(decodedPacket.PayloadPreview, existing.LastPayloadPreview),
+            LastPacketType = MergeNullableText(isLatest, decodedPacket.PacketType, existing.LastPacketType),
+            LastPayloadPreview = MergeNullableText(isLatest, decodedPacket.PayloadPreview, existing.LastPayloadPreview),
             ObservedPacketCount = existing.ObservedPacketCount + 1
         };
     }
@@ -239,8 +247,26 @@ public sealed class MapProjectionStore
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
-    private static string? PreferNormalizedText(string? candidate, string? fallback)
+    private static string? MergeNullableText(bool isLatest, string? candidate, string? fallback)
     {
-        return NormalizeNullableText(candidate) ?? NormalizeNullableText(fallback);
+        var normalizedCandidate = NormalizeNullableText(candidate);
+        var normalizedFallback = NormalizeNullableText(fallback);
+
+        return isLatest
+            ? normalizedCandidate ?? normalizedFallback
+            : normalizedFallback ?? normalizedCandidate;
+    }
+
+    private static string MergeRequiredText(bool isLatest, string? candidate, string fallback)
+    {
+        return MergeNullableText(isLatest, candidate, fallback) ?? string.Empty;
+    }
+
+    private static T? MergeNullableValue<T>(bool isLatest, T? candidate, T? fallback)
+        where T : struct
+    {
+        return isLatest
+            ? candidate ?? fallback
+            : fallback ?? candidate;
     }
 }

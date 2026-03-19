@@ -1,6 +1,7 @@
 using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
 using MeshBoard.Contracts.Nodes;
+using System.Text;
 
 namespace MeshBoard.UnitTests;
 
@@ -97,6 +98,56 @@ public sealed class NodeProjectionStoreTests
         Assert.Equal("!00001000", nameSorted[0].NodeId);
     }
 
+    [Fact]
+    public void Project_WhenPacketIsDuplicated_ShouldIgnoreRepeatObservation()
+    {
+        var store = new NodeProjectionStore(new NodeProjectionState());
+        var packet = CreatePacketResult(
+            packetId: 77,
+            packetType: "Telemetry",
+            payloadPreview: "Device metrics: 98% battery",
+            batteryLevelPercent: 98);
+
+        store.Project(packet);
+        store.Project(packet);
+
+        var node = Assert.Single(store.Current.Nodes);
+        Assert.Equal(1, node.ObservedPacketCount);
+        Assert.Equal(1, store.Current.TotalProjected);
+    }
+
+    [Fact]
+    public void Project_WhenOlderPacketArrives_ShouldNotOverrideNewerProjectionFields()
+    {
+        var store = new NodeProjectionStore(new NodeProjectionState());
+
+        store.Project(
+            CreatePacketResult(
+                packetId: 101,
+                receivedAtUtc: DateTimeOffset.Parse("2026-03-14T17:05:00Z"),
+                packetType: "Telemetry",
+                payloadPreview: "Device metrics: 98% battery",
+                batteryLevelPercent: 98,
+                shortName: "ATLS"));
+        store.Project(
+            CreatePacketResult(
+                packetId: 102,
+                receivedAtUtc: DateTimeOffset.Parse("2026-03-14T17:00:00Z"),
+                packetType: "Text Message",
+                payloadPreview: "older packet",
+                batteryLevelPercent: 24,
+                longName: "Atlas"));
+
+        var node = Assert.Single(store.Current.Nodes);
+        Assert.Equal(DateTimeOffset.Parse("2026-03-14T17:05:00Z"), node.LastHeardAtUtc);
+        Assert.Equal("Telemetry", node.LastPacketType);
+        Assert.Equal("Device metrics: 98% battery", node.LastPayloadPreview);
+        Assert.Equal(98, node.BatteryLevelPercent);
+        Assert.Equal("ATLS", node.ShortName);
+        Assert.Equal("Atlas", node.LongName);
+        Assert.Equal(2, node.ObservedPacketCount);
+    }
+
     private static RealtimePacketWorkerResult CreatePacketResult(
         string nodeId = "!0000162e",
         uint nodeNumber = 5678,
@@ -104,6 +155,7 @@ public sealed class NodeProjectionStoreTests
         string packetType = "Text Message",
         string payloadPreview = "hello mesh",
         DateTimeOffset? receivedAtUtc = null,
+        uint? packetId = null,
         DateTimeOffset? lastTextMessageAtUtc = null,
         string? shortName = null,
         string? longName = null,
@@ -114,6 +166,7 @@ public sealed class NodeProjectionStoreTests
         double? temperatureCelsius = null)
     {
         var timestamp = receivedAtUtc ?? DateTimeOffset.Parse("2026-03-14T17:00:00Z");
+        var payloadBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{packetType}:{payloadPreview}"));
 
         return new RealtimePacketWorkerResult
         {
@@ -125,11 +178,11 @@ public sealed class NodeProjectionStoreTests
                 BrokerServer = "broker.meshboard.test",
                 SourceTopic = sourceTopic,
                 DownstreamTopic = "meshboard/workspaces/workspace-a/live/packets",
-                PayloadBase64 = "AQID",
-                PayloadSizeBytes = 3,
+                PayloadBase64 = payloadBase64,
+                PayloadSizeBytes = payloadBase64.Length,
                 ReceivedAtUtc = timestamp,
                 IsEncrypted = true,
-                PacketId = 42,
+                PacketId = packetId,
                 FromNodeNumber = nodeNumber
             },
             DecodedPacket = new RealtimeDecodedPacketEvent
@@ -137,8 +190,8 @@ public sealed class NodeProjectionStoreTests
                 PortNumValue = 1,
                 PortNumName = "TEXT_MESSAGE_APP",
                 PacketType = packetType,
-                PayloadBase64 = "AQID",
-                PayloadSizeBytes = 3,
+                PayloadBase64 = payloadBase64,
+                PayloadSizeBytes = payloadBase64.Length,
                 PayloadPreview = payloadPreview,
                 SourceNodeNumber = nodeNumber,
                 NodeProjection = new RealtimeNodeProjectionEvent

@@ -5,6 +5,7 @@ namespace MeshBoard.Client.Channels;
 public sealed class ChannelProjectionStore
 {
     private const int MaxRetainedChannels = 250;
+    private readonly ProjectionPacketDeduper _packetDeduper = new(4_096);
     private readonly ChannelProjectionState _state;
 
     public ChannelProjectionStore(ChannelProjectionState state)
@@ -22,6 +23,7 @@ public sealed class ChannelProjectionStore
 
     public void Clear()
     {
+        _packetDeduper.Clear();
         _state.SetSnapshot(new());
     }
 
@@ -35,6 +37,11 @@ public sealed class ChannelProjectionStore
         }
 
         var rawPacket = packetResult.RawPacket;
+        if (!_packetDeduper.TryTrack(rawPacket, packetResult.DecodedPacket))
+        {
+            return;
+        }
+
         var observedAtUtc = rawPacket.ReceivedAtUtc == default
             ? DateTimeOffset.UtcNow
             : rawPacket.ReceivedAtUtc;

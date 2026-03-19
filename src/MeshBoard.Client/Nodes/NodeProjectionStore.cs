@@ -6,6 +6,7 @@ namespace MeshBoard.Client.Nodes;
 public sealed class NodeProjectionStore
 {
     private const int MaxRetainedNodes = 1_000;
+    private readonly ProjectionPacketDeduper _packetDeduper = new(4_096);
     private readonly NodeProjectionState _state;
 
     public NodeProjectionStore(NodeProjectionState state)
@@ -23,6 +24,7 @@ public sealed class NodeProjectionStore
 
     public void Clear()
     {
+        _packetDeduper.Clear();
         _state.SetSnapshot(new());
     }
 
@@ -43,6 +45,11 @@ public sealed class NodeProjectionStore
             return;
         }
 
+        if (!_packetDeduper.TryTrack(rawPacket, packetResult.DecodedPacket))
+        {
+            return;
+        }
+
         var current = _state.Snapshot;
         var receivedAtUtc = projection.LastHeardAtUtc == default
             ? rawPacket.ReceivedAtUtc == default
@@ -51,9 +58,12 @@ public sealed class NodeProjectionStore
             : projection.LastHeardAtUtc;
         var existing = current.Nodes.FirstOrDefault(
             node => string.Equals(node.NodeId, projection.NodeId.Trim(), StringComparison.OrdinalIgnoreCase));
+        var isLatest = existing is null ||
+            !existing.LastHeardAtUtc.HasValue ||
+            receivedAtUtc >= existing.LastHeardAtUtc.Value;
         var nextNode = existing is null
             ? CreateNode(projection, rawPacket, receivedAtUtc)
-            : Merge(existing, projection, rawPacket, receivedAtUtc);
+            : Merge(existing, projection, rawPacket, receivedAtUtc, isLatest);
         var nodes = current.Nodes
             .Where(node => !string.Equals(node.NodeId, nextNode.NodeId, StringComparison.OrdinalIgnoreCase))
             .Append(nextNode)
@@ -118,30 +128,29 @@ public sealed class NodeProjectionStore
         NodeProjectionEnvelope existing,
         RealtimeNodeProjectionEvent projection,
         RealtimeRawPacketEvent rawPacket,
-        DateTimeOffset receivedAtUtc)
+        DateTimeOffset receivedAtUtc,
+        bool isLatest)
     {
         return existing with
         {
-            BrokerServer = string.IsNullOrWhiteSpace(rawPacket.BrokerServer)
-                ? existing.BrokerServer
-                : rawPacket.BrokerServer.Trim(),
-            ShortName = PreferNormalizedText(projection.ShortName, existing.ShortName),
-            LongName = PreferNormalizedText(projection.LongName, existing.LongName),
+            BrokerServer = MergeRequiredText(isLatest, rawPacket.BrokerServer, existing.BrokerServer),
+            ShortName = MergeNullableText(isLatest, projection.ShortName, existing.ShortName),
+            LongName = MergeNullableText(isLatest, projection.LongName, existing.LongName),
             LastHeardAtUtc = Max(existing.LastHeardAtUtc, receivedAtUtc),
-            LastHeardChannel = PreferNormalizedText(projection.LastHeardChannel, existing.LastHeardChannel),
+            LastHeardChannel = MergeNullableText(isLatest, projection.LastHeardChannel, existing.LastHeardChannel),
             LastTextMessageAtUtc = Max(existing.LastTextMessageAtUtc, projection.LastTextMessageAtUtc),
-            LastPacketType = PreferNormalizedText(projection.PacketType, existing.LastPacketType),
-            LastPayloadPreview = PreferNormalizedText(projection.PayloadPreview, existing.LastPayloadPreview),
-            LastKnownLatitude = projection.LastKnownLatitude ?? existing.LastKnownLatitude,
-            LastKnownLongitude = projection.LastKnownLongitude ?? existing.LastKnownLongitude,
-            BatteryLevelPercent = projection.BatteryLevelPercent ?? existing.BatteryLevelPercent,
-            Voltage = projection.Voltage ?? existing.Voltage,
-            ChannelUtilization = projection.ChannelUtilization ?? existing.ChannelUtilization,
-            AirUtilTx = projection.AirUtilTx ?? existing.AirUtilTx,
-            UptimeSeconds = projection.UptimeSeconds ?? existing.UptimeSeconds,
-            TemperatureCelsius = projection.TemperatureCelsius ?? existing.TemperatureCelsius,
-            RelativeHumidity = projection.RelativeHumidity ?? existing.RelativeHumidity,
-            BarometricPressure = projection.BarometricPressure ?? existing.BarometricPressure,
+            LastPacketType = MergeNullableText(isLatest, projection.PacketType, existing.LastPacketType),
+            LastPayloadPreview = MergeNullableText(isLatest, projection.PayloadPreview, existing.LastPayloadPreview),
+            LastKnownLatitude = MergeNullableValue(isLatest, projection.LastKnownLatitude, existing.LastKnownLatitude),
+            LastKnownLongitude = MergeNullableValue(isLatest, projection.LastKnownLongitude, existing.LastKnownLongitude),
+            BatteryLevelPercent = MergeNullableValue(isLatest, projection.BatteryLevelPercent, existing.BatteryLevelPercent),
+            Voltage = MergeNullableValue(isLatest, projection.Voltage, existing.Voltage),
+            ChannelUtilization = MergeNullableValue(isLatest, projection.ChannelUtilization, existing.ChannelUtilization),
+            AirUtilTx = MergeNullableValue(isLatest, projection.AirUtilTx, existing.AirUtilTx),
+            UptimeSeconds = MergeNullableValue(isLatest, projection.UptimeSeconds, existing.UptimeSeconds),
+            TemperatureCelsius = MergeNullableValue(isLatest, projection.TemperatureCelsius, existing.TemperatureCelsius),
+            RelativeHumidity = MergeNullableValue(isLatest, projection.RelativeHumidity, existing.RelativeHumidity),
+            BarometricPressure = MergeNullableValue(isLatest, projection.BarometricPressure, existing.BarometricPressure),
             ObservedPacketCount = existing.ObservedPacketCount + 1
         };
     }
@@ -199,9 +208,27 @@ public sealed class NodeProjectionStore
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
-    private static string? PreferNormalizedText(string? candidate, string? fallback)
+    private static string? MergeNullableText(bool isLatest, string? candidate, string? fallback)
     {
-        return NormalizeNullableText(candidate) ?? NormalizeNullableText(fallback);
+        var normalizedCandidate = NormalizeNullableText(candidate);
+        var normalizedFallback = NormalizeNullableText(fallback);
+
+        return isLatest
+            ? normalizedCandidate ?? normalizedFallback
+            : normalizedFallback ?? normalizedCandidate;
+    }
+
+    private static string MergeRequiredText(bool isLatest, string? candidate, string fallback)
+    {
+        return MergeNullableText(isLatest, candidate, fallback) ?? string.Empty;
+    }
+
+    private static T? MergeNullableValue<T>(bool isLatest, T? candidate, T? fallback)
+        where T : struct
+    {
+        return isLatest
+            ? candidate ?? fallback
+            : fallback ?? candidate;
     }
 
     private sealed class NodeProjectionEnvelopeComparer : IComparer<NodeProjectionEnvelope>
