@@ -6,6 +6,8 @@ internal sealed class UpsertTopicPresetSqlRequest
 
     public required string WorkspaceId { get; set; }
 
+    public required string BrokerServerProfileId { get; set; }
+
     public required string BrokerServer { get; set; }
 
     public required string Name { get; set; }

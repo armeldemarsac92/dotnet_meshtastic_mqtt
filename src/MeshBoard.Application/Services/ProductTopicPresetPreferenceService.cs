@@ -1,3 +1,6 @@
+using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Application.Abstractions.Workspaces;
+using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Topics;
 
 namespace MeshBoard.Application.Services;
@@ -13,28 +16,84 @@ public interface IProductTopicPresetPreferenceService
 
 public sealed class ProductTopicPresetPreferenceService : IProductTopicPresetPreferenceService
 {
-    private readonly ITopicPresetService _topicPresetService;
+    private readonly IBrokerServerProfileService _brokerServerProfileService;
+    private readonly ITopicPresetRepository _topicPresetRepository;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
-    public ProductTopicPresetPreferenceService(ITopicPresetService topicPresetService)
+    public ProductTopicPresetPreferenceService(
+        IBrokerServerProfileService brokerServerProfileService,
+        ITopicPresetRepository topicPresetRepository,
+        IUnitOfWork unitOfWork,
+        IWorkspaceContextAccessor workspaceContextAccessor)
     {
-        _topicPresetService = topicPresetService;
+        _brokerServerProfileService = brokerServerProfileService;
+        _topicPresetRepository = topicPresetRepository;
+        _unitOfWork = unitOfWork;
+        _workspaceContextAccessor = workspaceContextAccessor;
     }
 
     public async Task<IReadOnlyCollection<SavedTopicPreset>> GetTopicPresetPreferences(
         CancellationToken cancellationToken = default)
     {
-        var presets = await _topicPresetService.GetTopicPresets(cancellationToken);
-        return presets.Select(preset => preset.ToSavedTopicPreset()).ToList();
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
+        var profiles = await _brokerServerProfileService.GetServerProfiles(cancellationToken);
+        var savedPresets = new List<SavedTopicPreset>();
+
+        foreach (var profile in profiles)
+        {
+            var presets = await _topicPresetRepository.GetAllAsync(
+                workspaceId,
+                profile.Id,
+                cancellationToken);
+
+            savedPresets.AddRange(
+                presets.Select(
+                    preset => preset.ToSavedTopicPreset(
+                        profile.Id,
+                        profile.Name,
+                        profile.ServerAddress)));
+        }
+
+        return savedPresets;
     }
 
     public async Task<SavedTopicPreset> SaveTopicPresetPreference(
         SaveTopicPresetPreferenceRequest request,
         CancellationToken cancellationToken = default)
     {
-        var preset = await _topicPresetService.SaveTopicPreset(
-            request.ToSaveTopicPresetRequest(),
-            cancellationToken);
+        if (request.ServerProfileId == Guid.Empty)
+        {
+            throw new BadRequestException("A server selection is required.");
+        }
 
-        return preset.ToSavedTopicPreset();
+        var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
+        var profile = await _brokerServerProfileService.GetServerProfileById(request.ServerProfileId, cancellationToken);
+
+        if (profile is null)
+        {
+            throw new NotFoundException($"Server profile '{request.ServerProfileId}' was not found.");
+        }
+
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var preset = await _topicPresetRepository.UpsertAsync(
+                workspaceId,
+                profile.Id,
+                profile.ServerAddress,
+                request.ToSaveTopicPresetRequest(),
+                cancellationToken);
+
+            await _unitOfWork.CommitAsync(cancellationToken);
+
+            return preset.ToSavedTopicPreset(profile.Id, profile.Name, profile.ServerAddress);
+        }
+        catch
+        {
+            await _unitOfWork.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 }

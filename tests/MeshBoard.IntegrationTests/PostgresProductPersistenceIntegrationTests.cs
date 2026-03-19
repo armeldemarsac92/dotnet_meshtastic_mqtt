@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using MeshBoard.Application.Authentication;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
@@ -42,6 +43,8 @@ public sealed class PostgresProductPersistenceIntegrationTests
         var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
         await StartHostedServicesAsync(hostedServicesA);
         await StartHostedServicesAsync(hostedServicesB);
+        await EnsureWorkspaceUserAsync(providerA, "workspace-a");
+        await EnsureWorkspaceUserAsync(providerB, "workspace-b");
 
         try
         {
@@ -67,6 +70,7 @@ public sealed class PostgresProductPersistenceIntegrationTests
             var presetA = await presetsA.SaveTopicPresetPreference(
                 new SaveTopicPresetPreferenceRequest
                 {
+                    ServerProfileId = brokerA.Id,
                     Name = "Workspace A preset",
                     TopicPattern = "msh/US/2/e/A/LongFast/#",
                     IsDefault = true
@@ -94,6 +98,7 @@ public sealed class PostgresProductPersistenceIntegrationTests
             var presetB = await presetsB.SaveTopicPresetPreference(
                 new SaveTopicPresetPreferenceRequest
                 {
+                    ServerProfileId = brokerB.Id,
                     Name = "Workspace B preset",
                     TopicPattern = "msh/EU/2/e/B/MediumFast/#",
                     IsDefault = false
@@ -120,10 +125,14 @@ public sealed class PostgresProductPersistenceIntegrationTests
             Assert.DoesNotContain(allBrokersB, broker => broker.Id == brokerA.Id);
 
             Assert.Equal(presetA.Id, storedPresetA.Id);
+            Assert.Equal(brokerA.Id, storedPresetA.ServerProfileId);
+            Assert.Equal(brokerA.Name, storedPresetA.ServerProfileName);
             Assert.Equal("Workspace A preset", storedPresetA.Name);
             Assert.DoesNotContain(allPresetsA, preset => preset.Id == presetB.Id);
 
             Assert.Equal(presetB.Id, storedPresetB.Id);
+            Assert.Equal(brokerB.Id, storedPresetB.ServerProfileId);
+            Assert.Equal(brokerB.Name, storedPresetB.ServerProfileName);
             Assert.Equal("Workspace B preset", storedPresetB.Name);
             Assert.DoesNotContain(allPresetsB, preset => preset.Id == presetA.Id);
         }
@@ -151,6 +160,8 @@ public sealed class PostgresProductPersistenceIntegrationTests
         var hostedServicesB = providerB.GetServices<IHostedService>().ToArray();
         await StartHostedServicesAsync(hostedServicesA);
         await StartHostedServicesAsync(hostedServicesB);
+        await EnsureWorkspaceUserAsync(providerA, "workspace-a");
+        await EnsureWorkspaceUserAsync(providerB, "workspace-b");
 
         try
         {
@@ -261,6 +272,27 @@ public sealed class PostgresProductPersistenceIntegrationTests
         {
             await hostedService.StopAsync(CancellationToken.None);
         }
+    }
+
+    private static async Task EnsureWorkspaceUserAsync(ServiceProvider provider, string workspaceId)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var userAccountRepository = scope.ServiceProvider.GetRequiredService<IUserAccountRepository>();
+
+        if (await userAccountRepository.GetByIdAsync(workspaceId) is not null)
+        {
+            return;
+        }
+
+        await userAccountRepository.InsertAsync(
+            new CreateUserAccountRequest
+            {
+                Id = workspaceId,
+                Username = workspaceId,
+                NormalizedUsername = workspaceId.ToUpperInvariant(),
+                PasswordHash = "integration-test-hash",
+                CreatedAtUtc = DateTimeOffset.UtcNow
+            });
     }
 
     private sealed class FixedWorkspaceContextAccessor : IWorkspaceContextAccessor

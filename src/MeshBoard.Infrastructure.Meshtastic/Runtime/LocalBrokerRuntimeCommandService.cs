@@ -222,7 +222,7 @@ internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandEx
         {
             var presets = await topicPresetRepository.GetAllAsync(
                 workspaceId,
-                activeProfile.ServerAddress,
+                activeProfile.Id,
                 cancellationToken);
 
             foreach (var preset in presets)

@@ -12,9 +12,11 @@
         <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
-                <h1 class="mt-2 font-display text-4xl text-cinder-950">Saved brokers</h1>
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Saved servers</h1>
                 <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
-                    These values come from the API-safe broker read model. Password values and client decryption keys are intentionally excluded.
+                    These values come from the API-safe server read model. Servers own connection metadata. Live receive
+                    topics come from saved topic presets and saved channels for the active server. Password values and
+                    client decryption keys are intentionally excluded.
                 </p>
             </div>
 
@@ -38,17 +40,19 @@
         <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Broker editor</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Server editor</p>
                     <h2 class="mt-2 font-display text-2xl text-cinder-950">@BrokerEditorTitle</h2>
                     <p class="mt-2 text-sm leading-7 text-cinder-800/78">
-                        Passwords stay masked. Leaving the password blank keeps the existing secret; use the clear option only when you want to remove it.
+                        Server profiles own connection metadata. Saved topic presets and saved channels decide which
+                        upstream receive topics the bridge keeps active. Passwords stay masked. Leaving the password
+                        blank keeps the existing secret; use the clear option only when you want to remove it.
                     </p>
                 </div>
 
                 <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
                         @onclick="StartNewBroker"
                         disabled="@(_isSavingBroker || _isLoading)">
-                    New broker
+                    New server
                 </button>
             </div>
 
@@ -88,9 +92,12 @@
 
                 <div class="grid gap-4 sm:grid-cols-2">
                     <label class="block space-y-2">
-                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Default topic pattern</span>
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Fallback receive topic</span>
                         <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                                    @bind-Value="_brokerForm.DefaultTopicPattern" />
+                        <span class="text-xs leading-6 text-cinder-800/72">
+                            Used only when the active server has no saved topic presets or saved channels yet.
+                        </span>
                         <ValidationMessage For="() => _brokerForm.DefaultTopicPattern" />
                     </label>
 
@@ -122,7 +129,7 @@
                     <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
                         <InputCheckbox class="size-4 rounded border-slate-300"
                                        @bind-Value="_brokerForm.UseTls" />
-                        <span>Use TLS for the upstream broker connection.</span>
+                        <span>Use TLS for the upstream server connection.</span>
                     </label>
 
                     <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
@@ -155,12 +162,12 @@
         }
         else if (_isLoading)
         {
-            <p class="mt-6 text-sm text-cinder-800/72">Loading broker profiles...</p>
+            <p class="mt-6 text-sm text-cinder-800/72">Loading server profiles...</p>
         }
         else if (_brokers.Count == 0)
         {
             <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
-                No broker profiles are currently stored for this workspace.
+                No server profiles are currently stored for this workspace.
             </div>
         }
         else
@@ -182,7 +189,7 @@
                                 </div>
                                 <h2 class="font-display text-2xl text-cinder-950">@broker.Name</h2>
                                 <p class="text-sm text-cinder-800/80">
-                                    Default topic pattern: <span class="font-semibold text-cinder-900">@broker.DefaultTopicPattern</span>
+                                    Fallback receive topic: <span class="font-semibold text-cinder-900">@DisplayValue(broker.DefaultTopicPattern)</span>
                                 </p>
                             </div>
 
@@ -207,7 +214,7 @@
                                         <button class="shell-button shell-button-accent rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
                                                 @onclick="() => ActivateBrokerAsync(broker)"
                                                 disabled="@(_isSavingBroker || _isActivatingBroker || _isLoading)">
-                                            @(_activatingBrokerId == broker.Id ? "Activating..." : "Activate")
+                                            @(_activatingBrokerId == broker.Id ? "Activating..." : "Set active")
                                         </button>
                                     }
                                 </div>
@@ -235,7 +242,9 @@
             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
             <h2 class="mt-2 font-display text-3xl text-cinder-950">Saved topic presets</h2>
             <p class="mt-3 text-sm leading-7 text-cinder-800/82">
-                The API returns only metadata here. Topic decryption keys stay out of the browser/server contract and will move into the client-local vault later.
+                Topic presets are saved per server profile and participate in the bridge receive-topic selection for the
+                active server. The API returns only metadata here. Topic decryption keys stay out of the browser/server
+                contract and will move into the client-local vault later.
             </p>
         </div>
 
@@ -255,7 +264,9 @@
                     <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Preset editor</p>
                     <h3 class="mt-2 font-display text-2xl text-cinder-950">@PresetEditorTitle</h3>
                     <p class="mt-2 text-sm leading-7 text-cinder-800/78">
-                        Saving with an existing topic pattern updates that preset for the active broker. Saving with a new pattern creates a new one.
+                        Saving with an existing topic pattern updates that preset for the selected server. Saving with a
+                        new pattern creates a new one. These presets are used as receive-topic preferences when the
+                        selected server is active.
                     </p>
                 </div>
 
@@ -268,6 +279,19 @@
 
             <EditForm class="mt-6 grid gap-4" Model="_presetForm" OnValidSubmit="SavePresetAsync">
                 <DataAnnotationsValidator />
+
+                <label class="block space-y-2">
+                    <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Server</span>
+                    <InputSelect class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                 @bind-Value="_presetForm.ServerProfileId">
+                        <option value="">Select a server</option>
+                        @foreach (var broker in _brokers.OrderByDescending(item => item.IsActive).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <option value="@broker.Id.ToString()">@broker.Name (@broker.ServerAddress)</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => _presetForm.ServerProfileId" />
+                </label>
 
                 <label class="block space-y-2">
                     <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Name</span>
@@ -286,7 +310,7 @@
                 <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
                     <InputCheckbox class="size-4 rounded border-slate-300"
                                    @bind-Value="_presetForm.IsDefault" />
-                    <span>Mark this preset as the default for the active broker.</span>
+                    <span>Mark this preset as the default for the selected server.</span>
                 </label>
 
                 <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -299,7 +323,7 @@
 
                     <button type="submit"
                             class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                            disabled="@(_isSavingPreset || _isLoading)">
+                            disabled="@(_isSavingPreset || _isLoading || _brokers.Count == 0)">
                         @(_isSavingPreset ? "Saving..." : PresetSubmitLabel)
                     </button>
                 </div>
@@ -317,7 +341,7 @@
         else if (_presets.Count == 0)
         {
             <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
-                No topic presets are available for the active broker yet.
+                No topic presets are stored for any saved server yet.
             </div>
         }
         else
@@ -328,7 +352,9 @@
                     <article class="shell-subpanel rounded-[1.7rem] p-5">
                         <div class="flex items-start justify-between gap-3">
                             <div>
-                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@preset.TopicPattern</p>
+                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@preset.ServerProfileName</p>
+                                <p class="mt-1 text-[0.72rem] font-medium uppercase tracking-[0.18em] text-cinder-800/58">@preset.ServerAddress</p>
+                                <p class="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@preset.TopicPattern</p>
                                 <h3 class="mt-2 font-display text-2xl text-cinder-950">@preset.Name</h3>
                             </div>
                             @if (preset.IsDefault)
@@ -527,10 +553,10 @@
                             </label>
 
                             <label class="block space-y-2">
-                                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Broker scope</span>
+                                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Server scope</span>
                                 <InputSelect class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
                                              @bind-Value="_vaultKeyForm.BrokerServerProfileId">
-                                    <option value="">All local broker scopes</option>
+                                    <option value="">All local server scopes</option>
                                     @foreach (var broker in _brokers.OrderByDescending(item => item.IsActive).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
                                     {
                                         <option value="@broker.Id.ToString()">@broker.Name</option>
@@ -589,7 +615,7 @@
                                             <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@keyRecord.TopicPattern</p>
                                             <h4 class="font-display text-2xl text-cinder-950">@keyRecord.Name</h4>
                                             <p>
-                                                Broker scope: <span class="font-medium text-cinder-950">@DisplayBrokerName(keyRecord.BrokerServerProfileId)</span>
+                                                Server scope: <span class="font-medium text-cinder-950">@DisplayServerName(keyRecord.BrokerServerProfileId)</span>
                                             </p>
                                             <p>
                                                 Key length: <span class="font-medium text-cinder-950">@keyRecord.KeyLengthBytes bytes</span>
@@ -655,13 +681,17 @@
     private string? _vaultCommandError;
     private string? _vaultCommandSuccess;
 
-    private string BrokerEditorTitle => _editingBrokerId is null ? "Create broker profile" : "Edit broker profile";
+    private string BrokerEditorTitle => _editingBrokerId is null ? "Create server profile" : "Edit server profile";
 
-    private string BrokerSubmitLabel => _editingBrokerId is null ? "Create broker" : "Save broker";
+    private string BrokerSubmitLabel => _editingBrokerId is null ? "Create server" : "Save server";
 
     private bool IsEditingExistingPreset =>
         _presets.Any(
             preset => string.Equals(
+                preset.ServerProfileId.ToString(),
+                _presetForm.ServerProfileId.Trim(),
+                StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(
                 preset.TopicPattern,
                 _presetForm.TopicPattern.Trim(),
                 StringComparison.OrdinalIgnoreCase));
@@ -703,17 +733,18 @@
     {
         return new TopicPresetFormModel
         {
+            ServerProfileId = preset.ServerProfileId.ToString(),
             Name = preset.Name,
             TopicPattern = preset.TopicPattern,
             IsDefault = preset.IsDefault
         };
     }
 
-    private string DisplayBrokerName(Guid? brokerServerProfileId)
+    private string DisplayServerName(Guid? brokerServerProfileId)
     {
         if (brokerServerProfileId is null)
         {
-            return "All local broker scopes";
+            return "All local server scopes";
         }
 
         var broker = _brokers.FirstOrDefault(item => item.Id == brokerServerProfileId.Value);
@@ -732,9 +763,15 @@
 
             _brokers.Clear();
             _brokers.AddRange(brokers.OrderByDescending(item => item.IsActive).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+            var activeBrokerId = _brokers.FirstOrDefault(item => item.IsActive)?.Id;
 
             _presets.Clear();
-            _presets.AddRange(presets.OrderByDescending(item => item.IsDefault).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+            _presets.AddRange(
+                presets
+                    .OrderByDescending(item => item.ServerProfileId == activeBrokerId)
+                    .ThenBy(item => item.ServerProfileName, StringComparer.OrdinalIgnoreCase)
+                    .ThenByDescending(item => item.IsDefault)
+                    .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
 
             if (_editingBrokerId is { } editingBrokerId)
             {
@@ -769,7 +806,8 @@
     private VaultKeyFormModel CreateVaultKeyFormDefault()
     {
         var activeBroker = _brokers.FirstOrDefault(item => item.IsActive);
-        var defaultPreset = _presets.FirstOrDefault(item => item.IsDefault);
+        var defaultPreset = _presets.FirstOrDefault(item => item.IsDefault && item.ServerProfileId == activeBroker?.Id)
+            ?? _presets.FirstOrDefault(item => item.ServerProfileId == activeBroker?.Id);
 
         return new VaultKeyFormModel
         {
@@ -828,12 +866,12 @@
             if (_editingBrokerId is { } editingBrokerId)
             {
                 savedProfile = await BrokerPreferenceApiClient.UpdateAsync(editingBrokerId, request);
-                _brokerCommandSuccess = $"Broker '{savedProfile.Name}' updated.";
+                _brokerCommandSuccess = $"Server '{savedProfile.Name}' updated.";
             }
             else
             {
                 savedProfile = await BrokerPreferenceApiClient.CreateAsync(request);
-                _brokerCommandSuccess = $"Broker '{savedProfile.Name}' created.";
+                _brokerCommandSuccess = $"Server '{savedProfile.Name}' created.";
             }
 
             _editingBrokerId = savedProfile.Id;
@@ -861,7 +899,7 @@
         try
         {
             var activeBroker = await BrokerPreferenceApiClient.ActivateAsync(broker.Id);
-            _brokerCommandSuccess = $"Broker '{activeBroker.Name}' is now active.";
+            _brokerCommandSuccess = $"Server '{activeBroker.Name}' is now active.";
             await LoadAsync();
         }
         catch (Exception exception)
@@ -928,6 +966,7 @@
         {
             var request = new SaveTopicPresetPreferenceRequest
             {
+                ServerProfileId = Guid.Parse(_presetForm.ServerProfileId),
                 Name = _presetForm.Name.Trim(),
                 TopicPattern = _presetForm.TopicPattern.Trim(),
                 IsDefault = _presetForm.IsDefault
@@ -1179,6 +1218,9 @@
 
     private sealed class TopicPresetFormModel
     {
+        [Required]
+        public string ServerProfileId { get; set; } = string.Empty;
+
         [Required]
         [MaxLength(128)]
         public string Name { get; set; } = string.Empty;

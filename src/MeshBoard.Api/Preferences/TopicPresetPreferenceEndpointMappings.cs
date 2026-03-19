@@ -29,7 +29,7 @@ internal static class TopicPresetPreferenceEndpointMappings
                     return Results.NotFound(
                         new
                         {
-                            title = "Active broker not found",
+                            title = "Server not found",
                             detail = exception.Message
                         });
                 }
@@ -62,7 +62,7 @@ internal static class TopicPresetPreferenceEndpointMappings
                 catch (NotFoundException exception)
                 {
                     return Results.NotFound(
-                        CreateProblemDetails(StatusCodes.Status404NotFound, "Active broker not found", exception.Message));
+                        CreateProblemDetails(StatusCodes.Status404NotFound, "Server not found", exception.Message));
                 }
             });
 

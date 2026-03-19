@@ -6,17 +6,18 @@ public interface ITopicPresetRepository
 {
     Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(
         string workspaceId,
-        string brokerServer,
+        Guid brokerServerProfileId,
         CancellationToken cancellationToken = default);
 
     Task<TopicPreset?> GetByTopicPatternAsync(
         string workspaceId,
-        string brokerServer,
+        Guid brokerServerProfileId,
         string topicPattern,
         CancellationToken cancellationToken = default);
 
     Task<TopicPreset> UpsertAsync(
         string workspaceId,
+        Guid brokerServerProfileId,
         string brokerServer,
         SaveTopicPresetRequest request,
         CancellationToken cancellationToken = default);

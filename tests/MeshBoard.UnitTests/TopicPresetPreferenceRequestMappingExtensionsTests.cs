@@ -9,6 +9,7 @@ public sealed class TopicPresetPreferenceRequestMappingExtensionsTests
     {
         var request = new SaveTopicPresetPreferenceRequest
         {
+            ServerProfileId = Guid.NewGuid(),
             Name = "Public feed",
             TopicPattern = "msh/US/2/e/#",
             IsDefault = true
@@ -35,6 +36,7 @@ public sealed class TopicPresetPreferenceRequestMappingExtensionsTests
 
         var request = new SaveTopicPresetPreferenceRequest
         {
+            ServerProfileId = Guid.NewGuid(),
             Name = "Existing updated",
             TopicPattern = existing.TopicPattern,
             IsDefault = true

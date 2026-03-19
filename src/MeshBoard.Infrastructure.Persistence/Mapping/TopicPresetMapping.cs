@@ -12,12 +12,14 @@ internal static class TopicPresetMapping
     public static UpsertTopicPresetSqlRequest ToSqlRequest(
         this SaveTopicPresetRequest request,
         string workspaceId,
+        Guid brokerServerProfileId,
         string brokerServer)
     {
         return new UpsertTopicPresetSqlRequest
         {
             Id = Guid.NewGuid().ToString(),
             WorkspaceId = workspaceId,
+            BrokerServerProfileId = brokerServerProfileId.ToString(),
             BrokerServer = brokerServer,
             Name = request.Name,
             TopicPattern = request.TopicPattern,

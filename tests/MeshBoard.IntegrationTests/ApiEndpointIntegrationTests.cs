@@ -245,6 +245,28 @@ public sealed class ApiEndpointIntegrationTests
     }
 
     [Fact]
+    public async Task VernemqAuthOnRegisterM5_ShouldAllowConfiguredInternalBridgePublisher()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-register-m5",
+            new
+            {
+                client_id = ApiIntegrationTestHost.RealtimeDownstreamBridgeClientId,
+                clean_start = true,
+                password = ApiIntegrationTestHost.RealtimeDownstreamBridgePassword,
+                username = ApiIntegrationTestHost.RealtimeDownstreamBridgeUsername
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("ok", payload.RootElement.GetProperty("result").GetString());
+    }
+
+    [Fact]
     public async Task VernemqAuthOnSubscribeM5_WhenTopicEscapesWorkspace_ShouldRejectThatSubscription()
     {
         await using var host = new ApiIntegrationTestHost();
@@ -307,6 +329,41 @@ public sealed class ApiEndpointIntegrationTests
 
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("not_allowed", payload.RootElement.GetProperty("result").GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task VernemqAuthOnPublishM5_ShouldAllowConfiguredInternalBridgePublisher_ForPacketTopicsOnly()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        using var allowedResponse = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-publish-m5",
+            new
+            {
+                client_id = ApiIntegrationTestHost.RealtimeDownstreamBridgeClientId,
+                topic = "meshboard/workspaces/test-workspace/live/packets",
+                username = ApiIntegrationTestHost.RealtimeDownstreamBridgeUsername
+            });
+
+        Assert.Equal(HttpStatusCode.OK, allowedResponse.StatusCode);
+
+        using var allowedPayload = JsonDocument.Parse(await allowedResponse.Content.ReadAsStringAsync());
+        Assert.Equal("ok", allowedPayload.RootElement.GetProperty("result").GetString());
+
+        using var deniedResponse = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-publish-m5",
+            new
+            {
+                client_id = ApiIntegrationTestHost.RealtimeDownstreamBridgeClientId,
+                topic = "meshboard/workspaces/test-workspace/live/other",
+                username = ApiIntegrationTestHost.RealtimeDownstreamBridgeUsername
+            });
+
+        Assert.Equal(HttpStatusCode.OK, deniedResponse.StatusCode);
+
+        using var deniedPayload = JsonDocument.Parse(await deniedResponse.Content.ReadAsStringAsync());
+        Assert.Equal("not_allowed", deniedPayload.RootElement.GetProperty("result").GetProperty("error").GetString());
     }
 
     [Fact]
@@ -404,6 +461,14 @@ public sealed class ApiEndpointIntegrationTests
         Assert.True(activeBroker!.IsActive);
         Assert.NotNull(presets);
         Assert.NotEmpty(presets!);
+        Assert.All(
+            presets,
+            preset =>
+            {
+                Assert.NotEqual(Guid.Empty, preset.ServerProfileId);
+                Assert.False(string.IsNullOrWhiteSpace(preset.ServerProfileName));
+                Assert.False(string.IsNullOrWhiteSpace(preset.ServerAddress));
+            });
     }
 
     [Fact]
@@ -537,6 +602,8 @@ public sealed class ApiEndpointIntegrationTests
         using var client = host.CreateApiClient();
 
         await RegisterAsync(client, host);
+        var activeProfile = await client.GetFromJsonAsync<SavedBrokerServerProfile>("/api/preferences/brokers/active");
+        Assert.NotNull(activeProfile);
 
         var topicPattern = $"msh/US/2/e/{Guid.NewGuid():N}/#";
 
@@ -546,6 +613,7 @@ public sealed class ApiEndpointIntegrationTests
             "/api/preferences/topic-presets",
             new SaveTopicPresetPreferenceRequest
             {
+                ServerProfileId = activeProfile!.Id,
                 Name = "Portable preset",
                 TopicPattern = topicPattern,
                 IsDefault = false
@@ -556,6 +624,9 @@ public sealed class ApiEndpointIntegrationTests
         var createdPreset = await createResponse.Content.ReadFromJsonAsync<SavedTopicPreset>();
         Assert.NotNull(createdPreset);
         Assert.Equal("Portable preset", createdPreset!.Name);
+        Assert.Equal(activeProfile.Id, createdPreset.ServerProfileId);
+        Assert.Equal(activeProfile.Name, createdPreset.ServerProfileName);
+        Assert.Equal(activeProfile.ServerAddress, createdPreset.ServerAddress);
         Assert.Equal(topicPattern, createdPreset.TopicPattern);
         Assert.False(createdPreset.IsDefault);
 
@@ -565,6 +636,7 @@ public sealed class ApiEndpointIntegrationTests
             "/api/preferences/topic-presets",
             new SaveTopicPresetPreferenceRequest
             {
+                ServerProfileId = activeProfile.Id,
                 Name = "Portable preset updated",
                 TopicPattern = topicPattern,
                 IsDefault = true
@@ -585,8 +657,80 @@ public sealed class ApiEndpointIntegrationTests
         var persistedPreset = Assert.Single(matchingPresets);
 
         Assert.Equal(updatedPreset.Id, persistedPreset.Id);
+        Assert.Equal(activeProfile.Id, persistedPreset.ServerProfileId);
         Assert.Equal("Portable preset updated", persistedPreset.Name);
         Assert.True(persistedPreset.IsDefault);
+    }
+
+    [Fact]
+    public async Task TopicPresetPreferences_ShouldAllowSamePatternAcrossServersWithSameAddress()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        await RegisterAsync(client, host);
+        var activeProfile = await client.GetFromJsonAsync<SavedBrokerServerProfile>("/api/preferences/brokers/active");
+        Assert.NotNull(activeProfile);
+
+        var createServerResponse = await PostJsonAsync(
+            client,
+            host,
+            "/api/preferences/brokers",
+            CreateBrokerRequest(
+                name: "Duplicate address profile",
+                host: activeProfile!.Host,
+                password: null,
+                defaultTopicPattern: activeProfile.DefaultTopicPattern,
+                downlinkTopic: activeProfile.DownlinkTopic));
+
+        Assert.Equal(HttpStatusCode.Created, createServerResponse.StatusCode);
+
+        var secondProfile = await createServerResponse.Content.ReadFromJsonAsync<SavedBrokerServerProfile>();
+        Assert.NotNull(secondProfile);
+        Assert.NotEqual(activeProfile.Id, secondProfile!.Id);
+        Assert.Equal(activeProfile.ServerAddress, secondProfile.ServerAddress);
+
+        var sharedTopicPattern = $"msh/US/2/e/{Guid.NewGuid():N}/#";
+
+        var firstPresetResponse = await PostJsonAsync(
+            client,
+            host,
+            "/api/preferences/topic-presets",
+            new SaveTopicPresetPreferenceRequest
+            {
+                ServerProfileId = activeProfile.Id,
+                Name = "Primary same-address preset",
+                TopicPattern = sharedTopicPattern,
+                IsDefault = false
+            });
+
+        Assert.Equal(HttpStatusCode.OK, firstPresetResponse.StatusCode);
+
+        var secondPresetResponse = await PostJsonAsync(
+            client,
+            host,
+            "/api/preferences/topic-presets",
+            new SaveTopicPresetPreferenceRequest
+            {
+                ServerProfileId = secondProfile.Id,
+                Name = "Secondary same-address preset",
+                TopicPattern = sharedTopicPattern,
+                IsDefault = false
+            });
+
+        Assert.Equal(HttpStatusCode.OK, secondPresetResponse.StatusCode);
+
+        var presets = await client.GetFromJsonAsync<List<SavedTopicPreset>>("/api/preferences/topic-presets");
+        Assert.NotNull(presets);
+
+        var matchingPresets = presets!
+            .Where(preset => preset.TopicPattern == sharedTopicPattern)
+            .OrderBy(preset => preset.ServerProfileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Assert.Equal(2, matchingPresets.Count);
+        Assert.Contains(matchingPresets, preset => preset.ServerProfileId == activeProfile.Id && preset.Name == "Primary same-address preset");
+        Assert.Contains(matchingPresets, preset => preset.ServerProfileId == secondProfile.Id && preset.Name == "Secondary same-address preset");
     }
 
     [Fact]

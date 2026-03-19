@@ -82,10 +82,9 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
             var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
             var brokerServerProfileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
             var activeServer = await brokerServerProfileRepository.GetActiveAsync(workspaceId, cancellationToken);
-            var activeServerAddress = activeServer?.ServerAddress;
-            var presets = string.IsNullOrWhiteSpace(activeServerAddress)
+            var presets = activeServer is null
                 ? Array.Empty<TopicPreset>()
-                : await topicPresetRepository.GetAllAsync(workspaceId, activeServerAddress, cancellationToken);
+                : await topicPresetRepository.GetAllAsync(workspaceId, activeServer.Id, cancellationToken);
             var defaultKeyBytes = ResolveDefaultKeyBytes(activeServer?.DefaultEncryptionKeyBase64 ?? string.Empty);
 
             var mappings = presets

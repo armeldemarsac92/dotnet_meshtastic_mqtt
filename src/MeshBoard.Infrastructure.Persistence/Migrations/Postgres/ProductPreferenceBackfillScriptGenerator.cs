@@ -225,28 +225,49 @@ public sealed class ProductPreferenceBackfillScriptGenerator
             return;
         }
 
+        var topicPresetColumns = await GetColumnNamesAsync(connection, "topic_presets", cancellationToken);
+        var brokerProfileLookups = await LoadBrokerServerProfileLookupsAsync(connection, cancellationToken);
         var rows = await connection.QueryAsync<TopicPresetRow>(
             new CommandDefinition(
-                """
-                SELECT id AS Id,
-                       workspace_id AS WorkspaceId,
-                       broker_server AS BrokerServer,
-                       name AS Name,
-                       topic_pattern AS TopicPattern,
-                       COALESCE(is_default, 0) AS IsDefault,
-                       created_at_utc AS CreatedAtUtc
-                FROM topic_presets
-                ORDER BY workspace_id ASC, broker_server ASC, topic_pattern ASC;
-                """,
+                topicPresetColumns.Contains("broker_server_profile_id")
+                    ? """
+                      SELECT id AS Id,
+                             workspace_id AS WorkspaceId,
+                             broker_server_profile_id AS BrokerServerProfileId,
+                             broker_server AS BrokerServer,
+                             name AS Name,
+                             topic_pattern AS TopicPattern,
+                             COALESCE(is_default, 0) AS IsDefault,
+                             created_at_utc AS CreatedAtUtc
+                      FROM topic_presets
+                      ORDER BY workspace_id ASC, broker_server ASC, topic_pattern ASC;
+                      """
+                    : """
+                      SELECT id AS Id,
+                             workspace_id AS WorkspaceId,
+                             NULL AS BrokerServerProfileId,
+                             broker_server AS BrokerServer,
+                             name AS Name,
+                             topic_pattern AS TopicPattern,
+                             COALESCE(is_default, 0) AS IsDefault,
+                             created_at_utc AS CreatedAtUtc
+                      FROM topic_presets
+                      ORDER BY workspace_id ASC, broker_server ASC, topic_pattern ASC;
+                      """,
                 cancellationToken: cancellationToken));
 
         foreach (var row in rows)
         {
+            var brokerServerProfileId = ResolveTopicPresetBrokerServerProfileId(row, brokerProfileLookups)
+                ?? throw new InvalidOperationException(
+                    $"Unable to resolve a broker server profile for topic preset '{row.TopicPattern}' in workspace '{row.WorkspaceId}'.");
+
             script.AppendLine(
                 $$"""
                 INSERT INTO topic_presets (
                     id,
                     workspace_id,
+                    broker_server_profile_id,
                     broker_server,
                     name,
                     topic_pattern,
@@ -255,13 +276,15 @@ public sealed class ProductPreferenceBackfillScriptGenerator
                 VALUES (
                     {{SqlLiteral(row.Id)}},
                     {{SqlLiteral(row.WorkspaceId)}},
+                    {{SqlLiteral(brokerServerProfileId)}},
                     {{SqlLiteral(row.BrokerServer)}},
                     {{SqlLiteral(row.Name)}},
                     {{SqlLiteral(row.TopicPattern)}},
                     {{row.IsDefault}},
                     {{SqlLiteral(row.CreatedAtUtc)}})
-                ON CONFLICT (workspace_id, broker_server, topic_pattern) DO UPDATE SET
+                ON CONFLICT (workspace_id, broker_server_profile_id, topic_pattern) DO UPDATE SET
                     id = EXCLUDED.id,
+                    broker_server = EXCLUDED.broker_server,
                     name = EXCLUDED.name,
                     is_default = EXCLUDED.is_default,
                     created_at_utc = EXCLUDED.created_at_utc;
@@ -393,6 +416,87 @@ public sealed class ProductPreferenceBackfillScriptGenerator
         return result > 0;
     }
 
+    private static async Task<HashSet<string>> GetColumnNamesAsync(
+        SqliteConnection connection,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var columns = await connection.QueryAsync<TableInfoRow>(
+            new CommandDefinition(
+                $"PRAGMA table_info({tableName});",
+                cancellationToken: cancellationToken));
+
+        return columns
+            .Select(column => column.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static async Task<Dictionary<string, List<BrokerServerProfileRow>>> LoadBrokerServerProfileLookupsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(connection, "broker_server_profiles", cancellationToken))
+        {
+            return new Dictionary<string, List<BrokerServerProfileRow>>(StringComparer.Ordinal);
+        }
+
+        var rows = await connection.QueryAsync<BrokerServerProfileRow>(
+            new CommandDefinition(
+                """
+                SELECT id AS Id,
+                       workspace_id AS WorkspaceId,
+                       name AS Name,
+                       host AS Host,
+                       port AS Port,
+                       use_tls AS UseTls,
+                       username AS Username,
+                       password AS Password,
+                       default_topic_pattern AS DefaultTopicPattern,
+                       downlink_topic AS DownlinkTopic,
+                       COALESCE(enable_send, 0) AS EnableSend,
+                       COALESCE(is_active, 0) AS IsActive,
+                       created_at_utc AS CreatedAtUtc
+                FROM broker_server_profiles
+                ORDER BY workspace_id ASC, is_active DESC, created_at_utc DESC, id ASC;
+                """,
+                cancellationToken: cancellationToken));
+
+        return rows
+            .GroupBy(row => row.WorkspaceId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToList(),
+                StringComparer.Ordinal);
+    }
+
+    private static string? ResolveTopicPresetBrokerServerProfileId(
+        TopicPresetRow row,
+        IReadOnlyDictionary<string, List<BrokerServerProfileRow>> brokerProfileLookups)
+    {
+        if (!string.IsNullOrWhiteSpace(row.BrokerServerProfileId))
+        {
+            return row.BrokerServerProfileId;
+        }
+
+        if (!brokerProfileLookups.TryGetValue(row.WorkspaceId, out var workspaceProfiles) || workspaceProfiles.Count == 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.BrokerServer))
+        {
+            var match = workspaceProfiles.FirstOrDefault(
+                profile => string.Equals(profile.ServerAddress, row.BrokerServer, StringComparison.Ordinal));
+
+            if (match is not null)
+            {
+                return match.Id;
+            }
+        }
+
+        return workspaceProfiles[0].Id;
+    }
+
     private static string NormalizeSqliteConnectionString(string sqlitePathOrConnectionString)
     {
         if (string.IsNullOrWhiteSpace(sqlitePathOrConnectionString))
@@ -458,6 +562,8 @@ public sealed class ProductPreferenceBackfillScriptGenerator
         public int IsActive { get; set; }
 
         public required string CreatedAtUtc { get; set; }
+
+        public string ServerAddress => $"{Host}:{Port}";
     }
 
     private sealed class FavoriteNodeRow
@@ -480,6 +586,8 @@ public sealed class ProductPreferenceBackfillScriptGenerator
         public required string Id { get; set; }
 
         public required string WorkspaceId { get; set; }
+
+        public string? BrokerServerProfileId { get; set; }
 
         public required string BrokerServer { get; set; }
 
@@ -518,5 +626,10 @@ public sealed class ProductPreferenceBackfillScriptGenerator
         public required string TopicFilter { get; set; }
 
         public required string CreatedAtUtc { get; set; }
+    }
+
+    private sealed class TableInfoRow
+    {
+        public required string Name { get; set; }
     }
 }

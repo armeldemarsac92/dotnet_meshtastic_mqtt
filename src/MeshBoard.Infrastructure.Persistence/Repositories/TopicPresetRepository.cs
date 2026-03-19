@@ -21,20 +21,22 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
 
     public async Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(
         string workspaceId,
-        string brokerServer,
+        Guid brokerServerProfileId,
         CancellationToken cancellationToken = default)
     {
+        var brokerServerProfileKey = brokerServerProfileId.ToString();
+
         _logger.LogDebug(
-            "Attempting to fetch topic presets for workspace {WorkspaceId} and broker {BrokerServer}",
+            "Attempting to fetch topic presets for workspace {WorkspaceId} and server profile {BrokerServerProfileId}",
             workspaceId,
-            brokerServer);
+            brokerServerProfileKey);
 
         var topicPresets = await _dbContext.QueryAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresets,
             new
             {
                 WorkspaceId = workspaceId,
-                BrokerServer = brokerServer
+                BrokerServerProfileId = brokerServerProfileKey
             },
             cancellationToken: cancellationToken);
 
@@ -43,22 +45,24 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
 
     public async Task<TopicPreset?> GetByTopicPatternAsync(
         string workspaceId,
-        string brokerServer,
+        Guid brokerServerProfileId,
         string topicPattern,
         CancellationToken cancellationToken = default)
     {
+        var brokerServerProfileKey = brokerServerProfileId.ToString();
+
         _logger.LogDebug(
-            "Attempting to fetch topic preset {TopicPattern} for workspace {WorkspaceId} and broker {BrokerServer}",
+            "Attempting to fetch topic preset {TopicPattern} for workspace {WorkspaceId} and server profile {BrokerServerProfileId}",
             topicPattern,
             workspaceId,
-            brokerServer);
+            brokerServerProfileKey);
 
         var response = await _dbContext.QueryFirstOrDefaultAsync<TopicPresetSqlResponse>(
             TopicPresetQueries.GetTopicPresetByTopicPattern,
             new
             {
                 WorkspaceId = workspaceId,
-                BrokerServer = brokerServer,
+                BrokerServerProfileId = brokerServerProfileKey,
                 TopicPattern = topicPattern
             },
             cancellationToken);
@@ -68,17 +72,20 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
 
     public async Task<TopicPreset> UpsertAsync(
         string workspaceId,
+        Guid brokerServerProfileId,
         string brokerServer,
         SaveTopicPresetRequest request,
         CancellationToken cancellationToken = default)
     {
+        var brokerServerProfileKey = brokerServerProfileId.ToString();
+
         _logger.LogInformation(
-            "Attempting to upsert topic preset: {TopicPattern} for workspace {WorkspaceId} and broker {BrokerServer}",
+            "Attempting to upsert topic preset: {TopicPattern} for workspace {WorkspaceId} and server profile {BrokerServerProfileId}",
             request.TopicPattern,
             workspaceId,
-            brokerServer);
+            brokerServerProfileKey);
 
-        var sqlRequest = request.ToSqlRequest(workspaceId, brokerServer);
+        var sqlRequest = request.ToSqlRequest(workspaceId, brokerServerProfileId, brokerServer);
 
         if (sqlRequest.IsDefault == 1)
         {
@@ -87,7 +94,7 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
                 new
                 {
                     WorkspaceId = workspaceId,
-                    BrokerServer = brokerServer
+                    BrokerServerProfileId = brokerServerProfileKey
                 },
                 cancellationToken: cancellationToken);
         }
@@ -102,7 +109,7 @@ internal sealed class TopicPresetRepository : ITopicPresetRepository
             new
             {
                 WorkspaceId = workspaceId,
-                BrokerServer = brokerServer,
+                BrokerServerProfileId = brokerServerProfileKey,
                 sqlRequest.TopicPattern
             },
             cancellationToken);

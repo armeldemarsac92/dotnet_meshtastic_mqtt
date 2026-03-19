@@ -244,17 +244,17 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
             _presets = presets;
         }
 
-        public Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(string workspaceId, string brokerServer, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(string workspaceId, Guid brokerServerProfileId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_presets);
         }
 
-        public Task<TopicPreset?> GetByTopicPatternAsync(string workspaceId, string brokerServer, string topicPattern, CancellationToken cancellationToken = default)
+        public Task<TopicPreset?> GetByTopicPatternAsync(string workspaceId, Guid brokerServerProfileId, string topicPattern, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(_presets.FirstOrDefault(item => string.Equals(item.TopicPattern, topicPattern, StringComparison.Ordinal)));
         }
 
-        public Task<TopicPreset> UpsertAsync(string workspaceId, string brokerServer, SaveTopicPresetRequest request, CancellationToken cancellationToken = default)
+        public Task<TopicPreset> UpsertAsync(string workspaceId, Guid brokerServerProfileId, string brokerServer, SaveTopicPresetRequest request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }

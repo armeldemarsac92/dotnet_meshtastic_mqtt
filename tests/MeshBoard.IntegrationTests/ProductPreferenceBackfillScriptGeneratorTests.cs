@@ -130,6 +130,8 @@ public sealed class ProductPreferenceBackfillScriptGeneratorTests
             Assert.Contains("INSERT INTO topic_presets", script, StringComparison.Ordinal);
             Assert.Contains("INSERT INTO saved_channel_filters", script, StringComparison.Ordinal);
             Assert.Contains("Alice''s Broker", script, StringComparison.Ordinal);
+            Assert.Contains("broker_server_profile_id", script, StringComparison.Ordinal);
+            Assert.Contains("'11111111-1111-1111-1111-111111111111'", script, StringComparison.Ordinal);
             Assert.DoesNotContain("default_encryption_key_base64", script, StringComparison.Ordinal);
             Assert.DoesNotContain("encryption_key_base64", script, StringComparison.Ordinal);
             Assert.DoesNotContain("AQIDBAUGBwgJCgsMDQ4PEA==", script, StringComparison.Ordinal);

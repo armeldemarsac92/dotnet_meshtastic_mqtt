@@ -31,6 +31,8 @@ public sealed class ProductPersistenceSchemaTests
         Assert.Contains("CREATE TABLE IF NOT EXISTS favorite_nodes", createSchema, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE IF NOT EXISTS topic_presets", createSchema, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE IF NOT EXISTS saved_channel_filters", createSchema, StringComparison.Ordinal);
+        Assert.Contains("broker_server_profile_id", createSchema, StringComparison.Ordinal);
+        Assert.Contains("ux_topic_presets_workspace_profile_topic_pattern", createSchema, StringComparison.Ordinal);
         Assert.DoesNotContain("default_encryption_key_base64", createSchema, StringComparison.Ordinal);
         Assert.DoesNotContain("encryption_key_base64", createSchema, StringComparison.Ordinal);
         Assert.DoesNotContain("CREATE TABLE IF NOT EXISTS message_history", createSchema, StringComparison.Ordinal);

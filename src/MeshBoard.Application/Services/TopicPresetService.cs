@@ -1,6 +1,7 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Workspaces;
+using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
@@ -44,15 +45,15 @@ public sealed class TopicPresetService : ITopicPresetService
     public async Task<IReadOnlyCollection<TopicPreset>> GetTopicPresets(CancellationToken cancellationToken = default)
     {
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
-        var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
+        var activeProfile = await ResolveActiveServerProfile(cancellationToken);
         _logger.LogDebug("Attempting to get topic presets");
 
-        var topicPresets = await _topicPresetRepository.GetAllAsync(workspaceId, activeServerAddress, cancellationToken);
+        var topicPresets = await _topicPresetRepository.GetAllAsync(workspaceId, activeProfile.Id, cancellationToken);
 
         _logger.LogDebug(
-            "Retrieved {TopicPresetCount} topic presets for broker {BrokerServer}",
+            "Retrieved {TopicPresetCount} topic presets for server profile {BrokerServerProfileId}",
             topicPresets.Count,
-            activeServerAddress);
+            activeProfile.Id);
 
         return topicPresets;
     }
@@ -65,11 +66,11 @@ public sealed class TopicPresetService : ITopicPresetService
         }
 
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
-        var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
+        var activeProfile = await ResolveActiveServerProfile(cancellationToken);
 
         return await _topicPresetRepository.GetByTopicPatternAsync(
             workspaceId,
-            activeServerAddress,
+            activeProfile.Id,
             topicPattern.Trim(),
             cancellationToken);
     }
@@ -79,7 +80,7 @@ public sealed class TopicPresetService : ITopicPresetService
         CancellationToken cancellationToken = default)
     {
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
-        var activeServerAddress = await ResolveActiveServerAddress(cancellationToken);
+        var activeProfile = await ResolveActiveServerProfile(cancellationToken);
         var topicPattern = request.TopicPattern.Trim();
         var name = request.Name.Trim();
 
@@ -101,7 +102,8 @@ public sealed class TopicPresetService : ITopicPresetService
         {
             var topicPreset = await _topicPresetRepository.UpsertAsync(
                 workspaceId,
-                activeServerAddress,
+                activeProfile.Id,
+                activeProfile.ServerAddress,
                 new SaveTopicPresetRequest
                 {
                     Name = name,
@@ -125,9 +127,8 @@ public sealed class TopicPresetService : ITopicPresetService
         }
     }
 
-    private async Task<string> ResolveActiveServerAddress(CancellationToken cancellationToken)
+    private Task<BrokerServerProfile> ResolveActiveServerProfile(CancellationToken cancellationToken)
     {
-        var activeProfile = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
-        return activeProfile.ServerAddress;
+        return _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
     }
 }

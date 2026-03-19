@@ -235,7 +235,7 @@ public sealed class PersistenceIntegrationTests
                 var legacyProfiles = await profileRepository.GetAllAsync(WorkspaceConstants.DefaultWorkspaceId);
                 var legacyPresets = await topicPresetRepository.GetAllAsync(
                     WorkspaceConstants.DefaultWorkspaceId,
-                    "mqtt.meshtastic.org:1883");
+                    Guid.NewGuid());
 
                 Assert.Empty(legacyProfiles);
                 Assert.Empty(legacyPresets);
@@ -1140,9 +1140,9 @@ public sealed class PersistenceIntegrationTests
                     new SaveBrokerServerProfileRequest
                     {
                         Name = "EU profile",
-                        Host = "mqtt-eu.example.org",
-                        Port = 1883,
-                        UseTls = false,
+                        Host = defaultProfile.Host,
+                        Port = defaultProfile.Port,
+                        UseTls = defaultProfile.UseTls,
                         Username = string.Empty,
                         Password = string.Empty,
                         DefaultTopicPattern = "msh/EU_868/2/e/#",

@@ -69,6 +69,7 @@ public sealed class WorkspaceProvisioningService : IWorkspaceProvisioningService
 
         await _topicPresetRepository.UpsertAsync(
             workspaceId,
+            defaultProfile.Id,
             defaultProfile.ServerAddress,
             new SaveTopicPresetRequest
             {
@@ -80,6 +81,7 @@ public sealed class WorkspaceProvisioningService : IWorkspaceProvisioningService
 
         await _topicPresetRepository.UpsertAsync(
             workspaceId,
+            defaultProfile.Id,
             defaultProfile.ServerAddress,
             new SaveTopicPresetRequest
             {

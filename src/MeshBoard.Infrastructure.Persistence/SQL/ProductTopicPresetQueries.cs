@@ -8,7 +8,7 @@ internal static class ProductTopicPresetQueries
         SET is_default = 0
         WHERE is_default = 1
           AND workspace_id = @WorkspaceId
-          AND broker_server = @BrokerServer;
+          AND broker_server_profile_id = @BrokerServerProfileId;
         """;
 
     public static string GetTopicPresetByTopicPattern =>
@@ -22,7 +22,7 @@ internal static class ProductTopicPresetQueries
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
         WHERE workspace_id = @WorkspaceId
-          AND broker_server = @BrokerServer
+          AND broker_server_profile_id = @BrokerServerProfileId
           AND topic_pattern = @TopicPattern;
         """;
 
@@ -37,7 +37,7 @@ internal static class ProductTopicPresetQueries
             created_at_utc AS CreatedAtUtc
         FROM topic_presets
         WHERE workspace_id = @WorkspaceId
-          AND broker_server = @BrokerServer
+          AND broker_server_profile_id = @BrokerServerProfileId
         ORDER BY is_default DESC, name ASC;
         """;
 
@@ -46,6 +46,7 @@ internal static class ProductTopicPresetQueries
         INSERT INTO topic_presets (
             id,
             workspace_id,
+            broker_server_profile_id,
             broker_server,
             name,
             topic_pattern,
@@ -54,12 +55,14 @@ internal static class ProductTopicPresetQueries
         VALUES (
             @Id,
             @WorkspaceId,
+            @BrokerServerProfileId,
             @BrokerServer,
             @Name,
             @TopicPattern,
             @IsDefault,
             @CreatedAtUtc)
-        ON CONFLICT(workspace_id, broker_server, topic_pattern) DO UPDATE SET
+        ON CONFLICT(workspace_id, broker_server_profile_id, topic_pattern) DO UPDATE SET
+            broker_server = excluded.broker_server,
             name = excluded.name,
             is_default = excluded.is_default;
         """;

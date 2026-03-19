@@ -34,6 +34,7 @@ internal static class SchemaQueries
         CREATE TABLE IF NOT EXISTS topic_presets (
             id TEXT NOT NULL PRIMARY KEY,
             workspace_id TEXT NOT NULL,
+            broker_server_profile_id TEXT NOT NULL,
             broker_server TEXT NOT NULL,
             name TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
@@ -63,8 +64,8 @@ internal static class SchemaQueries
         CREATE UNIQUE INDEX IF NOT EXISTS ux_broker_server_profiles_workspace_name
             ON broker_server_profiles(workspace_id, name);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_broker_server_topic_pattern
-            ON topic_presets(workspace_id, broker_server, topic_pattern);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_profile_topic_pattern
+            ON topic_presets(workspace_id, broker_server_profile_id, topic_pattern);
 
         CREATE TABLE IF NOT EXISTS users (
             id TEXT NOT NULL PRIMARY KEY,
@@ -591,6 +592,12 @@ internal static class SchemaQueries
         ADD COLUMN broker_server TEXT NULL;
         """;
 
+    public static string AddTopicPresetsBrokerServerProfileIdColumn =>
+        """
+        ALTER TABLE topic_presets
+        ADD COLUMN broker_server_profile_id TEXT NULL;
+        """;
+
     public static string AddTopicPresetsWorkspaceIdColumn =>
         """
         ALTER TABLE topic_presets
@@ -602,6 +609,35 @@ internal static class SchemaQueries
         UPDATE topic_presets
         SET broker_server = COALESCE(NULLIF(broker_server, ''), @BrokerServer)
         WHERE broker_server IS NULL OR broker_server = '';
+        """;
+
+    public static string BackfillTopicPresetsBrokerServerProfileIdFromBrokerServer =>
+        """
+        UPDATE topic_presets
+        SET broker_server_profile_id = (
+            SELECT broker_server_profiles.id
+            FROM broker_server_profiles
+            WHERE broker_server_profiles.workspace_id = topic_presets.workspace_id
+              AND (broker_server_profiles.host || ':' || broker_server_profiles.port) = topic_presets.broker_server
+            ORDER BY broker_server_profiles.is_active DESC,
+                     broker_server_profiles.created_at_utc DESC,
+                     broker_server_profiles.id ASC
+            LIMIT 1)
+        WHERE broker_server_profile_id IS NULL OR broker_server_profile_id = '';
+        """;
+
+    public static string BackfillTopicPresetsBrokerServerProfileIdFromActiveProfile =>
+        """
+        UPDATE topic_presets
+        SET broker_server_profile_id = (
+            SELECT broker_server_profiles.id
+            FROM broker_server_profiles
+            WHERE broker_server_profiles.workspace_id = topic_presets.workspace_id
+            ORDER BY broker_server_profiles.is_active DESC,
+                     broker_server_profiles.created_at_utc DESC,
+                     broker_server_profiles.id ASC
+            LIMIT 1)
+        WHERE broker_server_profile_id IS NULL OR broker_server_profile_id = '';
         """;
 
     public static string BackfillTopicPresetsWorkspaceId =>
@@ -621,10 +657,15 @@ internal static class SchemaQueries
         DROP INDEX IF EXISTS ux_topic_presets_broker_server_topic_pattern;
         """;
 
-    public static string CreateTopicPresetsWorkspaceBrokerServerTopicPatternIndex =>
+    public static string DropTopicPresetsWorkspaceBrokerServerTopicPatternIndex =>
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_broker_server_topic_pattern
-            ON topic_presets(workspace_id, broker_server, topic_pattern);
+        DROP INDEX IF EXISTS ux_topic_presets_workspace_broker_server_topic_pattern;
+        """;
+
+    public static string CreateTopicPresetsWorkspaceBrokerServerProfileTopicPatternIndex =>
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_profile_topic_pattern
+            ON topic_presets(workspace_id, broker_server_profile_id, topic_pattern);
         """;
 
     public static string AddNodesBatteryLevelPercentColumn =>
