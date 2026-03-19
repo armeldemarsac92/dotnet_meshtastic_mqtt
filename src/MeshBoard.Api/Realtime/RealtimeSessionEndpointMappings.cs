@@ -9,6 +9,14 @@ internal static class RealtimeSessionEndpointMappings
     {
         var group = endpoints.MapGroup("/api/realtime");
 
+        endpoints.MapGet(
+            "/.well-known/jwks.json",
+            (HttpContext httpContext, IRealtimeJwksService realtimeJwksService) =>
+            {
+                httpContext.Response.Headers.CacheControl = "public,max-age=300";
+                return Results.Ok(realtimeJwksService.GetDocument());
+            });
+
         group.MapPost(
                 "/session",
                 async Task<IResult> (

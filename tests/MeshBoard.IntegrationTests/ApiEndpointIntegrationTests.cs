@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using MeshBoard.Contracts.Authentication;
@@ -179,6 +180,41 @@ public sealed class ApiEndpointIntegrationTests
         Assert.Equal(
             expiresAt.ToUnixTimeSeconds(),
             sessionPayload.ExpiresAtUtc.ToUnixTimeSeconds());
+    }
+
+    [Fact]
+    public async Task RealtimeJwks_ShouldExposeVerificationKeyThatValidatesIssuedBrokerTokens()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        await RegisterAsync(client, host);
+
+        var sessionResponse = await PostJsonAsync(client, host, "/api/realtime/session", payload: null);
+        Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
+
+        var sessionPayload = await sessionResponse.Content.ReadFromJsonAsync<RealtimeSessionPayload>();
+        Assert.NotNull(sessionPayload);
+
+        var jwksResponse = await client.GetAsync("/.well-known/jwks.json");
+        Assert.Equal(HttpStatusCode.OK, jwksResponse.StatusCode);
+        Assert.Contains("public", jwksResponse.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("max-age=300", jwksResponse.Headers.CacheControl?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+        var jwks = await jwksResponse.Content.ReadFromJsonAsync<JsonWebKeyDocument>();
+        Assert.NotNull(jwks);
+
+        var key = Assert.Single(jwks!.Keys);
+        Assert.Equal("RSA", key.Kty);
+        Assert.Equal("sig", key.Use);
+        Assert.Equal("RS256", key.Alg);
+        Assert.Equal(ApiIntegrationTestHost.RealtimeKeyId, key.Kid);
+        Assert.False(string.IsNullOrWhiteSpace(key.N));
+        Assert.False(string.IsNullOrWhiteSpace(key.E));
+
+        var (header, _) = DecodeJwt(sessionPayload!.Token);
+        Assert.Equal(key.Kid, header.GetProperty("kid").GetString());
+        Assert.True(VerifyJwtSignature(sessionPayload.Token, key));
     }
 
     [Fact]
@@ -588,12 +624,37 @@ public sealed class ApiEndpointIntegrationTests
         return (headerDocument.RootElement.Clone(), payloadDocument.RootElement.Clone());
     }
 
+    private static bool VerifyJwtSignature(string token, JsonWebKey key)
+    {
+        var segments = token.Split('.');
+        Assert.Equal(3, segments.Length);
+
+        using var rsa = RSA.Create();
+        rsa.ImportParameters(
+            new RSAParameters
+            {
+                Modulus = DecodeBase64UrlToBytes(key.N),
+                Exponent = DecodeBase64UrlToBytes(key.E)
+            });
+
+        return rsa.VerifyData(
+            Encoding.UTF8.GetBytes($"{segments[0]}.{segments[1]}"),
+            DecodeBase64UrlToBytes(segments[2]),
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+    }
+
     private static string DecodeBase64Url(string value)
+    {
+        return Encoding.UTF8.GetString(DecodeBase64UrlToBytes(value));
+    }
+
+    private static byte[] DecodeBase64UrlToBytes(string value)
     {
         var normalized = value.Replace('-', '+').Replace('_', '/');
         normalized = normalized.PadRight(normalized.Length + (4 - normalized.Length % 4) % 4, '=');
 
-        return Encoding.UTF8.GetString(Convert.FromBase64String(normalized));
+        return Convert.FromBase64String(normalized);
     }
 
     private static string GetSingleOrFirstString(JsonElement element, string propertyName)
