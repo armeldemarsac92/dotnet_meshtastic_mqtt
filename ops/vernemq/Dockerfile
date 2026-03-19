@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM erlang:27-bookworm AS build
+FROM erlang:27-slim AS build
 WORKDIR /src
 
 ARG VERNEMQ_VERSION=2.1.1
@@ -51,4 +51,4 @@ VOLUME ["/vernemq/log", "/vernemq/data", "/vernemq/etc"]
 
 USER vernemq
 
-CMD ["/vernemq/bin/vernemq", "console"]
+CMD ["sh", "-lc", "/vernemq/bin/vernemq start && trap '/vernemq/bin/vernemq stop; exit 0' TERM INT; while true; do sleep 3600; done"]

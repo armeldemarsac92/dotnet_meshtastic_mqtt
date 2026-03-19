@@ -64,6 +64,9 @@ services:
       args:
         VERNEMQ_VERSION: "2.1.1"
     container_name: meshboard-vernemq
+    environment:
+      HOME: /vernemq/data
+      WAIT_FOR_ERLANG: "60"
     depends_on:
       meshboard-api:
         condition: service_started
@@ -80,6 +83,7 @@ services:
     restart: unless-stopped
     volumes:
       - ../vernemq/vernemq.conf:/vernemq/etc/vernemq.conf:ro
+      - ../vernemq/vm.args:/vernemq/etc/vm.args:ro
       - ../vernemq/certs:/vernemq/etc/certs:ro
       - meshboard-vernemq-data:/vernemq/data
       - meshboard-vernemq-log:/vernemq/log

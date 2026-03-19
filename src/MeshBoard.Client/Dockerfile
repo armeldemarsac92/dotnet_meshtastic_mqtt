@@ -16,6 +16,10 @@ COPY src/MeshBoard.Api.SDK/MeshBoard.Api.SDK.csproj src/MeshBoard.Api.SDK/
 COPY src/MeshBoard.Client/MeshBoard.Client.csproj src/MeshBoard.Client/
 
 COPY --from=assets /src/node_modules /src/node_modules
+COPY --from=assets /usr/local/bin/node /usr/local/bin/node
+COPY --from=assets /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 RUN dotnet restore src/MeshBoard.Client/MeshBoard.Client.csproj
 

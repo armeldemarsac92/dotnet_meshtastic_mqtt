@@ -1,5 +1,5 @@
 :80 {
-    encode zstd br gzip
+    encode zstd gzip
 
     handle /api/* {
         reverse_proxy meshboard-api:8080
