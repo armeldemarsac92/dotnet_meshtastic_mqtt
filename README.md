@@ -111,6 +111,8 @@ Start the stack:
 docker compose -f ops/local/compose.yaml up --build
 ```
 
+Client URL: `http://localhost:8082`
+
 ## Common Environment Overrides
 
 - `Broker__Host`

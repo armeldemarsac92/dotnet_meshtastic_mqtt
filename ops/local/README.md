@@ -2,12 +2,13 @@
 
 This stack launches the server-side Phase 5 runtime locally:
 
+- `meshboard-client`
 - `postgres`
 - `meshboard-api`
 - `meshboard-vernemq`
 - `meshboard-realtime-bridge`
 
-It intentionally does **not** containerize `MeshBoard.Client` yet. The current client still assumes a same-origin host, and that deserves its own gateway/proxy slice instead of a rushed cross-origin workaround.
+`meshboard-client` is an edge container. It serves the published Blazor WebAssembly app and proxies same-origin `/api/*` and `/.well-known/*` requests to `meshboard-api`, so the current cookie-auth and antiforgery model keeps working without a cross-origin client rewrite.
 
 ## Why The VerneMQ Image Is Built Locally
 
@@ -41,6 +42,7 @@ docker compose -f ops/local/compose.yaml up --build
 
 Useful endpoints:
 
+- Client: `http://localhost:8082`
 - API health: `http://localhost:8081/api/health`
 - PostgreSQL: `postgresql://meshboard:meshboard@localhost:15432/meshboard`
 - VerneMQ TCP: `mqtt://localhost:1883`
