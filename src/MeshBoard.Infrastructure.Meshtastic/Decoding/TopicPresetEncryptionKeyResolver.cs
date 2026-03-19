@@ -192,8 +192,13 @@ internal sealed class TopicPresetEncryptionKeyResolver : ITopicEncryptionKeyReso
         };
     }
 
-    private byte[] ResolveDefaultKeyBytes(string configuredDefaultKeyBase64)
+    private byte[] ResolveDefaultKeyBytes(string? configuredDefaultKeyBase64)
     {
+        if (string.IsNullOrWhiteSpace(configuredDefaultKeyBase64))
+        {
+            return [..TopicEncryptionKey.DefaultKeyBytes];
+        }
+
         if (TopicEncryptionKey.TryParse(configuredDefaultKeyBase64, out var configuredDefaultKey))
         {
             return configuredDefaultKey;
