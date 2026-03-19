@@ -4,7 +4,6 @@ using MeshBoard.Infrastructure.Meshtastic.DependencyInjection;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using MeshBoard.Web.Authentication;
 using MeshBoard.Web.Components;
-using MeshBoard.Web.State;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication;
 using MeshBoard.Contracts.Authentication;
@@ -41,13 +40,6 @@ builder.Services.AddScoped<IWorkspaceContextAccessor, AuthenticatedWorkspaceCont
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddSingleton<ServerSelectionNotifier>();
-builder.Services.AddSingleton<ProjectionChangeNotifier>();
-
-if (builder.Configuration.GetValue<bool>("WebUiRuntime:EnableProjectionDispatch"))
-{
-    builder.Services.AddHostedService<ProjectionChangeDispatchHostedService>();
-}
 
 var app = builder.Build();
 
