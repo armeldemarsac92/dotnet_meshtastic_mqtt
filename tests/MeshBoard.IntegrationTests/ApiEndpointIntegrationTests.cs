@@ -408,7 +408,8 @@ public sealed class ApiEndpointIntegrationTests
             "/api/preferences/channels",
             new SaveChannelFilterRequest
             {
-                TopicFilter = topicFilter
+                TopicFilter = topicFilter,
+                Label = "Portable feed"
             });
 
         Assert.True(
@@ -422,8 +423,11 @@ public sealed class ApiEndpointIntegrationTests
         Assert.NotNull(savedChannels);
 
         var persistedChannel = Assert.Single(savedChannels!, channel => channel.TopicFilter == topicFilter);
+        Assert.NotEqual(Guid.Empty, persistedChannel.Id);
         Assert.NotEqual(Guid.Empty, persistedChannel.BrokerServerProfileId);
+        Assert.Equal("Portable feed", persistedChannel.Label);
         Assert.True(persistedChannel.CreatedAtUtc > DateTimeOffset.MinValue);
+        Assert.True(persistedChannel.UpdatedAtUtc > DateTimeOffset.MinValue);
 
         var encodedTopicFilter = string.Join(
             '/',

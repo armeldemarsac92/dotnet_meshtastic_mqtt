@@ -1,16 +1,16 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Exceptions;
-using MeshBoard.Contracts.Meshtastic;
+using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Application.Services;
 
 public interface ISavedChannelPreferenceService
 {
-    Task<IReadOnlyCollection<SubscriptionIntent>> GetSavedChannels(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<SavedChannelFilter>> GetSavedChannels(CancellationToken cancellationToken = default);
 
-    Task SaveChannel(string topicFilter, CancellationToken cancellationToken = default);
+    Task SaveChannel(SaveChannelFilterRequest request, CancellationToken cancellationToken = default);
 
     Task RemoveChannel(string topicFilter, CancellationToken cancellationToken = default);
 }
@@ -19,22 +19,22 @@ public sealed class SavedChannelPreferenceService : ISavedChannelPreferenceServi
 {
     private readonly IBrokerServerProfileService _brokerServerProfileService;
     private readonly ILogger<SavedChannelPreferenceService> _logger;
-    private readonly ISubscriptionIntentRepository _subscriptionIntentRepository;
+    private readonly ISavedChannelFilterRepository _savedChannelFilterRepository;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public SavedChannelPreferenceService(
         IBrokerServerProfileService brokerServerProfileService,
-        ISubscriptionIntentRepository subscriptionIntentRepository,
+        ISavedChannelFilterRepository savedChannelFilterRepository,
         IWorkspaceContextAccessor workspaceContextAccessor,
         ILogger<SavedChannelPreferenceService> logger)
     {
         _brokerServerProfileService = brokerServerProfileService;
-        _subscriptionIntentRepository = subscriptionIntentRepository;
+        _savedChannelFilterRepository = savedChannelFilterRepository;
         _workspaceContextAccessor = workspaceContextAccessor;
         _logger = logger;
     }
 
-    public async Task<IReadOnlyCollection<SubscriptionIntent>> GetSavedChannels(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<SavedChannelFilter>> GetSavedChannels(CancellationToken cancellationToken = default)
     {
         var workspaceId = GetWorkspaceId();
         var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
@@ -44,12 +44,15 @@ public sealed class SavedChannelPreferenceService : ISavedChannelPreferenceServi
             workspaceId,
             activeServer.Id);
 
-        return await _subscriptionIntentRepository.GetAllAsync(workspaceId, activeServer.Id, cancellationToken);
+        return await _savedChannelFilterRepository.GetAllAsync(workspaceId, activeServer.Id, cancellationToken);
     }
 
-    public async Task SaveChannel(string topicFilter, CancellationToken cancellationToken = default)
+    public async Task SaveChannel(SaveChannelFilterRequest request, CancellationToken cancellationToken = default)
     {
-        var normalizedTopicFilter = NormalizeTopicFilterForIntent(topicFilter);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var normalizedTopicFilter = NormalizeTopicFilterForIntent(request.TopicFilter);
+        var label = NormalizeLabel(request.Label);
         var workspaceId = GetWorkspaceId();
         var activeServer = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
 
@@ -59,10 +62,11 @@ public sealed class SavedChannelPreferenceService : ISavedChannelPreferenceServi
             workspaceId,
             activeServer.Id);
 
-        await _subscriptionIntentRepository.AddAsync(
+        await _savedChannelFilterRepository.UpsertAsync(
             workspaceId,
             activeServer.Id,
             normalizedTopicFilter,
+            label,
             cancellationToken);
     }
 
@@ -78,7 +82,7 @@ public sealed class SavedChannelPreferenceService : ISavedChannelPreferenceServi
             workspaceId,
             activeServer.Id);
 
-        await _subscriptionIntentRepository.DeleteAsync(
+        await _savedChannelFilterRepository.DeleteAsync(
             workspaceId,
             activeServer.Id,
             normalizedTopicFilter,
@@ -93,6 +97,16 @@ public sealed class SavedChannelPreferenceService : ISavedChannelPreferenceServi
         }
 
         return NormalizeTopicFilterForDisplay(topicFilter.Trim());
+    }
+
+    private static string? NormalizeLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return null;
+        }
+
+        return label.Trim();
     }
 
     private static string NormalizeTopicFilterForDisplay(string topicFilter)

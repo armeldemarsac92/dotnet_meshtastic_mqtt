@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFavoriteNodeRepository, FavoriteNodeRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<INodeRepository, NodeRepository>();
+        services.AddScoped<ISavedChannelFilterRepository, SavedChannelFilterRepository>();
         services.AddScoped<ISubscriptionIntentRepository, SubscriptionIntentRepository>();
         services.AddScoped<ITopicPresetRepository, TopicPresetRepository>();
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();

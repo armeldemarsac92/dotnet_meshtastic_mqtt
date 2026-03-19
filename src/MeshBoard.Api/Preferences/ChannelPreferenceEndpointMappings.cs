@@ -22,7 +22,7 @@ internal static class ChannelPreferenceEndpointMappings
                 try
                 {
                     var savedChannels = await savedChannelPreferenceService.GetSavedChannels(cancellationToken);
-                    return Results.Ok(savedChannels.Select(channel => channel.ToSavedChannelFilter()).ToList());
+                    return Results.Ok(savedChannels);
                 }
                 catch (NotFoundException exception)
                 {
@@ -44,7 +44,7 @@ internal static class ChannelPreferenceEndpointMappings
 
                 try
                 {
-                    await savedChannelPreferenceService.SaveChannel(request.TopicFilter, cancellationToken);
+                    await savedChannelPreferenceService.SaveChannel(request, cancellationToken);
                     return Results.NoContent();
                 }
                 catch (BadRequestException exception)

@@ -3,7 +3,7 @@ using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
-using MeshBoard.Contracts.Meshtastic;
+using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeshBoard.UnitTests;
@@ -13,25 +13,31 @@ public sealed class SavedChannelPreferenceServiceTests
     [Fact]
     public async Task SaveChannel_ShouldNormalizeJsonTopicPrefix_AndPersistAgainstActiveProfile()
     {
-        var repository = new FakeSubscriptionIntentRepository();
+        var repository = new FakeSavedChannelFilterRepository();
         var service = new SavedChannelPreferenceService(
             new FakeBrokerServerProfileService(),
             repository,
             new FakeWorkspaceContextAccessor(),
             NullLogger<SavedChannelPreferenceService>.Instance);
 
-        await service.SaveChannel("  msh/US/2/json/LongFast/#  ");
+        await service.SaveChannel(
+            new SaveChannelFilterRequest
+            {
+                TopicFilter = "  msh/US/2/json/LongFast/#  ",
+                Label = "  LongFast  "
+            });
 
-        var addedIntent = Assert.Single(repository.AddedIntents);
-        Assert.Equal("workspace-tests", addedIntent.WorkspaceId);
-        Assert.Equal(FakeBrokerServerProfileService.ActiveProfileId, addedIntent.ProfileId);
-        Assert.Equal("msh/US/2/e/LongFast/#", addedIntent.TopicFilter);
+        var savedFilter = Assert.Single(repository.UpsertedFilters);
+        Assert.Equal("workspace-tests", savedFilter.WorkspaceId);
+        Assert.Equal(FakeBrokerServerProfileService.ActiveProfileId, savedFilter.ProfileId);
+        Assert.Equal("msh/US/2/e/LongFast/#", savedFilter.TopicFilter);
+        Assert.Equal("LongFast", savedFilter.Label);
     }
 
     [Fact]
     public async Task RemoveChannel_ShouldNormalizeTopicFilter_AndDeleteAgainstActiveProfile()
     {
-        var repository = new FakeSubscriptionIntentRepository();
+        var repository = new FakeSavedChannelFilterRepository();
         var service = new SavedChannelPreferenceService(
             new FakeBrokerServerProfileService(),
             repository,
@@ -40,10 +46,10 @@ public sealed class SavedChannelPreferenceServiceTests
 
         await service.RemoveChannel("  msh/US/2/e/LongFast/#  ");
 
-        var removedIntent = Assert.Single(repository.DeletedIntents);
-        Assert.Equal("workspace-tests", removedIntent.WorkspaceId);
-        Assert.Equal(FakeBrokerServerProfileService.ActiveProfileId, removedIntent.ProfileId);
-        Assert.Equal("msh/US/2/e/LongFast/#", removedIntent.TopicFilter);
+        var removedFilter = Assert.Single(repository.DeletedFilters);
+        Assert.Equal("workspace-tests", removedFilter.WorkspaceId);
+        Assert.Equal(FakeBrokerServerProfileService.ActiveProfileId, removedFilter.ProfileId);
+        Assert.Equal("msh/US/2/e/LongFast/#", removedFilter.TopicFilter);
     }
 
     [Fact]
@@ -51,11 +57,12 @@ public sealed class SavedChannelPreferenceServiceTests
     {
         var service = new SavedChannelPreferenceService(
             new FakeBrokerServerProfileService(),
-            new FakeSubscriptionIntentRepository(),
+            new FakeSavedChannelFilterRepository(),
             new FakeWorkspaceContextAccessor(),
             NullLogger<SavedChannelPreferenceService>.Instance);
 
-        await Assert.ThrowsAsync<BadRequestException>(() => service.SaveChannel(" "));
+        await Assert.ThrowsAsync<BadRequestException>(
+            () => service.SaveChannel(new SaveChannelFilterRequest { TopicFilter = " " }));
     }
 
     private sealed class FakeWorkspaceContextAccessor : IWorkspaceContextAccessor
@@ -80,7 +87,6 @@ public sealed class SavedChannelPreferenceServiceTests
                     Host = "mqtt.example.org",
                     Port = 1883,
                     DefaultTopicPattern = "msh/US/2/e/#",
-                    DefaultEncryptionKeyBase64 = "AQ==",
                     DownlinkTopic = "msh/US/2/json/mqtt/",
                     CreatedAtUtc = DateTimeOffset.UtcNow,
                     IsActive = true
@@ -110,19 +116,29 @@ public sealed class SavedChannelPreferenceServiceTests
         }
     }
 
-    private sealed class FakeSubscriptionIntentRepository : ISubscriptionIntentRepository
+    private sealed class FakeSavedChannelFilterRepository : ISavedChannelFilterRepository
     {
-        public List<(string WorkspaceId, Guid ProfileId, string TopicFilter)> AddedIntents { get; } = [];
+        public List<(string WorkspaceId, Guid ProfileId, string TopicFilter, string? Label)> UpsertedFilters { get; } = [];
 
-        public List<(string WorkspaceId, Guid ProfileId, string TopicFilter)> DeletedIntents { get; } = [];
+        public List<(string WorkspaceId, Guid ProfileId, string TopicFilter)> DeletedFilters { get; } = [];
 
-        public Task<bool> AddAsync(
+        public Task<IReadOnlyCollection<SavedChannelFilter>> GetAllAsync(
+            string workspaceId,
+            Guid brokerServerProfileId,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyCollection<SavedChannelFilter> result = [];
+            return Task.FromResult(result);
+        }
+
+        public Task<bool> UpsertAsync(
             string workspaceId,
             Guid brokerServerProfileId,
             string topicFilter,
+            string? label,
             CancellationToken cancellationToken = default)
         {
-            AddedIntents.Add((workspaceId, brokerServerProfileId, topicFilter));
+            UpsertedFilters.Add((workspaceId, brokerServerProfileId, topicFilter, label));
             return Task.FromResult(true);
         }
 
@@ -132,17 +148,8 @@ public sealed class SavedChannelPreferenceServiceTests
             string topicFilter,
             CancellationToken cancellationToken = default)
         {
-            DeletedIntents.Add((workspaceId, brokerServerProfileId, topicFilter));
+            DeletedFilters.Add((workspaceId, brokerServerProfileId, topicFilter));
             return Task.FromResult(true);
-        }
-
-        public Task<IReadOnlyCollection<SubscriptionIntent>> GetAllAsync(
-            string workspaceId,
-            Guid brokerServerProfileId,
-            CancellationToken cancellationToken = default)
-        {
-            IReadOnlyCollection<SubscriptionIntent> result = [];
-            return Task.FromResult(result);
         }
     }
 }

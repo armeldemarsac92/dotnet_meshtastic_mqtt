@@ -85,6 +85,19 @@ internal static class SchemaQueries
             PRIMARY KEY (workspace_id, broker_server_profile_id, topic_filter)
         );
 
+        CREATE TABLE IF NOT EXISTS saved_channel_filters (
+            id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            broker_server_profile_id TEXT NOT NULL,
+            topic_filter TEXT NOT NULL,
+            label TEXT NULL,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_saved_channel_filters_workspace_profile_topic_filter
+            ON saved_channel_filters(workspace_id, broker_server_profile_id, topic_filter);
+
         CREATE TABLE IF NOT EXISTS workspace_runtime_status (
             workspace_id TEXT NOT NULL PRIMARY KEY,
             active_server_profile_id TEXT NULL,
