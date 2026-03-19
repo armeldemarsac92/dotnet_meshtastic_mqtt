@@ -14,6 +14,22 @@ namespace MeshBoard.Application.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
+    public static IServiceCollection AddApiApplicationServices(this IServiceCollection services)
+    {
+        services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
+        services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();
+        services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
+        services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
+        services.AddScoped<ISavedChannelPreferenceService, SavedChannelPreferenceService>();
+        services.AddScoped<ITopicPresetService, TopicPresetService>();
+        services.AddScoped<IUserAccountService, UserAccountService>();
+        services.AddScoped<IWorkspaceProvisioningService, WorkspaceProvisioningService>();
+
+        return services;
+    }
+
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
         services.AddMemoryCache(options => options.SizeLimit = 1_024);

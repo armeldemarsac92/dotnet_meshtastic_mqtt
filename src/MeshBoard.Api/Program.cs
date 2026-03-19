@@ -15,8 +15,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddApplicationServices();
-builder.Services.AddPersistenceInfrastructure(builder.Configuration);
+builder.Services.AddApiApplicationServices();
+builder.Services.AddProductPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddOptions<RealtimeSessionOptions>()
     .Bind(builder.Configuration.GetSection(RealtimeSessionOptions.SectionName));
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

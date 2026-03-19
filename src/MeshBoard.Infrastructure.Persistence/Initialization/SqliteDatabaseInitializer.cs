@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace MeshBoard.Infrastructure.Persistence.Initialization;
 
-internal sealed class SqliteDatabaseInitializer
+internal sealed class SqliteDatabaseInitializer : IPersistenceInitializer
 {
     private readonly BrokerOptions _brokerOptions;
     private readonly ILogger<SqliteDatabaseInitializer> _logger;

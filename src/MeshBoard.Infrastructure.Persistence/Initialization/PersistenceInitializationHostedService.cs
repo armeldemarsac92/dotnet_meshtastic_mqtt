@@ -5,11 +5,11 @@ namespace MeshBoard.Infrastructure.Persistence.Initialization;
 
 internal sealed class PersistenceInitializationHostedService : IHostedService
 {
-    private readonly SqliteDatabaseInitializer _databaseInitializer;
+    private readonly IPersistenceInitializer _databaseInitializer;
     private readonly ILogger<PersistenceInitializationHostedService> _logger;
 
     public PersistenceInitializationHostedService(
-        SqliteDatabaseInitializer databaseInitializer,
+        IPersistenceInitializer databaseInitializer,
         ILogger<PersistenceInitializationHostedService> logger)
     {
         _databaseInitializer = databaseInitializer;

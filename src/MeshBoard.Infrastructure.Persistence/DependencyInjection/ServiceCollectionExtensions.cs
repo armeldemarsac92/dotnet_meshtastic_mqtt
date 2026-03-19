@@ -12,11 +12,25 @@ namespace MeshBoard.Infrastructure.Persistence.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
+    public static IServiceCollection AddProductPersistenceInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        AddCommonOptions(services, configuration);
+        RegisterProviderInfrastructure(services, GetProvider(configuration), includeLegacyRuntime: false);
+        RegisterProductRepositories(services);
+
+        services.AddHostedService<PersistenceInitializationHostedService>();
+
+        return services;
+    }
+
     public static IServiceCollection AddPersistenceInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var provider = configuration.GetSection(PersistenceOptions.SectionName).GetValue<string>("Provider");
+        AddCommonOptions(services, configuration);
+        var provider = GetProvider(configuration);
 
         if (!string.Equals(provider, "SQLite", StringComparison.OrdinalIgnoreCase))
         {
@@ -24,6 +38,17 @@ public static class ServiceCollectionExtensions
                 $"The configured persistence provider '{provider}' is not supported yet. Only SQLite is implemented.");
         }
 
+        RegisterProviderInfrastructure(services, provider, includeLegacyRuntime: true);
+        RegisterLegacyPersistenceRepositories(services);
+        services.AddSingleton<IBrokerRuntimeCommandRepository, SqliteBrokerRuntimeCommandRepository>();
+        services.AddSingleton<IBrokerRuntimeRegistry, SqliteBrokerRuntimeRegistry>();
+        services.AddHostedService<PersistenceInitializationHostedService>();
+
+        return services;
+    }
+
+    private static void AddCommonOptions(IServiceCollection services, IConfiguration configuration)
+    {
         services
             .AddOptions<PersistenceOptions>()
             .Bind(configuration.GetSection(PersistenceOptions.SectionName));
@@ -31,25 +56,70 @@ public static class ServiceCollectionExtensions
         services
             .AddOptions<BrokerOptions>()
             .Bind(configuration.GetSection(BrokerOptions.SectionName));
+    }
+
+    private static string GetProvider(IConfiguration configuration)
+    {
+        return configuration.GetSection(PersistenceOptions.SectionName).GetValue<string>("Provider") ?? "SQLite";
+    }
+
+    private static void RegisterProviderInfrastructure(
+        IServiceCollection services,
+        string provider,
+        bool includeLegacyRuntime)
+    {
+        switch (NormalizeProvider(provider))
+        {
+            case "sqlite":
+                services.AddScoped<IPersistenceConnectionFactory, SqlitePersistenceConnectionFactory>();
+                services.AddSingleton<IPersistenceInitializer, SqliteDatabaseInitializer>();
+                break;
+            case "postgresql":
+                if (includeLegacyRuntime)
+                {
+                    throw new NotSupportedException(
+                        "Legacy runtime persistence remains SQLite-only. Use AddProductPersistenceInfrastructure for the API product path.");
+                }
+
+                services.AddScoped<IPersistenceConnectionFactory, PostgresPersistenceConnectionFactory>();
+                services.AddSingleton<IPersistenceInitializer, PostgresDatabaseInitializer>();
+                break;
+            default:
+                throw new NotSupportedException(
+                    $"The configured persistence provider '{provider}' is not supported.");
+        }
 
         services.AddScoped<DapperContext>();
         services.AddScoped<IDbContext>(provider => provider.GetRequiredService<DapperContext>());
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<DapperContext>());
+    }
+
+    private static void RegisterProductRepositories(IServiceCollection services)
+    {
         services.AddScoped<IBrokerServerProfileRepository, BrokerServerProfileRepository>();
-        services.AddScoped<IDiscoveredTopicRepository, DiscoveredTopicRepository>();
         services.AddScoped<IFavoriteNodeRepository, FavoriteNodeRepository>();
-        services.AddScoped<IMessageRepository, MessageRepository>();
-        services.AddScoped<INodeRepository, NodeRepository>();
         services.AddScoped<ISavedChannelFilterRepository, SavedChannelFilterRepository>();
-        services.AddScoped<ISubscriptionIntentRepository, SubscriptionIntentRepository>();
         services.AddScoped<ITopicPresetRepository, TopicPresetRepository>();
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
-        services.AddSingleton<IBrokerRuntimeCommandRepository, SqliteBrokerRuntimeCommandRepository>();
-        services.AddSingleton<IBrokerRuntimeRegistry, SqliteBrokerRuntimeRegistry>();
+    }
 
-        services.AddSingleton<SqliteDatabaseInitializer>();
-        services.AddHostedService<PersistenceInitializationHostedService>();
+    private static void RegisterLegacyPersistenceRepositories(IServiceCollection services)
+    {
+        RegisterProductRepositories(services);
+        services.AddScoped<IDiscoveredTopicRepository, DiscoveredTopicRepository>();
+        services.AddScoped<IMessageRepository, MessageRepository>();
+        services.AddScoped<INodeRepository, NodeRepository>();
+        services.AddScoped<ISubscriptionIntentRepository, SubscriptionIntentRepository>();
+    }
 
-        return services;
+    private static string NormalizeProvider(string provider)
+    {
+        return provider.Trim().ToLowerInvariant() switch
+        {
+            "sqlite" => "sqlite",
+            "postgres" => "postgresql",
+            "postgresql" => "postgresql",
+            _ => provider.Trim().ToLowerInvariant()
+        };
     }
 }

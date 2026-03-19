@@ -1,23 +1,20 @@
-using System.Data;
+using System.Data.Common;
 using Dapper;
 using MeshBoard.Application.Abstractions.Persistence;
-using MeshBoard.Contracts.Configuration;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace MeshBoard.Infrastructure.Persistence.Context;
 
 internal sealed class DapperContext : IDbContext, IUnitOfWork, IAsyncDisposable
 {
+    private readonly IPersistenceConnectionFactory _connectionFactory;
     private readonly ILogger<DapperContext> _logger;
-    private readonly PersistenceOptions _options;
-    private SqliteConnection? _connection;
-    private SqliteTransaction? _transaction;
+    private DbConnection? _connection;
+    private DbTransaction? _transaction;
 
-    public DapperContext(IOptions<PersistenceOptions> options, ILogger<DapperContext> logger)
+    public DapperContext(IPersistenceConnectionFactory connectionFactory, ILogger<DapperContext> logger)
     {
-        _options = options.Value;
+        _connectionFactory = connectionFactory;
         _logger = logger;
     }
 
@@ -30,9 +27,9 @@ internal sealed class DapperContext : IDbContext, IUnitOfWork, IAsyncDisposable
 
         _logger.LogDebug("Attempting to begin a database transaction");
 
-        _connection = CreateConnection();
+        _connection = _connectionFactory.CreateConnection();
         await _connection.OpenAsync(cancellationToken);
-        _transaction = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken);
+        _transaction = await _connection.BeginTransactionAsync(cancellationToken);
     }
 
     public async Task CommitAsync(CancellationToken cancellationToken = default)
@@ -106,18 +103,8 @@ internal sealed class DapperContext : IDbContext, IUnitOfWork, IAsyncDisposable
         await DisposeTransactionAsync();
     }
 
-    private SqliteConnection CreateConnection()
-    {
-        if (string.IsNullOrWhiteSpace(_options.ConnectionString))
-        {
-            throw new InvalidOperationException("The persistence connection string is not configured.");
-        }
-
-        return new SqliteConnection(_options.ConnectionString);
-    }
-
     private async Task<T> ExecuteWithConnectionAsync<T>(
-        Func<SqliteConnection, SqliteTransaction?, Task<T>> action,
+        Func<DbConnection, DbTransaction?, Task<T>> action,
         CancellationToken cancellationToken)
     {
         if (_connection is not null && _transaction is not null)
@@ -125,7 +112,7 @@ internal sealed class DapperContext : IDbContext, IUnitOfWork, IAsyncDisposable
             return await action(_connection, _transaction);
         }
 
-        await using var connection = CreateConnection();
+        await using var connection = _connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
         return await action(connection, null);
