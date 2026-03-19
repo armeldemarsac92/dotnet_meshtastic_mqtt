@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Infrastructure.Meshtastic.Runtime;
 
-internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandExecutor
+internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandExecutor, IBrokerRuntimeCommandService
 {
     private readonly ILogger<LocalBrokerRuntimeCommandService> _logger;
     private readonly IBrokerRuntimeRegistry _brokerRuntimeRegistry;

@@ -17,12 +17,12 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration)
     {
         AddMeshtasticOptions(services, configuration);
-        AddMeshtasticRuntimeCoreServices(services);
+        AddMeshtasticQueuedRuntimeCoreServices(services);
         AddMeshtasticIngestionCoreServices(services);
 
         if (AreHostedServicesEnabled(configuration))
         {
-            AddMeshtasticRuntimeHostedServices(services);
+            AddMeshtasticQueuedRuntimeHostedServices(services);
             AddMeshtasticIngestionHostedServices(services);
         }
 
@@ -34,11 +34,11 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration)
     {
         AddMeshtasticOptions(services, configuration);
-        AddMeshtasticRuntimeCoreServices(services);
+        AddMeshtasticDirectRuntimeCoreServices(services);
 
         if (AreHostedServicesEnabled(configuration))
         {
-            AddMeshtasticRuntimeHostedServices(services);
+            AddMeshtasticDirectRuntimeHostedServices(services);
         }
 
         return services;
@@ -83,7 +83,7 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(MeshtasticRuntimeOptions.SectionName));
     }
 
-    private static void AddMeshtasticRuntimeCoreServices(IServiceCollection services)
+    private static void AddMeshtasticQueuedRuntimeCoreServices(IServiceCollection services)
     {
         services.TryAddSingleton<IMqttSessionFactory, MqttSessionFactory>();
         services.TryAddSingleton<IWorkspaceBrokerSessionManager, WorkspaceBrokerSessionManager>();
@@ -92,11 +92,29 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IBrokerRuntimeBootstrapService, BrokerRuntimeBootstrapService>();
     }
 
-    private static void AddMeshtasticRuntimeHostedServices(IServiceCollection services)
+    private static void AddMeshtasticDirectRuntimeCoreServices(IServiceCollection services)
+    {
+        services.TryAddSingleton<IMqttSessionFactory, MqttSessionFactory>();
+        services.TryAddSingleton<IWorkspaceBrokerSessionManager, WorkspaceBrokerSessionManager>();
+        services.TryAddSingleton<LocalBrokerRuntimeCommandService>();
+        services.TryAddSingleton<IBrokerRuntimeCommandExecutor>(
+            serviceProvider => serviceProvider.GetRequiredService<LocalBrokerRuntimeCommandService>());
+        services.TryAddSingleton<IBrokerRuntimeCommandService>(
+            serviceProvider => serviceProvider.GetRequiredService<LocalBrokerRuntimeCommandService>());
+        services.TryAddSingleton<IBrokerRuntimeBootstrapService, BrokerRuntimeBootstrapService>();
+    }
+
+    private static void AddMeshtasticQueuedRuntimeHostedServices(IServiceCollection services)
     {
         services.AddHostedService<MeshtasticMqttHostedService>();
         services.AddHostedService<MqttInboundDispatchHostedService>();
         services.AddHostedService<BrokerRuntimeCommandProcessorHostedService>();
+    }
+
+    private static void AddMeshtasticDirectRuntimeHostedServices(IServiceCollection services)
+    {
+        services.AddHostedService<MeshtasticMqttHostedService>();
+        services.AddHostedService<MqttInboundDispatchHostedService>();
     }
 
     private static bool AreHostedServicesEnabled(IConfiguration configuration)
