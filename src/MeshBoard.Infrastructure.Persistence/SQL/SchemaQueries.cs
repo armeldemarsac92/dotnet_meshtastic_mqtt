@@ -121,17 +121,6 @@ internal static class SchemaQueries
         CREATE INDEX IF NOT EXISTS ix_broker_runtime_commands_workspace_status_created_at_utc
             ON broker_runtime_commands(workspace_id, status, created_at_utc);
 
-        CREATE TABLE IF NOT EXISTS projection_change_log (
-            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-            workspace_id TEXT NOT NULL,
-            change_kind TEXT NOT NULL,
-            entity_key TEXT NULL,
-            occurred_at_utc TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS ix_projection_change_log_workspace_id_id
-            ON projection_change_log(workspace_id, id);
-
         CREATE TABLE IF NOT EXISTS runtime_pipeline_status (
             workspace_id TEXT NOT NULL PRIMARY KEY,
             inbound_queue_capacity INTEGER NOT NULL,
@@ -206,20 +195,9 @@ internal static class SchemaQueries
         PRAGMA table_info(message_history);
         """;
 
-    public static string GetProjectionChangeLogColumns =>
-        """
-        PRAGMA table_info(projection_change_log);
-        """;
-
     public static string GetRuntimePipelineStatusColumns =>
         """
         PRAGMA table_info(runtime_pipeline_status);
-        """;
-
-    public static string AddProjectionChangeLogEntityKeyColumn =>
-        """
-        ALTER TABLE projection_change_log
-        ADD COLUMN entity_key TEXT NULL;
         """;
 
     public static string DropRuntimePipelineStatusLegacyTable =>
