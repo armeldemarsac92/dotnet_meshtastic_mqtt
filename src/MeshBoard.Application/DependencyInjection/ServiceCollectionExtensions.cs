@@ -41,6 +41,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<INodeService, NodeService>();
+        services.AddScoped<ISavedChannelPreferenceService, SavedChannelPreferenceService>();
         services.AddScoped<ISendCapabilityService, SendCapabilityService>();
         services.AddScoped<ITopicExplorerService, TopicExplorerService>();
         services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();

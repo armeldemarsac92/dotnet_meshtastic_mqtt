@@ -16,12 +16,12 @@ internal static class ChannelPreferenceEndpointMappings
         group.MapGet(
             "/",
             async Task<IResult> (
-                IBrokerMonitorService brokerMonitorService,
+                ISavedChannelPreferenceService savedChannelPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 try
                 {
-                    var savedChannels = await brokerMonitorService.GetSavedChannels(cancellationToken);
+                    var savedChannels = await savedChannelPreferenceService.GetSavedChannels(cancellationToken);
                     return Results.Ok(savedChannels.Select(channel => channel.ToSavedChannelFilter()).ToList());
                 }
                 catch (NotFoundException exception)
@@ -37,14 +37,14 @@ internal static class ChannelPreferenceEndpointMappings
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
                 SaveChannelFilterRequest request,
-                IBrokerMonitorService brokerMonitorService,
+                ISavedChannelPreferenceService savedChannelPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 await antiforgery.ValidateRequestAsync(httpContext);
 
                 try
                 {
-                    await brokerMonitorService.SubscribeToTopic(request.TopicFilter, cancellationToken);
+                    await savedChannelPreferenceService.SaveChannel(request.TopicFilter, cancellationToken);
                     return Results.NoContent();
                 }
                 catch (BadRequestException exception)
@@ -65,11 +65,11 @@ internal static class ChannelPreferenceEndpointMappings
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
                 string topicFilter,
-                IBrokerMonitorService brokerMonitorService,
+                ISavedChannelPreferenceService savedChannelPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 await antiforgery.ValidateRequestAsync(httpContext);
-                return await DeleteSavedChannelAsync(brokerMonitorService, topicFilter, cancellationToken);
+                return await DeleteSavedChannelAsync(savedChannelPreferenceService, topicFilter, cancellationToken);
             });
 
         group.MapDelete(
@@ -78,24 +78,24 @@ internal static class ChannelPreferenceEndpointMappings
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
                 string topicFilter,
-                IBrokerMonitorService brokerMonitorService,
+                ISavedChannelPreferenceService savedChannelPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 await antiforgery.ValidateRequestAsync(httpContext);
-                return await DeleteSavedChannelAsync(brokerMonitorService, topicFilter, cancellationToken);
+                return await DeleteSavedChannelAsync(savedChannelPreferenceService, topicFilter, cancellationToken);
             });
 
         return endpoints;
     }
 
     private static async Task<IResult> DeleteSavedChannelAsync(
-        IBrokerMonitorService brokerMonitorService,
+        ISavedChannelPreferenceService savedChannelPreferenceService,
         string topicFilter,
         CancellationToken cancellationToken)
     {
         try
         {
-            await brokerMonitorService.UnsubscribeFromTopic(topicFilter, cancellationToken);
+            await savedChannelPreferenceService.RemoveChannel(topicFilter, cancellationToken);
             return Results.NoContent();
         }
         catch (BadRequestException exception)
