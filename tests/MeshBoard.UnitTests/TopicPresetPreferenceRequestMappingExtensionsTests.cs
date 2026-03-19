@@ -22,7 +22,7 @@ public sealed class TopicPresetPreferenceRequestMappingExtensionsTests
     }
 
     [Fact]
-    public void ToSaveTopicPresetRequest_ShouldPreserveEncryptionKey_ForExistingPresets()
+    public void ToSaveTopicPresetRequest_ShouldClearServerOwnedEncryptionKey_ForExistingPresets()
     {
         var existing = new TopicPreset
         {
@@ -42,7 +42,7 @@ public sealed class TopicPresetPreferenceRequestMappingExtensionsTests
 
         var mapped = request.ToSaveTopicPresetRequest(existing);
 
-        Assert.Equal(existing.EncryptionKeyBase64, mapped.EncryptionKeyBase64);
+        Assert.Null(mapped.EncryptionKeyBase64);
         Assert.Equal(request.Name, mapped.Name);
         Assert.True(mapped.IsDefault);
     }

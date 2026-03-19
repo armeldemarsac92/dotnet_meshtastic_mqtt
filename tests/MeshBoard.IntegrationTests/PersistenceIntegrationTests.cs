@@ -1220,7 +1220,7 @@ public sealed class PersistenceIntegrationTests
                         Username = string.Empty,
                         Password = string.Empty,
                         DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1483,7 +1483,7 @@ public sealed class PersistenceIntegrationTests
                         Username = string.Empty,
                         Password = string.Empty,
                         DefaultTopicPattern = "msh/EU_868/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/EU_868/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = false
@@ -1508,7 +1508,7 @@ public sealed class PersistenceIntegrationTests
                         Username = string.Empty,
                         Password = string.Empty,
                         DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1576,7 +1576,7 @@ public sealed class PersistenceIntegrationTests
                         Username = string.Empty,
                         Password = string.Empty,
                         DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1594,7 +1594,7 @@ public sealed class PersistenceIntegrationTests
                         Username = string.Empty,
                         Password = string.Empty,
                         DefaultTopicPattern = "msh/EU_868/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
+                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/EU_868/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1609,6 +1609,7 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal(2, relevantProfiles.Length);
                 Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-a" && profile.Profile.Name == "Workspace A profile");
                 Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-b" && profile.Profile.Name == "Workspace B profile");
+                Assert.All(relevantProfiles, profile => Assert.Null(profile.Profile.DefaultEncryptionKeyBase64));
             }
             finally
             {

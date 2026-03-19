@@ -1,12 +1,10 @@
 using MeshBoard.Contracts.Configuration;
-using MeshBoard.Contracts.Topics;
-
 namespace MeshBoard.UnitTests;
 
 public sealed class BrokerPreferenceRequestMappingExtensionsTests
 {
     [Fact]
-    public void ToSaveBrokerServerProfileRequest_ShouldUseDefaultKeyAndEmptyPassword_ForNewProfiles()
+    public void ToSaveBrokerServerProfileRequest_ShouldUseNullKeyAndEmptyPassword_ForNewProfiles()
     {
         var request = new SaveBrokerPreferenceRequest
         {
@@ -17,13 +15,13 @@ public sealed class BrokerPreferenceRequestMappingExtensionsTests
         var mapped = request.ToSaveBrokerServerProfileRequest();
 
         Assert.Null(mapped.Id);
-        Assert.Equal(TopicEncryptionKey.DefaultKeyBase64, mapped.DefaultEncryptionKeyBase64);
+        Assert.Null(mapped.DefaultEncryptionKeyBase64);
         Assert.Equal(string.Empty, mapped.Password);
         Assert.False(mapped.IsActive);
     }
 
     [Fact]
-    public void ToSaveBrokerServerProfileRequest_ShouldPreserveSecretFields_WhenPasswordIsOmitted()
+    public void ToSaveBrokerServerProfileRequest_ShouldClearServerOwnedKey_WhenPasswordIsOmitted()
     {
         var existing = new BrokerServerProfile
         {
@@ -47,7 +45,7 @@ public sealed class BrokerPreferenceRequestMappingExtensionsTests
 
         Assert.Equal(existing.Id, mapped.Id);
         Assert.Equal(existing.Password, mapped.Password);
-        Assert.Equal(existing.DefaultEncryptionKeyBase64, mapped.DefaultEncryptionKeyBase64);
+        Assert.Null(mapped.DefaultEncryptionKeyBase64);
         Assert.True(mapped.IsActive);
     }
 

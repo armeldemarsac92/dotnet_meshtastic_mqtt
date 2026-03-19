@@ -390,19 +390,21 @@ internal sealed class SqliteDatabaseInitializer
             cancellationToken: cancellationToken);
 
         var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand))
+            .ToList();
+        var columnNames = columns
             .Select(column => column.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         await EnsureColumnAsync(
             connection,
-            columns,
+            columnNames,
             "workspace_id",
             SchemaQueries.AddBrokerServerProfilesWorkspaceIdColumn,
             cancellationToken);
 
         await EnsureColumnAsync(
             connection,
-            columns,
+            columnNames,
             "subscription_intents_initialized",
             SchemaQueries.AddBrokerServerProfilesSubscriptionIntentsInitializedColumn,
             cancellationToken);
@@ -420,6 +422,38 @@ internal sealed class SqliteDatabaseInitializer
             new CommandDefinition(
                 SchemaQueries.BackfillBrokerServerProfilesSubscriptionIntentsInitialized,
                 cancellationToken: cancellationToken));
+
+        var requiresDefaultKeyNullabilityMigration = columns.Any(
+            column => string.Equals(column.Name, "default_encryption_key_base64", StringComparison.OrdinalIgnoreCase) &&
+                column.NotNull == 1);
+
+        if (requiresDefaultKeyNullabilityMigration)
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.DropBrokerServerProfilesLegacyTable,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.RenameBrokerServerProfilesToLegacy,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.RecreateBrokerServerProfilesWithNullableDefaultKey,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.CopyBrokerServerProfilesFromLegacy,
+                    cancellationToken: cancellationToken));
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    SchemaQueries.DropBrokerServerProfilesLegacyTable,
+                    cancellationToken: cancellationToken));
+        }
 
         await connection.ExecuteAsync(
             new CommandDefinition(
@@ -626,9 +660,6 @@ internal sealed class SqliteDatabaseInitializer
         SqliteConnection connection,
         CancellationToken cancellationToken)
     {
-        var normalizedDefaultKey = Contracts.Topics.TopicEncryptionKey.NormalizeToBase64OrNull(_brokerOptions.DefaultEncryptionKeyBase64) ??
-            Contracts.Topics.TopicEncryptionKey.DefaultKeyBase64;
-
         var command = new CommandDefinition(
             BrokerServerProfileQueries.InsertIfNoProfilesExist,
             new
@@ -642,7 +673,7 @@ internal sealed class SqliteDatabaseInitializer
                 Username = _brokerOptions.Username,
                 Password = _brokerOptions.Password,
                 DefaultTopicPattern = _brokerOptions.DefaultTopicPattern,
-                DefaultEncryptionKeyBase64 = normalizedDefaultKey,
+                DefaultEncryptionKeyBase64 = (string?)null,
                 DownlinkTopic = _brokerOptions.DownlinkTopic,
                 EnableSend = _brokerOptions.EnableSend ? 1 : 0,
                 CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")

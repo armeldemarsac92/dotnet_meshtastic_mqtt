@@ -49,9 +49,6 @@ public sealed class WorkspaceProvisioningService : IWorkspaceProvisioningService
             return;
         }
 
-        var normalizedDefaultKey = MeshBoard.Contracts.Topics.TopicEncryptionKey.NormalizeToBase64OrNull(_brokerOptions.DefaultEncryptionKeyBase64) ??
-            MeshBoard.Contracts.Topics.TopicEncryptionKey.DefaultKeyBase64;
-
         var defaultProfile = await _brokerServerProfileRepository.UpsertAsync(
             workspaceId,
             new SaveBrokerServerProfileRequest
@@ -63,7 +60,7 @@ public sealed class WorkspaceProvisioningService : IWorkspaceProvisioningService
                 Username = _brokerOptions.Username,
                 Password = _brokerOptions.Password,
                 DefaultTopicPattern = _brokerOptions.DefaultTopicPattern,
-                DefaultEncryptionKeyBase64 = normalizedDefaultKey,
+                DefaultEncryptionKeyBase64 = null,
                 DownlinkTopic = _brokerOptions.DownlinkTopic,
                 EnableSend = _brokerOptions.EnableSend,
                 IsActive = true

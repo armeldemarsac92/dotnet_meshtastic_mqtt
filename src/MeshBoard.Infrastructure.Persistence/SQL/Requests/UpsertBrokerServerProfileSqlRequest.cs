@@ -20,7 +20,7 @@ internal sealed class UpsertBrokerServerProfileSqlRequest
 
     public required string DefaultTopicPattern { get; set; }
 
-    public required string DefaultEncryptionKeyBase64 { get; set; }
+    public string? DefaultEncryptionKeyBase64 { get; set; }
 
     public required string DownlinkTopic { get; set; }
 

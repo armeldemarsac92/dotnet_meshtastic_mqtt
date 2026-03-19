@@ -2,7 +2,6 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
-using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Application.Services;
@@ -100,11 +99,6 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             throw new BadRequestException("A downlink topic is required.");
         }
 
-        if (!TopicEncryptionKey.TryParse(request.DefaultEncryptionKeyBase64, out _))
-        {
-            throw new BadRequestException("Default encryption key must be valid base64 or hexadecimal AES key.");
-        }
-
         var normalizedRequest = new SaveBrokerServerProfileRequest
         {
             Id = request.Id,
@@ -115,7 +109,7 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             Username = request.Username.Trim(),
             Password = request.Password,
             DefaultTopicPattern = request.DefaultTopicPattern.Trim(),
-            DefaultEncryptionKeyBase64 = TopicEncryptionKey.NormalizeToBase64OrNull(request.DefaultEncryptionKeyBase64)!,
+            DefaultEncryptionKeyBase64 = NormalizeDefaultEncryptionKey(request.DefaultEncryptionKeyBase64),
             DownlinkTopic = request.DownlinkTopic.Trim(),
             EnableSend = request.EnableSend,
             IsActive = request.IsActive
@@ -195,6 +189,21 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             EnableSend = request.EnableSend,
             IsActive = request.IsActive
         };
+    }
+
+    private static string? NormalizeDefaultEncryptionKey(string? defaultEncryptionKeyBase64)
+    {
+        if (string.IsNullOrWhiteSpace(defaultEncryptionKeyBase64))
+        {
+            return null;
+        }
+
+        if (!MeshBoard.Contracts.Topics.TopicEncryptionKey.TryParse(defaultEncryptionKeyBase64, out _))
+        {
+            throw new BadRequestException("Default encryption key must be valid base64 or hexadecimal AES key.");
+        }
+
+        return MeshBoard.Contracts.Topics.TopicEncryptionKey.NormalizeToBase64OrNull(defaultEncryptionKeyBase64);
     }
 
     private string GetWorkspaceId()

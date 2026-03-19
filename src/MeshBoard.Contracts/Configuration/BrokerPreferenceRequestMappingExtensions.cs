@@ -1,5 +1,3 @@
-using MeshBoard.Contracts.Topics;
-
 namespace MeshBoard.Contracts.Configuration;
 
 public static class BrokerPreferenceRequestMappingExtensions
@@ -18,7 +16,7 @@ public static class BrokerPreferenceRequestMappingExtensions
             Username = request.Username,
             Password = ResolvePassword(request, existingProfile),
             DefaultTopicPattern = request.DefaultTopicPattern,
-            DefaultEncryptionKeyBase64 = existingProfile?.DefaultEncryptionKeyBase64 ?? TopicEncryptionKey.DefaultKeyBase64,
+            DefaultEncryptionKeyBase64 = null,
             DownlinkTopic = request.DownlinkTopic,
             EnableSend = request.EnableSend,
             IsActive = existingProfile?.IsActive ?? false

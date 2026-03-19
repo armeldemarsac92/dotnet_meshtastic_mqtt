@@ -10,7 +10,7 @@ public static class TopicPresetPreferenceRequestMappingExtensions
         {
             Name = request.Name,
             TopicPattern = request.TopicPattern,
-            EncryptionKeyBase64 = existingPreset?.EncryptionKeyBase64,
+            EncryptionKeyBase64 = null,
             IsDefault = request.IsDefault
         };
     }

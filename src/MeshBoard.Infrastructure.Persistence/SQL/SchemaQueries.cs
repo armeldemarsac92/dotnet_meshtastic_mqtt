@@ -52,7 +52,7 @@ internal static class SchemaQueries
             username TEXT NULL,
             password TEXT NULL,
             default_topic_pattern TEXT NOT NULL,
-            default_encryption_key_base64 TEXT NOT NULL,
+            default_encryption_key_base64 TEXT NULL,
             downlink_topic TEXT NOT NULL,
             enable_send INTEGER NOT NULL,
             subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
@@ -414,6 +414,74 @@ internal static class SchemaQueries
         """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_broker_server_profiles_workspace_name
             ON broker_server_profiles(workspace_id, name);
+        """;
+
+    public static string RenameBrokerServerProfilesToLegacy =>
+        """
+        ALTER TABLE broker_server_profiles RENAME TO broker_server_profiles_legacy;
+        """;
+
+    public static string RecreateBrokerServerProfilesWithNullableDefaultKey =>
+        """
+        CREATE TABLE IF NOT EXISTS broker_server_profiles (
+            id TEXT NOT NULL PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            use_tls INTEGER NOT NULL,
+            username TEXT NULL,
+            password TEXT NULL,
+            default_topic_pattern TEXT NOT NULL,
+            default_encryption_key_base64 TEXT NULL,
+            downlink_topic TEXT NOT NULL,
+            enable_send INTEGER NOT NULL,
+            subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL,
+            created_at_utc TEXT NOT NULL
+        );
+        """;
+
+    public static string CopyBrokerServerProfilesFromLegacy =>
+        """
+        INSERT INTO broker_server_profiles (
+            id,
+            workspace_id,
+            name,
+            host,
+            port,
+            use_tls,
+            username,
+            password,
+            default_topic_pattern,
+            default_encryption_key_base64,
+            downlink_topic,
+            enable_send,
+            subscription_intents_initialized,
+            is_active,
+            created_at_utc)
+        SELECT
+            id,
+            workspace_id,
+            name,
+            host,
+            port,
+            use_tls,
+            username,
+            password,
+            default_topic_pattern,
+            default_encryption_key_base64,
+            downlink_topic,
+            enable_send,
+            COALESCE(subscription_intents_initialized, 0),
+            is_active,
+            created_at_utc
+        FROM broker_server_profiles_legacy;
+        """;
+
+    public static string DropBrokerServerProfilesLegacyTable =>
+        """
+        DROP TABLE IF EXISTS broker_server_profiles_legacy;
         """;
 
     public static string GetDiscoveredTopicColumns =>
