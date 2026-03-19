@@ -29,18 +29,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerRuntimeCommandQueryService, BrokerRuntimeCommandQueryService>();
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
-        services.AddScoped<ICachedChannelDetailService, CachedChannelDetailService>();
-        services.AddScoped<ICachedMessagePageService, CachedMessagePageService>();
-        services.AddScoped<ICachedNodeDetailService, CachedNodeDetailService>();
         services.AddScoped<IChannelReadService, ChannelReadService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
-        services.AddScoped<IMessageComposerService, MessageComposerService>();
         services.AddScoped<IMessageRetentionService, MessageRetentionService>();
         services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<INodeService, NodeService>();
         services.AddScoped<ISavedChannelPreferenceService, SavedChannelPreferenceService>();
-        services.AddScoped<ISendCapabilityService, SendCapabilityService>();
         services.AddScoped<ITopicExplorerService, TopicExplorerService>();
         services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
         services.AddScoped<ITopicPresetService, TopicPresetService>();
