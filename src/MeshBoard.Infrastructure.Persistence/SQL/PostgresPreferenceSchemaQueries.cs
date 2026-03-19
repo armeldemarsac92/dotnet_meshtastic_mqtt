@@ -25,7 +25,6 @@ internal static class PostgresPreferenceSchemaQueries
             username TEXT NULL,
             password TEXT NULL,
             default_topic_pattern TEXT NOT NULL,
-            default_encryption_key_base64 TEXT NULL,
             downlink_topic TEXT NOT NULL,
             enable_send INTEGER NOT NULL,
             subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
@@ -54,7 +53,6 @@ internal static class PostgresPreferenceSchemaQueries
             broker_server TEXT NOT NULL,
             name TEXT NOT NULL,
             topic_pattern TEXT NOT NULL,
-            encryption_key_base64 TEXT NULL,
             is_default INTEGER NOT NULL,
             created_at_utc TEXT NOT NULL
         );
