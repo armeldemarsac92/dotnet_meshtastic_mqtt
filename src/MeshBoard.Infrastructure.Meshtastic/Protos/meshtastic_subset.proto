@@ -27,8 +27,8 @@ message ServiceEnvelope {
 }
 
 message MeshPacket {
-  uint32 from = 1;
-  uint32 to = 2;
+  fixed32 from = 1;
+  fixed32 to = 2;
   uint32 channel = 3;
 
   oneof payload_variant {
@@ -36,8 +36,8 @@ message MeshPacket {
     bytes encrypted = 5;
   }
 
-  uint32 id = 6;
-  uint32 rx_time = 7;
+  fixed32 id = 6;
+  fixed32 rx_time = 7;
   float rx_snr = 8;
   uint32 hop_limit = 9;
   bool want_ack = 10;

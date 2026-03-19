@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import {
   getRealtimePacketWorkerConstants,
@@ -255,6 +256,57 @@ test("processPacketRequest returns malformed payload when the downstream envelop
   assert.equal(result.rawPacket, null);
 });
 
+test("processPacketRequest decodes captured public mqtt envelopes with the normalized default key", async () => {
+  const fixtureLines = fs.readFileSync(
+    new URL("./fixtures/meshtastic_public_us_messages_hex.txt", import.meta.url),
+    "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+
+  const keyRecords = normalizeKeyRecords([
+    {
+      id: "public-default",
+      name: "Public default",
+      topicPattern: "msh/US/2/e/#",
+      normalizedKeyBase64: "1PG7OiApB1nwvP+rz05pAQ==",
+      keyLengthBytes: 16
+    }
+  ]);
+
+  let decodedCount = 0;
+  let nodeInfoCount = 0;
+  let positionCount = 0;
+
+  for (const line of fixtureLines) {
+    const separatorIndex = line.indexOf(" ");
+    const topic = line.slice(0, separatorIndex);
+    const payloadHex = line.slice(separatorIndex + 1).trim();
+
+    const result = await processPacketRequest(
+      createWorkerRequest(topic, Buffer.from(payloadHex, "hex")),
+      keyRecords);
+
+    if (!result.decodedPacket) {
+      continue;
+    }
+
+    decodedCount += 1;
+
+    if (result.decodedPacket.packetType === "Node Info") {
+      nodeInfoCount += 1;
+    }
+
+    if (result.decodedPacket.packetType === "Position Update") {
+      positionCount += 1;
+    }
+  }
+
+  assert.equal(decodedCount, 4);
+  assert.equal(nodeInfoCount, 1);
+  assert.equal(positionCount, 3);
+});
+
 function createWorkerRequest(sourceTopic, sourcePayloadBytes) {
   const downstreamEnvelope = {
     workspaceId: "workspace-a",
@@ -292,22 +344,22 @@ async function createEncryptedMeshPacket({ fromNodeNumber, packetId, keyBytes, d
 
 function encodeMeshPacket({ fromNodeNumber, packetId, encryptedBytes }) {
   return concatBytes(
-    encodeTag(1, 0),
-    encodeVarint(fromNodeNumber),
+    encodeTag(1, 5),
+    encodeFixed32(fromNodeNumber),
     encodeTag(5, 2),
     encodeLengthDelimited(encryptedBytes),
-    encodeTag(6, 0),
-    encodeVarint(packetId));
+    encodeTag(6, 5),
+    encodeFixed32(packetId));
 }
 
 function createDecodedMeshPacket({ fromNodeNumber, packetId, dataBytes }) {
   return concatBytes(
-    encodeTag(1, 0),
-    encodeVarint(fromNodeNumber),
+    encodeTag(1, 5),
+    encodeFixed32(fromNodeNumber),
     encodeTag(4, 2),
     encodeLengthDelimited(dataBytes),
-    encodeTag(6, 0),
-    encodeVarint(packetId));
+    encodeTag(6, 5),
+    encodeFixed32(packetId));
 }
 
 function encodeDataMessage({

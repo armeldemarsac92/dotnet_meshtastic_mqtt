@@ -531,18 +531,14 @@ function tryParseMeshPacket(payloadBytes) {
 
     switch (fieldNumber) {
       case 1:
-        if (wireType !== 0) {
-          return null;
-        }
-
         {
-          const field = readVarint(payloadBytes, offset);
+          const field = readMeshPacketUint32(payloadBytes, offset, wireType);
           if (!field) {
             return null;
           }
 
           offset = field.nextOffset;
-          fromNodeNumber = numberOrNull(field.value);
+          fromNodeNumber = field.value;
         }
         break;
       case 4:
@@ -576,18 +572,14 @@ function tryParseMeshPacket(payloadBytes) {
         }
         break;
       case 6:
-        if (wireType !== 0) {
-          return null;
-        }
-
         {
-          const field = readVarint(payloadBytes, offset);
+          const field = readMeshPacketUint32(payloadBytes, offset, wireType);
           if (!field) {
             return null;
           }
 
           offset = field.nextOffset;
-          packetId = numberOrNull(field.value);
+          packetId = field.value;
         }
         break;
       default:
@@ -630,6 +622,32 @@ function tryParseMeshPacket(payloadBytes) {
     encryptedBytes: null,
     decodedBytes: null
   };
+}
+
+function readMeshPacketUint32(bytes, offset, wireType) {
+  switch (wireType) {
+    case 0:
+      {
+        const field = readVarint(bytes, offset);
+        if (!field) {
+          return null;
+        }
+
+        const numericValue = numberOrNull(field.value);
+        if (numericValue === null) {
+          return null;
+        }
+
+        return {
+          value: numericValue,
+          nextOffset: field.nextOffset
+        };
+      }
+    case 5:
+      return readFixed32(bytes, offset);
+    default:
+      return null;
+  }
 }
 
 function tryCreateDecodedPacketEvent(rawPacket, decodedBytes) {
