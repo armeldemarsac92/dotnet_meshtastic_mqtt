@@ -169,6 +169,8 @@ public sealed class ApiEndpointIntegrationTests
         Assert.Equal(user.WorkspaceId, payload.GetProperty("workspace_id").GetString());
         Assert.Equal(sessionPayload.ClientId, payload.GetProperty("client_id").GetString());
         Assert.Equal(topicFilter, Assert.Single(GetStringArray(payload, "allowed_topic_patterns")));
+        Assert.Equal(topicFilter, Assert.Single(GetStringArray(payload.GetProperty("acl"), "subscribe")));
+        Assert.Empty(GetStringArray(payload.GetProperty("acl"), "publish"));
         Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("jti").GetString()));
 
         var issuedAt = DateTimeOffset.FromUnixTimeSeconds(payload.GetProperty("iat").GetInt64());

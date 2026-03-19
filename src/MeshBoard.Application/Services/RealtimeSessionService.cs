@@ -22,6 +22,7 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
 
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly ICurrentUserContextAccessor _currentUserContextAccessor;
+    private readonly IRealtimeTopicAccessPolicyService _realtimeTopicAccessPolicyService;
     private readonly RealtimeSessionOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
@@ -29,11 +30,13 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
     public RealtimeSessionService(
         ICurrentUserContextAccessor currentUserContextAccessor,
         IWorkspaceContextAccessor workspaceContextAccessor,
+        IRealtimeTopicAccessPolicyService realtimeTopicAccessPolicyService,
         IOptions<RealtimeSessionOptions> options,
         TimeProvider timeProvider)
     {
         _currentUserContextAccessor = currentUserContextAccessor;
         _workspaceContextAccessor = workspaceContextAccessor;
+        _realtimeTopicAccessPolicyService = realtimeTopicAccessPolicyService;
         _options = options.Value;
         _timeProvider = timeProvider;
     }
@@ -43,10 +46,7 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
         var brokerUri = ValidateAndGetBrokerUri(_options);
         var userId = _currentUserContextAccessor.GetUserId();
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
-        var allowedTopicPatterns = new List<string>
-        {
-            RealtimeTopicNames.BuildWorkspaceLiveWildcard(workspaceId)
-        };
+        var accessPolicy = _realtimeTopicAccessPolicyService.CreateForWorkspace(workspaceId);
         var issuedAtUtc = _timeProvider.GetUtcNow();
         var expiresAtUtc = issuedAtUtc.AddMinutes(_options.TokenLifetimeMinutes);
         var clientId = CreateClientId(_options.ClientIdPrefix);
@@ -55,9 +55,9 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
         {
             BrokerUrl = brokerUri.ToString(),
             ClientId = clientId,
-            Token = CreateToken(userId, workspaceId, clientId, issuedAtUtc, expiresAtUtc, allowedTopicPatterns),
+            Token = CreateToken(userId, workspaceId, clientId, issuedAtUtc, expiresAtUtc, accessPolicy),
             ExpiresAtUtc = expiresAtUtc,
-            AllowedTopicPatterns = allowedTopicPatterns
+            AllowedTopicPatterns = accessPolicy.SubscribeTopicPatterns
         });
     }
 
@@ -143,7 +143,7 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
         string clientId,
         DateTimeOffset issuedAtUtc,
         DateTimeOffset expiresAtUtc,
-        List<string> allowedTopicPatterns)
+        RealtimeTopicAccessPolicy accessPolicy)
     {
         var header = new Dictionary<string, object?>
         {
@@ -164,7 +164,12 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
             ["workspace_id"] = workspaceId,
             ["user_id"] = userId,
             ["client_id"] = clientId,
-            ["allowed_topic_patterns"] = allowedTopicPatterns
+            ["allowed_topic_patterns"] = accessPolicy.SubscribeTopicPatterns,
+            ["acl"] = new Dictionary<string, object?>
+            {
+                ["subscribe"] = accessPolicy.SubscribeTopicPatterns,
+                ["publish"] = accessPolicy.PublishTopicPatterns
+            }
         };
 
         var encodedHeader = Base64UrlEncode(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(header, JsonSerializerOptions)));

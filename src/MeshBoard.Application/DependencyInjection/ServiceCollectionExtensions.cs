@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
         services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();
         services.TryAddSingleton<IRealtimeJwksService, RealtimeJwksService>();
+        services.TryAddSingleton<IRealtimeTopicAccessPolicyService, RealtimeTopicAccessPolicyService>();
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
@@ -40,6 +41,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IRealtimePacketEnvelopeFactory, RealtimePacketEnvelopeFactory>();
         services.TryAddSingleton<IRealtimePacketPublicationFactory, RealtimePacketPublicationFactory>();
         services.TryAddSingleton<IRealtimeJwksService, RealtimeJwksService>();
+        services.TryAddSingleton<IRealtimeTopicAccessPolicyService, RealtimeTopicAccessPolicyService>();
         services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
         services.TryAddSingleton<IActiveCircuitMetricsService, InMemoryActiveCircuitMetricsService>();
         services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();
