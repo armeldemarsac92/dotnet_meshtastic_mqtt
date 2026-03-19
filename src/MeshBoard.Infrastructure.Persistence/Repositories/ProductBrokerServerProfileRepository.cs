@@ -119,16 +119,8 @@ internal sealed class ProductBrokerServerProfileRepository : IBrokerServerProfil
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var initialized = await _dbContext.QueryFirstOrDefaultAsync<int>(
-            ProductBrokerServerProfileQueries.GetSubscriptionIntentsInitialized,
-            new
-            {
-                WorkspaceId = workspaceId,
-                Id = id.ToString()
-            },
-            cancellationToken);
-
-        return initialized == 1;
+        await Task.CompletedTask;
+        return true;
     }
 
     public Task MarkSubscriptionIntentsInitializedAsync(
@@ -136,14 +128,7 @@ internal sealed class ProductBrokerServerProfileRepository : IBrokerServerProfil
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        return _dbContext.ExecuteAsync(
-            ProductBrokerServerProfileQueries.MarkSubscriptionIntentsInitialized,
-            new
-            {
-                WorkspaceId = workspaceId,
-                Id = id.ToString()
-            },
-            cancellationToken);
+        return Task.CompletedTask;
     }
 
     public async Task<BrokerServerProfile> UpsertAsync(

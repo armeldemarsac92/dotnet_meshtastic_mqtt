@@ -106,7 +106,6 @@ public sealed class ProductPreferenceBackfillScriptGenerator
                        default_topic_pattern AS DefaultTopicPattern,
                        downlink_topic AS DownlinkTopic,
                        COALESCE(enable_send, 0) AS EnableSend,
-                       COALESCE(subscription_intents_initialized, 0) AS SubscriptionIntentsInitialized,
                        COALESCE(is_active, 0) AS IsActive,
                        created_at_utc AS CreatedAtUtc
                 FROM broker_server_profiles
@@ -130,7 +129,6 @@ public sealed class ProductPreferenceBackfillScriptGenerator
                     default_topic_pattern,
                     downlink_topic,
                     enable_send,
-                    subscription_intents_initialized,
                     is_active,
                     created_at_utc)
                 VALUES (
@@ -145,7 +143,6 @@ public sealed class ProductPreferenceBackfillScriptGenerator
                     {{SqlLiteral(row.DefaultTopicPattern)}},
                     {{SqlLiteral(row.DownlinkTopic)}},
                     {{row.EnableSend}},
-                    {{row.SubscriptionIntentsInitialized}},
                     {{row.IsActive}},
                     {{SqlLiteral(row.CreatedAtUtc)}})
                 ON CONFLICT (id) DO UPDATE SET
@@ -159,7 +156,6 @@ public sealed class ProductPreferenceBackfillScriptGenerator
                     default_topic_pattern = EXCLUDED.default_topic_pattern,
                     downlink_topic = EXCLUDED.downlink_topic,
                     enable_send = EXCLUDED.enable_send,
-                    subscription_intents_initialized = EXCLUDED.subscription_intents_initialized,
                     is_active = EXCLUDED.is_active,
                     created_at_utc = EXCLUDED.created_at_utc;
                 """);
@@ -458,8 +454,6 @@ public sealed class ProductPreferenceBackfillScriptGenerator
         public required string DownlinkTopic { get; set; }
 
         public int EnableSend { get; set; }
-
-        public int SubscriptionIntentsInitialized { get; set; }
 
         public int IsActive { get; set; }
 

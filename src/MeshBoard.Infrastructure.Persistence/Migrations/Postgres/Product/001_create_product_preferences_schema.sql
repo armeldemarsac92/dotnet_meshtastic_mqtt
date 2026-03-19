@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS broker_server_profiles (
     default_topic_pattern TEXT NOT NULL,
     downlink_topic TEXT NOT NULL,
     enable_send INTEGER NOT NULL,
-    subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL,
     created_at_utc TEXT NOT NULL
 );

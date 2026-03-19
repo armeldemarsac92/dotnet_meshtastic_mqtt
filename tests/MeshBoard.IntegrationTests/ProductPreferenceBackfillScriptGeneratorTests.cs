@@ -38,7 +38,6 @@ public sealed class ProductPreferenceBackfillScriptGeneratorTests
                     default_encryption_key_base64 TEXT NULL,
                     downlink_topic TEXT NOT NULL,
                     enable_send INTEGER NOT NULL,
-                    subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
                     is_active INTEGER NOT NULL,
                     created_at_utc TEXT NOT NULL
                 );
@@ -86,8 +85,7 @@ public sealed class ProductPreferenceBackfillScriptGeneratorTests
                 """
                 INSERT INTO broker_server_profiles (
                     id, workspace_id, name, host, port, use_tls, username, password, default_topic_pattern,
-                    default_encryption_key_base64, downlink_topic, enable_send, subscription_intents_initialized,
-                    is_active, created_at_utc)
+                    default_encryption_key_base64, downlink_topic, enable_send, is_active, created_at_utc)
                 VALUES (
                     '11111111-1111-1111-1111-111111111111',
                     'workspace-a',
@@ -100,7 +98,6 @@ public sealed class ProductPreferenceBackfillScriptGeneratorTests
                     'msh/US/2/e/#',
                     'AQIDBAUGBwgJCgsMDQ4PEA==',
                     'msh/US/2/json/mqtt/',
-                    1,
                     1,
                     1,
                     '2026-03-19T08:05:00.0000000+00:00');

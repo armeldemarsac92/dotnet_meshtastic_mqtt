@@ -115,23 +115,6 @@ internal static class ProductBrokerServerProfileQueries
           AND id = @Id;
         """;
 
-    public static string GetSubscriptionIntentsInitialized =>
-        """
-        SELECT COALESCE(subscription_intents_initialized, 0)
-        FROM broker_server_profiles
-        WHERE workspace_id = @WorkspaceId
-          AND id = @Id
-        LIMIT 1;
-        """;
-
-    public static string MarkSubscriptionIntentsInitialized =>
-        """
-        UPDATE broker_server_profiles
-        SET subscription_intents_initialized = 1
-        WHERE workspace_id = @WorkspaceId
-          AND id = @Id;
-        """;
-
     public static string SetExclusiveActive =>
         """
         UPDATE broker_server_profiles
