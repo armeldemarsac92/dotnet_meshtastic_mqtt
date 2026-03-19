@@ -1,8 +1,16 @@
 import mqtt from "../vendor/mqtt.esm.js";
+import {
+  applyRealtimeSessionToOptions,
+  computeRealtimeSessionRefreshDelay,
+  getRealtimeClientConstants,
+  normalizeRealtimeSession,
+  refreshRealtimeSessionState
+} from "./realtimeClientCore.mjs";
 
-const refreshSkewMs = 60_000;
-const reconnectPeriodMs = 5_000;
-const keepAliveSeconds = 30;
+const {
+  keepAliveSeconds,
+  reconnectPeriodMs
+} = getRealtimeClientConstants();
 
 let currentClient = null;
 let currentCallbacks = null;
@@ -21,7 +29,7 @@ export async function connect(session, callbacks) {
   currentGeneration += 1;
   const generation = currentGeneration;
   currentCallbacks = callbacks;
-  currentSession = normalizeSession(session);
+  currentSession = normalizeRealtimeSession(session);
   disconnectReason = null;
 
   const client = mqtt.connect(currentSession.brokerUrl, buildOptions(generation));
@@ -57,16 +65,6 @@ export async function disconnect() {
   }
 }
 
-function applySessionToOptions(options) {
-  if (!currentSession) {
-    return;
-  }
-
-  options.clientId = currentSession.clientId;
-  options.username = currentSession.clientId;
-  options.password = currentSession.token;
-}
-
 function buildOptions(generation) {
   return {
     clean: true,
@@ -85,7 +83,7 @@ function buildOptions(generation) {
         return url;
       }
 
-      applySessionToOptions(options);
+      applyRealtimeSessionToOptions(currentSession, options);
       return currentSession.brokerUrl ?? url;
     },
     username: currentSession.clientId
@@ -171,26 +169,6 @@ function normalizeErrorMessage(error) {
   return "The realtime broker connection reported an error.";
 }
 
-function normalizeSession(session) {
-  const brokerUrl = session?.brokerUrl ?? session?.BrokerUrl;
-  const clientId = session?.clientId ?? session?.ClientId;
-  const token = session?.token ?? session?.Token;
-  const expiresAtUtc = session?.expiresAtUtc ?? session?.ExpiresAtUtc;
-  const allowedTopicPatterns = session?.allowedTopicPatterns ?? session?.AllowedTopicPatterns ?? [];
-
-  if (!brokerUrl || !clientId || !token || !expiresAtUtc) {
-    throw new Error("The realtime session payload is incomplete.");
-  }
-
-  return {
-    allowedTopicPatterns: [...new Set(allowedTopicPatterns.filter(Boolean))],
-    brokerUrl,
-    clientId,
-    expiresAtUtc,
-    token
-  };
-}
-
 function bytesToBase64(payloadBytes) {
   if (!payloadBytes?.length) {
     return "";
@@ -206,13 +184,36 @@ function bytesToBase64(payloadBytes) {
 }
 
 async function refreshSession(generation) {
-  if (generation !== currentGeneration || !currentCallbacks) {
+  if (!currentCallbacks) {
     return;
   }
 
-  const nextSession = normalizeSession(await currentCallbacks.invokeMethodAsync("RefreshSessionAsync"));
-  currentSession = nextSession;
-  await currentCallbacks.invokeMethodAsync("HandleSessionRefreshedAsync", nextSession);
+  const refreshResult = await refreshRealtimeSessionState({
+    currentSession,
+    generation,
+    isGenerationCurrent(candidateGeneration) {
+      return candidateGeneration === currentGeneration;
+    },
+    async notifySessionRefreshedAsync(nextSession) {
+      await currentCallbacks.invokeMethodAsync("HandleSessionRefreshedAsync", nextSession);
+    },
+    async refreshSessionAsync() {
+      return await currentCallbacks.invokeMethodAsync("RefreshSessionAsync");
+    },
+    requestReconnect(reason) {
+      if (generation !== currentGeneration || !currentClient) {
+        return;
+      }
+
+      disconnectReason = reason;
+
+      if (typeof currentClient.reconnect === "function") {
+        currentClient.reconnect();
+      }
+    }
+  });
+
+  currentSession = refreshResult.session;
   scheduleSessionRefresh(generation);
 }
 
@@ -231,8 +232,7 @@ function scheduleSessionRefresh(generation) {
     return;
   }
 
-  const expiresAtMs = new Date(currentSession.expiresAtUtc).getTime();
-  const delayMs = Math.max(5_000, expiresAtMs - Date.now() - refreshSkewMs);
+  const delayMs = computeRealtimeSessionRefreshDelay(currentSession.expiresAtUtc);
 
   refreshTimerHandle = setTimeout(() => {
     refreshTimerHandle = null;
