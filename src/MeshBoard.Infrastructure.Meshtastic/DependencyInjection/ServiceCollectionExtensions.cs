@@ -115,6 +115,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddHostedService<MeshtasticMqttHostedService>();
         services.AddHostedService<MqttInboundDispatchHostedService>();
+        services.AddHostedService<ActiveWorkspaceRuntimeReconcileHostedService>();
     }
 
     private static bool AreHostedServicesEnabled(IConfiguration configuration)
