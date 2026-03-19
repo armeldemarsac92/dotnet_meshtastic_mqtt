@@ -17,4 +17,6 @@ public sealed class RealtimeSessionOptions
     public int TokenLifetimeMinutes { get; set; } = 5;
 
     public string SigningPrivateKeyPem { get; set; } = string.Empty;
+
+    public string SigningPrivateKeyPemFile { get; set; } = string.Empty;
 }

@@ -16,7 +16,9 @@ public sealed class RealtimeJwksService : IRealtimeJwksService
 
     public RealtimeJwksService(IOptions<RealtimeSessionOptions> options)
     {
-        _document = new Lazy<JsonWebKeyDocument>(() => BuildDocument(options.Value));
+        var resolvedOptions = options.Value;
+        var signingPrivateKeyPem = RealtimeSigningKeyMaterialResolver.ResolvePrivateKeyPem(resolvedOptions);
+        _document = new Lazy<JsonWebKeyDocument>(() => BuildDocument(resolvedOptions, signingPrivateKeyPem));
     }
 
     public JsonWebKeyDocument GetDocument()
@@ -24,20 +26,15 @@ public sealed class RealtimeJwksService : IRealtimeJwksService
         return _document.Value;
     }
 
-    private static JsonWebKeyDocument BuildDocument(RealtimeSessionOptions options)
+    private static JsonWebKeyDocument BuildDocument(RealtimeSessionOptions options, string signingPrivateKeyPem)
     {
         if (string.IsNullOrWhiteSpace(options.KeyId))
         {
             throw new InvalidOperationException("RealtimeSession:KeyId is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.SigningPrivateKeyPem))
-        {
-            throw new InvalidOperationException("RealtimeSession:SigningPrivateKeyPem is required.");
-        }
-
         using var rsa = RSA.Create();
-        rsa.ImportFromPem(options.SigningPrivateKeyPem.AsSpan());
+        rsa.ImportFromPem(signingPrivateKeyPem.AsSpan());
 
         var parameters = rsa.ExportParameters(false);
         if (parameters.Modulus is null || parameters.Exponent is null)

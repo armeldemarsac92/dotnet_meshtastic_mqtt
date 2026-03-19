@@ -24,6 +24,7 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
     private readonly ICurrentUserContextAccessor _currentUserContextAccessor;
     private readonly IRealtimeTopicAccessPolicyService _realtimeTopicAccessPolicyService;
     private readonly RealtimeSessionOptions _options;
+    private readonly string _signingPrivateKeyPem;
     private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
@@ -38,6 +39,7 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
         _workspaceContextAccessor = workspaceContextAccessor;
         _realtimeTopicAccessPolicyService = realtimeTopicAccessPolicyService;
         _options = options.Value;
+        _signingPrivateKeyPem = RealtimeSigningKeyMaterialResolver.ResolvePrivateKeyPem(_options);
         _timeProvider = timeProvider;
     }
 
@@ -129,9 +131,11 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
             throw new InvalidOperationException("RealtimeSession:TokenLifetimeMinutes must be greater than zero.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.SigningPrivateKeyPem))
+        if (string.IsNullOrWhiteSpace(options.SigningPrivateKeyPem) &&
+            string.IsNullOrWhiteSpace(options.SigningPrivateKeyPemFile))
         {
-            throw new InvalidOperationException("RealtimeSession:SigningPrivateKeyPem is required.");
+            throw new InvalidOperationException(
+                "RealtimeSession:SigningPrivateKeyPem or RealtimeSession:SigningPrivateKeyPemFile is required.");
         }
 
         return brokerUri;
@@ -177,7 +181,7 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
         var signingInput = $"{encodedHeader}.{encodedPayload}";
 
         using var rsa = RSA.Create();
-        rsa.ImportFromPem(_options.SigningPrivateKeyPem.AsSpan());
+        rsa.ImportFromPem(_signingPrivateKeyPem.AsSpan());
 
         var signature = rsa.SignData(
             Encoding.UTF8.GetBytes(signingInput),

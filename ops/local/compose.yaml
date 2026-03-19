@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:17-bookworm
+    container_name: meshboard-postgres
+    environment:
+      POSTGRES_DB: meshboard
+      POSTGRES_USER: meshboard
+      POSTGRES_PASSWORD: meshboard
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meshboard -d meshboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    volumes:
+      - meshboard-postgres-data:/var/lib/postgresql/data
+
+  meshboard-api:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Api/Dockerfile
+    container_name: meshboard-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Persistence__Provider: PostgreSQL
+      Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
+      Persistence__SeedLegacyDefaultWorkspace: "false"
+      RealtimeSession__BrokerUrl: wss://localhost:8084/mqtt
+      RealtimeSession__Issuer: meshboard-api-local-compose
+      RealtimeSession__Audience: meshboard-realtime
+      RealtimeSession__KeyId: meshboard-compose-k1
+      RealtimeSession__ClientIdPrefix: mb
+      RealtimeSession__TokenLifetimeMinutes: "5"
+      RealtimeSession__SigningPrivateKeyPemFile: /run/meshboard-secrets/realtime-signing-private-key.pem
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    volumes:
+      - ./secrets:/run/meshboard-secrets:ro
+
+  vernemq:
+    build:
+      context: ../..
+      dockerfile: ops/vernemq/Dockerfile
+      args:
+        VERNEMQ_VERSION: "2.1.1"
+    container_name: meshboard-vernemq
+    depends_on:
+      meshboard-api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "/vernemq/bin/vernemq ping | grep -q pong"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    ports:
+      - "1883:1883"
+      - "8080:8080"
+      - "8084:8084"
+    restart: unless-stopped
+    volumes:
+      - ../vernemq/vernemq.conf:/vernemq/etc/vernemq.conf:ro
+      - ../vernemq/certs:/vernemq/etc/certs:ro
+      - meshboard-vernemq-data:/vernemq/data
+      - meshboard-vernemq-log:/vernemq/log
+
+  meshboard-realtime-bridge:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.RealtimeBridge/Dockerfile
+    container_name: meshboard-realtime-bridge
+    depends_on:
+      vernemq:
+        condition: service_healthy
+    environment:
+      MeshtasticRuntime__EnableHostedService: "true"
+      Persistence__Provider: SQLite
+      Persistence__ConnectionString: Data Source=/data/meshboard-realtime-bridge.db
+      Persistence__SeedLegacyDefaultWorkspace: "false"
+      RealtimeDownstreamBroker__Host: vernemq
+      RealtimeDownstreamBroker__Port: "1883"
+      RealtimeDownstreamBroker__UseTls: "false"
+      RealtimeDownstreamBroker__ClientId: meshboard-realtime-bridge
+    restart: unless-stopped
+    volumes:
+      - meshboard-realtime-bridge-data:/data
+
+volumes:
+  meshboard-postgres-data:
+  meshboard-realtime-bridge-data:
+  meshboard-vernemq-data:
+  meshboard-vernemq-log:

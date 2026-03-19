@@ -95,6 +95,22 @@ docker run --rm -p 8080:8080 \
 
 App URL: `http://localhost:8080`
 
+## Local Realtime Stack
+
+For the browser-first refactor runtime stack (`PostgreSQL + MeshBoard.Api + VerneMQ + MeshBoard.RealtimeBridge`), use the local compose files under [ops/local/README.md](/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/ops/local/README.md).
+
+Bootstrap local secrets and broker certificates:
+
+```bash
+./ops/local/generate-local-stack-secrets.sh
+```
+
+Start the stack:
+
+```bash
+docker compose -f ops/local/compose.yaml up --build
+```
+
 ## Common Environment Overrides
 
 - `Broker__Host`

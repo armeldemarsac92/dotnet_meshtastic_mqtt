@@ -36,9 +36,10 @@ public sealed class VernemqWebhookAuthorizationService : IVernemqWebhookAuthoriz
         _options = options.Value;
         _timeProvider = timeProvider;
         _topicFilterAuthorizationService = topicFilterAuthorizationService;
+        var signingPrivateKeyPem = RealtimeSigningKeyMaterialResolver.ResolvePrivateKeyPem(_options);
 
         using var rsa = RSA.Create();
-        rsa.ImportFromPem(_options.SigningPrivateKeyPem.AsSpan());
+        rsa.ImportFromPem(signingPrivateKeyPem.AsSpan());
         _signingPublicKey = rsa.ExportParameters(false);
     }
 
