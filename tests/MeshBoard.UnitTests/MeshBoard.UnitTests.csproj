@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\MeshBoard.Application\MeshBoard.Application.csproj" />
     <ProjectReference Include="..\..\src\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
     <ProjectReference Include="..\..\src\MeshBoard.Infrastructure.Meshtastic\MeshBoard.Infrastructure.Meshtastic.csproj" />
+    <ProjectReference Include="..\..\src\MeshBoard.RealtimeLoadTests\MeshBoard.RealtimeLoadTests.csproj" />
   </ItemGroup>
 
 </Project>

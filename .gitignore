@@ -1,5 +1,6 @@
 node_modules/
 src/MeshBoard.Client/wwwroot/vendor/
+artifacts/realtime-load-tests/
 
 src/**/bin/
 src/**/obj/

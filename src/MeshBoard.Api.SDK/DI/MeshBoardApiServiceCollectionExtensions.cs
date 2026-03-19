@@ -8,29 +8,47 @@ namespace MeshBoard.Api.SDK.DI;
 
 public static class MeshBoardApiServiceCollectionExtensions
 {
-    public static IServiceCollection AddMeshBoardApiSdk(this IServiceCollection services, Uri baseAddress)
+    public static IServiceCollection AddMeshBoardApiSdk(
+        this IServiceCollection services,
+        Uri baseAddress,
+        Action<HttpClientHandler>? configurePrimaryHandler = null)
     {
         services.AddTransient<MeshBoardApiRequestConfigurationHandler>();
         services.AddTransient<AntiforgeryTokenHeaderHandler>();
 
-        RegisterRefitClient<IAntiforgeryApi>(services, baseAddress, includeAntiforgery: false);
-        RegisterRefitClient<IAuthApi>(services, baseAddress, includeAntiforgery: true);
-        RegisterRefitClient<IFavoritePreferenceApi>(services, baseAddress, includeAntiforgery: true);
-        RegisterRefitClient<IBrokerPreferenceApi>(services, baseAddress, includeAntiforgery: false);
-        RegisterRefitClient<IChannelPreferenceApi>(services, baseAddress, includeAntiforgery: true);
-        RegisterRefitClient<IRealtimeSessionApi>(services, baseAddress, includeAntiforgery: true);
-        RegisterRefitClient<ITopicPresetPreferenceApi>(services, baseAddress, includeAntiforgery: false);
+        RegisterRefitClient<IAntiforgeryApi>(services, baseAddress, includeAntiforgery: false, configurePrimaryHandler);
+        RegisterRefitClient<IAuthApi>(services, baseAddress, includeAntiforgery: true, configurePrimaryHandler);
+        RegisterRefitClient<IFavoritePreferenceApi>(services, baseAddress, includeAntiforgery: true, configurePrimaryHandler);
+        RegisterRefitClient<IBrokerPreferenceApi>(services, baseAddress, includeAntiforgery: false, configurePrimaryHandler);
+        RegisterRefitClient<IChannelPreferenceApi>(services, baseAddress, includeAntiforgery: true, configurePrimaryHandler);
+        RegisterRefitClient<IRealtimeSessionApi>(services, baseAddress, includeAntiforgery: true, configurePrimaryHandler);
+        RegisterRefitClient<ITopicPresetPreferenceApi>(services, baseAddress, includeAntiforgery: false, configurePrimaryHandler);
 
         return services;
     }
 
-    private static void RegisterRefitClient<TClient>(IServiceCollection services, Uri baseAddress, bool includeAntiforgery)
+    private static void RegisterRefitClient<TClient>(
+        IServiceCollection services,
+        Uri baseAddress,
+        bool includeAntiforgery,
+        Action<HttpClientHandler>? configurePrimaryHandler)
         where TClient : class
     {
         var builder = services
             .AddRefitClient<TClient>(CreateRefitSettings())
             .ConfigureHttpClient(client => client.BaseAddress = baseAddress)
             .AddHttpMessageHandler<MeshBoardApiRequestConfigurationHandler>();
+
+        if (configurePrimaryHandler is not null)
+        {
+            builder.ConfigurePrimaryHttpMessageHandler(
+                () =>
+                {
+                    var handler = new HttpClientHandler();
+                    configurePrimaryHandler(handler);
+                    return handler;
+                });
+        }
 
         if (includeAntiforgery)
         {
