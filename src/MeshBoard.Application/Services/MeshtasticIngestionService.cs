@@ -2,7 +2,6 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
-using MeshBoard.Contracts.Realtime;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,21 +18,18 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     private readonly ILogger<MeshtasticIngestionService> _logger;
     private readonly IMessageRepository _messageRepository;
     private readonly INodeRepository _nodeRepository;
-    private readonly IProjectionChangeRepository _projectionChangeRepository;
     private readonly ITopicDiscoveryService _topicDiscoveryService;
     private readonly IUnitOfWork _unitOfWork;
 
     public MeshtasticIngestionService(
         IMessageRepository messageRepository,
         INodeRepository nodeRepository,
-        IProjectionChangeRepository projectionChangeRepository,
         ITopicDiscoveryService topicDiscoveryService,
         IUnitOfWork unitOfWork,
         ILogger<MeshtasticIngestionService> logger)
     {
         _messageRepository = messageRepository;
         _nodeRepository = nodeRepository;
-        _projectionChangeRepository = projectionChangeRepository;
         _topicDiscoveryService = topicDiscoveryService;
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -113,55 +109,11 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             }
 
             await _unitOfWork.CommitAsync(cancellationToken);
-
-            await PublishProjectionChangesAsync(workspaceId, envelope, cancellationToken);
         }
         catch
         {
             await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
-        }
-    }
-
-    private async Task PublishProjectionChangesAsync(
-        string workspaceId,
-        MeshtasticEnvelope envelope,
-        CancellationToken cancellationToken)
-    {
-        var changes = new List<ProjectionChangeDescriptor>
-        {
-            new()
-            {
-                Kind = ProjectionChangeKind.MessageAdded
-            },
-            new()
-            {
-                Kind = ProjectionChangeKind.ChannelSummaryUpdated,
-                EntityKey = ResolveChannelEntityKey(envelope)
-            }
-        };
-
-        if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
-        {
-            changes.Add(
-                new ProjectionChangeDescriptor
-                {
-                    Kind = ProjectionChangeKind.NodeUpdated,
-                    EntityKey = envelope.FromNodeId.Trim()
-                });
-        }
-
-        try
-        {
-            await _projectionChangeRepository.AppendAsync(workspaceId, changes, cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            _logger.LogWarning(
-                exception,
-                "Failed to persist projection change notifications for workspace {WorkspaceId} after ingesting topic {Topic}",
-                workspaceId,
-                envelope.Topic);
         }
     }
 
@@ -173,40 +125,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
         }
 
         return envelope.WorkspaceId.Trim();
-    }
-
-    private static string? ResolveChannelEntityKey(MeshtasticEnvelope envelope)
-    {
-        if (!string.IsNullOrWhiteSpace(envelope.LastHeardChannel))
-        {
-            return envelope.LastHeardChannel.Trim();
-        }
-
-        if (string.IsNullOrWhiteSpace(envelope.Topic))
-        {
-            return null;
-        }
-
-        var segments = envelope.Topic
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        if (segments.Length < 5 ||
-            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var region = segments[1];
-        var channel = segments[4];
-
-        if (string.IsNullOrWhiteSpace(region) ||
-            string.IsNullOrWhiteSpace(channel) ||
-            channel is "#" or "+")
-        {
-            return null;
-        }
-
-        return $"{region}/{channel}";
     }
 
     private static string BuildMessageKey(MeshtasticEnvelope envelope)
