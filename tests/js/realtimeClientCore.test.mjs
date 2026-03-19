@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  applyRealtimeSessionToOptions,
   computeRealtimeSessionRefreshDelay,
   getRealtimeClientConstants,
   normalizeRealtimeSession,
@@ -9,6 +10,26 @@ import {
 } from "../../src/MeshBoard.Client/wwwroot/js/realtimeClientCore.mjs";
 
 const realtimeClientConstants = getRealtimeClientConstants();
+
+test("applyRealtimeSessionToOptions maps the broker token to MQTT username for stateless broker hooks", () => {
+  const options = {};
+
+  applyRealtimeSessionToOptions(
+    normalizeRealtimeSession({
+      brokerUrl: "wss://broker.example.org/mqtt",
+      clientId: "meshboard-client-1",
+      token: "jwt-token",
+      expiresAtUtc: "2026-03-19T10:30:00.000Z",
+      allowedTopicPatterns: ["meshboard/workspaces/a/live/#"]
+    }),
+    options);
+
+  assert.deepEqual(options, {
+    clientId: "meshboard-client-1",
+    username: "jwt-token",
+    password: "meshboard-client-1"
+  });
+});
 
 test("normalizeRealtimeSession accepts API payload casing and deduplicates topics", () => {
   const session = normalizeRealtimeSession({

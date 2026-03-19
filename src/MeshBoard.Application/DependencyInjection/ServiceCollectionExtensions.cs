@@ -20,6 +20,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();
         services.TryAddSingleton<IRealtimeJwksService, RealtimeJwksService>();
         services.TryAddSingleton<IRealtimeTopicAccessPolicyService, RealtimeTopicAccessPolicyService>();
+        services.TryAddSingleton<IRealtimeTopicFilterAuthorizationService, RealtimeTopicFilterAuthorizationService>();
+        services.TryAddSingleton<IVernemqWebhookAuthorizationService, VernemqWebhookAuthorizationService>();
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
@@ -42,6 +44,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IRealtimePacketPublicationFactory, RealtimePacketPublicationFactory>();
         services.TryAddSingleton<IRealtimeJwksService, RealtimeJwksService>();
         services.TryAddSingleton<IRealtimeTopicAccessPolicyService, RealtimeTopicAccessPolicyService>();
+        services.TryAddSingleton<IRealtimeTopicFilterAuthorizationService, RealtimeTopicFilterAuthorizationService>();
+        services.TryAddSingleton<IVernemqWebhookAuthorizationService, VernemqWebhookAuthorizationService>();
         services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
         services.TryAddSingleton<IActiveCircuitMetricsService, InMemoryActiveCircuitMetricsService>();
         services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();

@@ -82,6 +82,7 @@ app.MapBrokerPreferenceEndpoints();
 app.MapChannelPreferenceEndpoints();
 app.MapFavoritePreferenceEndpoints();
 app.MapRealtimeSessionEndpoints();
+app.MapVernemqWebhookEndpoints();
 app.MapTopicPresetPreferenceEndpoints();
 
 app.Run();

@@ -24,7 +24,8 @@ The following decisions are fixed as of `2026-03-12` unless a later ADR explicit
 
 - Browser-to-broker transport uses `MQTT 5 over WSS`, not a custom plain WebSocket protocol.
 - Browser-to-API auth uses same-origin cookie auth.
-- Browser-to-broker auth uses short-lived asymmetric JWT minted by the API and validated by the broker with public key or JWKS.
+- Browser-to-broker auth uses short-lived asymmetric JWT minted by the API.
+- `VerneMQ` enforces broker auth and ACLs through MQTT 5 webhook hooks that call `MeshBoard.Api`, where the JWT is validated and the authorization decision is returned.
 - The downstream broker must be strictly self-hosted and open-source.
 - `VerneMQ` is the default downstream broker target.
 - Local Meshtastic keys survive logout by default.
@@ -142,14 +143,14 @@ The default browser-to-broker auth model is:
 
 - short-lived asymmetric JWT minted by `MeshBoard.Api`
 - JWT audience scoped to the downstream realtime broker only
-- broker validation using public key or JWKS
+- `VerneMQ` webhook-based validation at the API boundary
 - no reuse of the API session cookie as broker auth
 - no reuse of the broker JWT as API auth
 
 This split is required for scale and isolation:
 
 - the API remains the identity authority
-- the broker cluster can validate tokens without querying the product database on every connect
+- the broker cluster can enforce connect/subscribe/publish decisions without querying the product database on every hook
 - JWT signing keys remain private to the API/auth tier
 - public verification keys can be rotated through JWKS
 
@@ -169,8 +170,8 @@ The default realtime auth flow is:
    - optional `allowedTopicPatterns`
 6. Browser connects over `WSS` using `MQTT.js`.
 7. Browser sends the JWT in the MQTT `CONNECT` packet field chosen by broker configuration.
-8. Broker validates the JWT using the configured public key or JWKS.
-9. Broker enforces ACL and topic authorization from claims or mapped broker roles.
+8. `VerneMQ` calls the configured MQTT 5 webhook hook on `MeshBoard.Api`.
+9. The API validates the JWT, checks ACL/topic scope, and returns the broker decision.
 10. Browser refreshes the broker token before expiry and reconnects with a new token.
 
 Minimum broker JWT claim set:
@@ -866,6 +867,7 @@ Optimization trigger:
 - live traffic path does not depend on `MeshBoard.Web`
 - concurrency benchmark meets the target budget
 - broker JWT validation and ACL enforcement are tested
+- `VerneMQ` webhook auth and topic decisions are covered by integration tests
 - reconnect with token refresh is tested
 
 ### Phase 6: Feature Migration To Local Projections

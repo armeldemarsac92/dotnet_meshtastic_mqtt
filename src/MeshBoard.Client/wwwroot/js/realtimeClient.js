@@ -71,7 +71,7 @@ function buildOptions(generation) {
     clientId: currentSession.clientId,
     connectTimeout: 15_000,
     keepalive: keepAliveSeconds,
-    password: currentSession.token,
+    password: currentSession.clientId,
     protocolId: "MQTT",
     protocolVersion: 5,
     queueQoSZero: false,
@@ -86,7 +86,7 @@ function buildOptions(generation) {
       applyRealtimeSessionToOptions(currentSession, options);
       return currentSession.brokerUrl ?? url;
     },
-    username: currentSession.clientId
+    username: currentSession.token
   };
 }
 

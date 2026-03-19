@@ -220,6 +220,96 @@ public sealed class ApiEndpointIntegrationTests
     }
 
     [Fact]
+    public async Task VernemqAuthOnRegisterM5_WhenSessionTokenMatchesClientId_ShouldReturnOk()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        await RegisterAsync(client, host);
+        var session = await CreateRealtimeSessionAsync(client, host);
+
+        using var response = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-register-m5",
+            new
+            {
+                client_id = session.ClientId,
+                clean_start = true,
+                password = session.ClientId,
+                username = session.Token
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("ok", payload.RootElement.GetProperty("result").GetString());
+    }
+
+    [Fact]
+    public async Task VernemqAuthOnSubscribeM5_WhenTopicEscapesWorkspace_ShouldRejectThatSubscription()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        var user = await RegisterAsync(client, host);
+        var session = await CreateRealtimeSessionAsync(client, host);
+
+        using var response = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-subscribe-m5",
+            new
+            {
+                client_id = session.ClientId,
+                username = session.Token,
+                topics = new object[]
+                {
+                    new
+                    {
+                        qos = 1,
+                        topic = RealtimeTopicNames.BuildWorkspacePacketTopic(user.WorkspaceId)
+                    },
+                    new
+                    {
+                        qos = 1,
+                        topic = RealtimeTopicNames.BuildWorkspacePacketTopic("workspace-b")
+                    }
+                }
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("ok", payload.RootElement.GetProperty("result").GetString());
+
+        var topics = payload.RootElement.GetProperty("modifiers").GetProperty("topics").EnumerateArray().ToArray();
+        Assert.Equal(2, topics.Length);
+        Assert.Equal(1, topics[0].GetProperty("qos").GetInt32());
+        Assert.Equal(135, topics[1].GetProperty("qos").GetInt32());
+    }
+
+    [Fact]
+    public async Task VernemqAuthOnPublishM5_WhenClientHasNoPublishAcl_ShouldReturnNotAllowed()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+
+        var user = await RegisterAsync(client, host);
+        var session = await CreateRealtimeSessionAsync(client, host);
+
+        using var response = await client.PostAsJsonAsync(
+            "/internal/realtime/vernemq/auth-on-publish-m5",
+            new
+            {
+                client_id = session.ClientId,
+                topic = RealtimeTopicNames.BuildWorkspacePacketTopic(user.WorkspaceId),
+                username = session.Token
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("not_allowed", payload.RootElement.GetProperty("result").GetProperty("error").GetString());
+    }
+
+    [Fact]
     public async Task Preferences_WhenAuthenticated_ShouldReturnProvisionedBrokerAndTopicPresetData()
     {
         await using var host = new ApiIntegrationTestHost();
@@ -570,6 +660,15 @@ public sealed class ApiEndpointIntegrationTests
             DownlinkTopic = downlinkTopic,
             EnableSend = enableSend
         };
+    }
+
+    private static async Task<RealtimeSessionPayload> CreateRealtimeSessionAsync(HttpClient client, ApiIntegrationTestHost host)
+    {
+        var response = await PostJsonAsync(client, host, "/api/realtime/session", payload: null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        return await response.Content.ReadFromJsonAsync<RealtimeSessionPayload>()
+               ?? throw new InvalidOperationException("The API returned an empty realtime session payload.");
     }
 
     private static async Task<HttpResponseMessage> DeleteAsync(

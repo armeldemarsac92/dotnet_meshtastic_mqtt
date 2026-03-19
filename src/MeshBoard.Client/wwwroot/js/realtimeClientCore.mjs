@@ -11,8 +11,8 @@ export function applyRealtimeSessionToOptions(session, options) {
   }
 
   options.clientId = session.clientId;
-  options.username = session.clientId;
-  options.password = session.token;
+  options.username = session.token;
+  options.password = session.clientId;
 }
 
 export function computeRealtimeSessionRefreshDelay(expiresAtUtc, nowMs = Date.now()) {
