@@ -93,8 +93,6 @@ public sealed class TopicPresetService : ITopicPresetService
             throw new BadRequestException("A preset name is required.");
         }
 
-        var normalizedEncryptionKeyBase64 = NormalizeEncryptionKey(request.EncryptionKeyBase64);
-
         _logger.LogInformation("Attempting to save topic preset: {TopicPattern}", topicPattern);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -108,7 +106,7 @@ public sealed class TopicPresetService : ITopicPresetService
                 {
                     Name = name,
                     TopicPattern = topicPattern,
-                    EncryptionKeyBase64 = normalizedEncryptionKeyBase64,
+                    EncryptionKeyBase64 = null,
                     IsDefault = request.IsDefault
                 },
                 cancellationToken);
@@ -131,21 +129,5 @@ public sealed class TopicPresetService : ITopicPresetService
     {
         var activeProfile = await _brokerServerProfileService.GetActiveServerProfile(cancellationToken);
         return activeProfile.ServerAddress;
-    }
-
-    private static string? NormalizeEncryptionKey(string? encryptionKeyBase64)
-    {
-        if (string.IsNullOrWhiteSpace(encryptionKeyBase64))
-        {
-            return null;
-        }
-
-        if (!TopicEncryptionKey.TryParse(encryptionKeyBase64, out var keyBytes))
-        {
-            throw new BadRequestException(
-                "Encryption key must be a valid AES key in base64 or hexadecimal format (16, 24, or 32 bytes).");
-        }
-
-        return Convert.ToBase64String(keyBytes);
     }
 }

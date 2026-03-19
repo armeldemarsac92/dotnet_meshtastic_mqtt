@@ -1066,7 +1066,7 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
-    public async Task TopicPreset_ShouldPersistEncryptionKeyOverride()
+    public async Task TopicPreset_ShouldDiscardServerSideEncryptionKeyOverride()
     {
         var databasePath = CreateTemporaryDatabasePath();
 
@@ -1090,11 +1090,11 @@ public sealed class PersistenceIntegrationTests
                         IsDefault = false
                     });
 
-                Assert.Equal("1PG7OiApB1nwvP+rz05pAQ==", savedPreset.EncryptionKeyBase64);
+                Assert.Null(savedPreset.EncryptionKeyBase64);
 
                 var presets = await topicPresetService.GetTopicPresets();
                 var reloaded = presets.Single(preset => preset.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
-                Assert.Equal("1PG7OiApB1nwvP+rz05pAQ==", reloaded.EncryptionKeyBase64);
+                Assert.Null(reloaded.EncryptionKeyBase64);
             }
             finally
             {
@@ -1146,7 +1146,7 @@ public sealed class PersistenceIntegrationTests
                         Username = string.Empty,
                         Password = string.Empty,
                         DefaultTopicPattern = "msh/EU_868/2/e/#",
-                        DefaultEncryptionKeyBase64 = "AQ==",
+                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/EU_868/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
