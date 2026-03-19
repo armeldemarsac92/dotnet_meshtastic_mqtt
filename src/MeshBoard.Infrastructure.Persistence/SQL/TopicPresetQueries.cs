@@ -43,7 +43,7 @@ internal static class TopicPresetQueries
 
     public static string InsertTopicPresetIfMissing =>
         """
-        INSERT OR IGNORE INTO topic_presets (
+        INSERT INTO topic_presets (
             id,
             workspace_id,
             broker_server,
@@ -60,7 +60,8 @@ internal static class TopicPresetQueries
             @TopicPattern,
             @EncryptionKeyBase64,
             @IsDefault,
-            @CreatedAtUtc);
+            @CreatedAtUtc)
+        ON CONFLICT(workspace_id, broker_server, topic_pattern) DO NOTHING;
         """;
 
     public static string UpsertTopicPreset =>

@@ -1,5 +1,6 @@
 using Dapper;
 using MeshBoard.Infrastructure.Persistence.Context;
+using MeshBoard.Infrastructure.Persistence.SQL;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Infrastructure.Persistence.Initialization;
@@ -19,19 +20,16 @@ internal sealed class PostgresDatabaseInitializer : IPersistenceInitializer
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Attempting to validate PostgreSQL persistence connectivity");
+        _logger.LogInformation("Attempting to initialize the PostgreSQL preference schema");
 
         await using var connection = _connectionFactory.CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
-        var result = await connection.ExecuteScalarAsync<int>(
-            new CommandDefinition("SELECT 1;", cancellationToken: cancellationToken));
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                PostgresPreferenceSchemaQueries.CreateSchema,
+                cancellationToken: cancellationToken));
 
-        if (result != 1)
-        {
-            throw new InvalidOperationException("PostgreSQL connectivity validation returned an unexpected result.");
-        }
-
-        _logger.LogInformation("Validated PostgreSQL persistence connectivity successfully");
+        _logger.LogInformation("Initialized the PostgreSQL preference schema successfully");
     }
 }

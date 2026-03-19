@@ -21,7 +21,7 @@ internal static class BrokerServerProfileQueries
             created_at_utc AS CreatedAtUtc
         FROM broker_server_profiles
         WHERE is_active = 1
-        ORDER BY workspace_id COLLATE NOCASE ASC, created_at_utc DESC;
+        ORDER BY LOWER(workspace_id) ASC, created_at_utc DESC;
         """;
 
     public static string GetAllActiveAcrossUserOwnedWorkspaces =>
@@ -44,7 +44,7 @@ internal static class BrokerServerProfileQueries
         FROM broker_server_profiles
         INNER JOIN users ON users.id = broker_server_profiles.workspace_id
         WHERE broker_server_profiles.is_active = 1
-        ORDER BY broker_server_profiles.workspace_id COLLATE NOCASE ASC, broker_server_profiles.created_at_utc DESC;
+        ORDER BY LOWER(broker_server_profiles.workspace_id) ASC, broker_server_profiles.created_at_utc DESC;
         """;
 
     public static string GetAll =>
@@ -66,7 +66,7 @@ internal static class BrokerServerProfileQueries
             created_at_utc AS CreatedAtUtc
         FROM broker_server_profiles
         WHERE workspace_id = @WorkspaceId
-        ORDER BY is_active DESC, name COLLATE NOCASE ASC;
+        ORDER BY is_active DESC, LOWER(name) ASC;
         """;
 
     public static string GetActive =>

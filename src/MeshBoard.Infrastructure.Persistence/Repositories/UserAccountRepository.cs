@@ -8,6 +8,7 @@ using MeshBoard.Infrastructure.Persistence.Mapping;
 using MeshBoard.Infrastructure.Persistence.SQL;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace MeshBoard.Infrastructure.Persistence.Repositories;
 
@@ -71,6 +72,10 @@ internal sealed class UserAccountRepository : IUserAccountRepository
                 cancellationToken);
         }
         catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            throw new ConflictException($"Username '{request.Username}' is already taken.");
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             throw new ConflictException($"Username '{request.Username}' is already taken.");
         }
