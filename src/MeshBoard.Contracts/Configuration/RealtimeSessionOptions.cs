@@ -6,6 +6,8 @@ public sealed class RealtimeSessionOptions
 
     public string BrokerUrl { get; set; } = "wss://localhost:8084/mqtt";
 
+    public bool AllowInsecureBrokerUrl { get; set; }
+
     public string Issuer { get; set; } = "meshboard-api";
 
     public string Audience { get; set; } = "meshboard-realtime";

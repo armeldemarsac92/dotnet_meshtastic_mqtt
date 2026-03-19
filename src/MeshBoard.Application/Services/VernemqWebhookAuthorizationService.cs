@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using MeshBoard.Contracts.Configuration;
+using MeshBoard.Contracts.Realtime;
 using Microsoft.Extensions.Options;
 
 namespace MeshBoard.Application.Services;
@@ -15,7 +16,7 @@ public interface IVernemqWebhookAuthorizationService
 
     bool IsPublishAuthorized(string clientId, string? sessionToken, string topic);
 
-    bool IsRegisterAuthorized(string clientId, string? sessionToken);
+    bool IsRegisterAuthorized(string clientId, string? sessionToken, string? password);
 }
 
 public sealed class VernemqWebhookAuthorizationService : IVernemqWebhookAuthorizationService
@@ -24,16 +25,19 @@ public sealed class VernemqWebhookAuthorizationService : IVernemqWebhookAuthoriz
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly RealtimeSessionOptions _options;
+    private readonly RealtimeDownstreamBrokerOptions _downstreamBrokerOptions;
     private readonly RSAParameters _signingPublicKey;
     private readonly TimeProvider _timeProvider;
     private readonly IRealtimeTopicFilterAuthorizationService _topicFilterAuthorizationService;
 
     public VernemqWebhookAuthorizationService(
         IOptions<RealtimeSessionOptions> options,
+        IOptions<RealtimeDownstreamBrokerOptions> downstreamBrokerOptions,
         TimeProvider timeProvider,
         IRealtimeTopicFilterAuthorizationService topicFilterAuthorizationService)
     {
         _options = options.Value;
+        _downstreamBrokerOptions = downstreamBrokerOptions.Value;
         _timeProvider = timeProvider;
         _topicFilterAuthorizationService = topicFilterAuthorizationService;
         var signingPrivateKeyPem = RealtimeSigningKeyMaterialResolver.ResolvePrivateKeyPem(_options);
@@ -43,8 +47,13 @@ public sealed class VernemqWebhookAuthorizationService : IVernemqWebhookAuthoriz
         _signingPublicKey = rsa.ExportParameters(false);
     }
 
-    public bool IsRegisterAuthorized(string clientId, string? sessionToken)
+    public bool IsRegisterAuthorized(string clientId, string? sessionToken, string? password)
     {
+        if (IsInternalBridgeRegisterAuthorized(clientId, sessionToken, password))
+        {
+            return true;
+        }
+
         return TryValidateSessionToken(clientId, sessionToken, out _);
     }
 
@@ -74,8 +83,55 @@ public sealed class VernemqWebhookAuthorizationService : IVernemqWebhookAuthoriz
 
     public bool IsPublishAuthorized(string clientId, string? sessionToken, string topic)
     {
+        if (IsInternalBridgePublishAuthorized(clientId, sessionToken, topic))
+        {
+            return true;
+        }
+
         return TryValidateSessionToken(clientId, sessionToken, out var validatedSession)
                && _topicFilterAuthorizationService.IsPublishAllowed(topic, validatedSession.PublishTopicPatterns);
+    }
+
+    private bool IsInternalBridgePublishAuthorized(string clientId, string? username, string topic)
+    {
+        return IsInternalBridgeIdentity(clientId, username)
+            && IsInternalBridgePublishTopic(topic);
+    }
+
+    private bool IsInternalBridgeRegisterAuthorized(string clientId, string? username, string? password)
+    {
+        return IsInternalBridgeIdentity(clientId, username)
+            && string.Equals(password ?? string.Empty, _downstreamBrokerOptions.Password ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    private bool IsInternalBridgeIdentity(string clientId, string? username)
+    {
+        if (string.IsNullOrWhiteSpace(_downstreamBrokerOptions.Username)
+            || string.IsNullOrWhiteSpace(_downstreamBrokerOptions.ClientId))
+        {
+            return false;
+        }
+
+        return string.Equals(clientId?.Trim(), _downstreamBrokerOptions.ClientId.Trim(), StringComparison.Ordinal)
+            && string.Equals(username?.Trim(), _downstreamBrokerOptions.Username.Trim(), StringComparison.Ordinal);
+    }
+
+    private static bool IsInternalBridgePublishTopic(string topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return false;
+        }
+
+        var normalizedTopic = topic.Trim();
+        var segments = normalizedTopic.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        return segments.Length == 5
+            && string.Equals(segments[0], "meshboard", StringComparison.Ordinal)
+            && string.Equals(segments[1], "workspaces", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(segments[2])
+            && string.Equals(segments[3], "live", StringComparison.Ordinal)
+            && string.Equals(segments[4], "packets", StringComparison.Ordinal);
     }
 
     private static byte[] Base64UrlDecode(string value)

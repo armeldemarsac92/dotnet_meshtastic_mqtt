@@ -19,6 +19,8 @@ builder.Services.AddApiApplicationServices();
 builder.Services.AddProductPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddOptions<RealtimeSessionOptions>()
     .Bind(builder.Configuration.GetSection(RealtimeSessionOptions.SectionName));
+builder.Services.AddOptions<RealtimeDownstreamBrokerOptions>()
+    .Bind(builder.Configuration.GetSection(RealtimeDownstreamBrokerOptions.SectionName));
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {

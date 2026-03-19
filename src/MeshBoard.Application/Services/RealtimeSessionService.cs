@@ -106,9 +106,15 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
             throw new InvalidOperationException("RealtimeSession:BrokerUrl must be an absolute URI.");
         }
 
-        if (!string.Equals(brokerUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+        var isSecureWebSocket = string.Equals(brokerUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
+        var isInsecureWebSocket = string.Equals(brokerUri.Scheme, "ws", StringComparison.OrdinalIgnoreCase);
+
+        if (!isSecureWebSocket && !(options.AllowInsecureBrokerUrl && isInsecureWebSocket))
         {
-            throw new InvalidOperationException("RealtimeSession:BrokerUrl must use the wss scheme.");
+            throw new InvalidOperationException(
+                options.AllowInsecureBrokerUrl
+                    ? "RealtimeSession:BrokerUrl must use the ws or wss scheme."
+                    : "RealtimeSession:BrokerUrl must use the wss scheme.");
         }
 
         if (string.IsNullOrWhiteSpace(options.Issuer))

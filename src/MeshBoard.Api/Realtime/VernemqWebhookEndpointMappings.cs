@@ -14,7 +14,7 @@ internal static class VernemqWebhookEndpointMappings
             "/auth-on-register-m5",
             (VernemqAuthOnRegisterM5Request request, IVernemqWebhookAuthorizationService authorizationService) =>
             {
-                return authorizationService.IsRegisterAuthorized(request.ClientId, request.Username)
+                return authorizationService.IsRegisterAuthorized(request.ClientId, request.Username, request.Password)
                     ? Results.Json(new { result = "ok" })
                     : Results.Json(new { result = new { error = "not_allowed" } });
             });

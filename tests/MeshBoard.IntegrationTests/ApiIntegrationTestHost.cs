@@ -18,6 +18,9 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
     internal const string RealtimeIssuer = "https://api.meshboard.test";
     internal const string RealtimeKeyId = "meshboard-test-k1";
     internal const int RealtimeTokenLifetimeMinutes = 5;
+    internal const string RealtimeDownstreamBridgeClientId = "meshboard-realtime-bridge";
+    internal const string RealtimeDownstreamBridgeUsername = "meshboard-bridge";
+    internal const string RealtimeDownstreamBridgePassword = "meshboard-bridge-test-secret";
 
     internal const string RealtimeSigningPrivateKeyPem = """
         -----BEGIN PRIVATE KEY-----
@@ -91,7 +94,10 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
                     new KeyValuePair<string, string?>("RealtimeSession:Issuer", RealtimeIssuer),
                     new KeyValuePair<string, string?>("RealtimeSession:KeyId", RealtimeKeyId),
                     new KeyValuePair<string, string?>("RealtimeSession:TokenLifetimeMinutes", RealtimeTokenLifetimeMinutes.ToString()),
-                    new KeyValuePair<string, string?>("RealtimeSession:SigningPrivateKeyPem", RealtimeSigningPrivateKeyPem)
+                    new KeyValuePair<string, string?>("RealtimeSession:SigningPrivateKeyPem", RealtimeSigningPrivateKeyPem),
+                    new KeyValuePair<string, string?>("RealtimeDownstreamBroker:ClientId", RealtimeDownstreamBridgeClientId),
+                    new KeyValuePair<string, string?>("RealtimeDownstreamBroker:Username", RealtimeDownstreamBridgeUsername),
+                    new KeyValuePair<string, string?>("RealtimeDownstreamBroker:Password", RealtimeDownstreamBridgePassword)
                 ]);
             });
         builder.ConfigureServices(

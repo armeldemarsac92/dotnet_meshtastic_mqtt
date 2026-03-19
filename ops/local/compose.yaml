@@ -7,6 +7,8 @@ services:
     depends_on:
       meshboard-api:
         condition: service_started
+      vernemq:
+        condition: service_healthy
     ports:
       - "8082:80"
     restart: unless-stopped
@@ -44,18 +46,23 @@ services:
       Persistence__Provider: PostgreSQL
       Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
       Persistence__SeedLegacyDefaultWorkspace: "false"
-      RealtimeSession__BrokerUrl: wss://localhost:8084/mqtt
+      RealtimeSession__BrokerUrl: ws://localhost:8082/mqtt
+      RealtimeSession__AllowInsecureBrokerUrl: "true"
       RealtimeSession__Issuer: meshboard-api-local-compose
       RealtimeSession__Audience: meshboard-realtime
       RealtimeSession__KeyId: meshboard-compose-k1
       RealtimeSession__ClientIdPrefix: mb
       RealtimeSession__TokenLifetimeMinutes: "5"
       RealtimeSession__SigningPrivateKeyPemFile: /run/meshboard-secrets/realtime-signing-private-key.pem
+      RealtimeDownstreamBroker__ClientId: meshboard-realtime-bridge
+      RealtimeDownstreamBroker__Username: meshboard-bridge
+      RealtimeDownstreamBroker__Password: meshboard-bridge-local-secret
     ports:
       - "8081:8080"
     restart: unless-stopped
     volumes:
       - ./secrets:/run/meshboard-secrets:ro
+      - meshboard-api-dataprotection:/root/.aspnet/DataProtection-Keys
 
   vernemq:
     build:
@@ -98,19 +105,19 @@ services:
         condition: service_healthy
     environment:
       MeshtasticRuntime__EnableHostedService: "true"
-      Persistence__Provider: SQLite
-      Persistence__ConnectionString: Data Source=/data/meshboard-realtime-bridge.db
+      Persistence__Provider: PostgreSQL
+      Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
       Persistence__SeedLegacyDefaultWorkspace: "false"
       RealtimeDownstreamBroker__Host: vernemq
       RealtimeDownstreamBroker__Port: "1883"
       RealtimeDownstreamBroker__UseTls: "false"
       RealtimeDownstreamBroker__ClientId: meshboard-realtime-bridge
+      RealtimeDownstreamBroker__Username: meshboard-bridge
+      RealtimeDownstreamBroker__Password: meshboard-bridge-local-secret
     restart: unless-stopped
-    volumes:
-      - meshboard-realtime-bridge-data:/data
 
 volumes:
+  meshboard-api-dataprotection:
   meshboard-postgres-data:
-  meshboard-realtime-bridge-data:
   meshboard-vernemq-data:
   meshboard-vernemq-log:

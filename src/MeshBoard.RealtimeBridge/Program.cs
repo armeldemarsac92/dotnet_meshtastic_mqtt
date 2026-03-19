@@ -11,7 +11,7 @@ builder.Services.AddOptions<RealtimeDownstreamBrokerOptions>()
     .Bind(builder.Configuration.GetSection(RealtimeDownstreamBrokerOptions.SectionName));
 builder.Services.AddApplicationServices();
 builder.Services.AddMeshtasticRuntimeInfrastructure(builder.Configuration);
-builder.Services.AddPersistenceInfrastructure(builder.Configuration);
+builder.Services.AddProductPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddSingleton<IRealtimePacketPublisher, MqttNetRealtimePacketPublisher>();
 builder.Services.AddSingleton<IMqttInboundMessageSink, RealtimePacketPublishingSink>();
 
