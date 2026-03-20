@@ -112,6 +112,36 @@ public sealed class MapProjectionStoreTests
         Assert.Equal(2, node.ObservedPacketCount);
     }
 
+    [Fact]
+    public void ToMapNodePoints_WhenNodesShareCoordinates_ShouldFanOutMarkers()
+    {
+        var store = new MapProjectionStore(new MapProjectionState());
+
+        store.Project(CreatePacketResult(nodeId: "!0000162e", nodeNumber: 5678, packetId: 71, latitude: 48.8566, longitude: 2.3522, shortName: "ATLS"));
+        store.Project(CreatePacketResult(nodeId: "!00001000", nodeNumber: 4096, packetId: 72, latitude: 48.8566, longitude: 2.3522, shortName: "FIELD", sourceTopic: "msh/US/2/e/LongFast/!00001000"));
+
+        var points = MapProjectionStore.ToMapNodePoints(store.Current.Nodes);
+
+        Assert.Equal(2, points.Count);
+        Assert.Equal(1, MapProjectionStore.CountCoordinateBuckets(store.Current.Nodes));
+        Assert.False(
+            points[0].Latitude.Equals(points[1].Latitude) &&
+            points[0].Longitude.Equals(points[1].Longitude));
+    }
+
+    [Fact]
+    public void CountCoordinateBuckets_WhenNodesUseDifferentLocations_ShouldReturnDistinctCount()
+    {
+        var store = new MapProjectionStore(new MapProjectionState());
+
+        store.Project(CreatePacketResult(nodeId: "!0000162e", nodeNumber: 5678, packetId: 81, latitude: 48.8566, longitude: 2.3522));
+        store.Project(CreatePacketResult(nodeId: "!00001000", nodeNumber: 4096, packetId: 82, latitude: 43.2965, longitude: 5.3698, sourceTopic: "msh/US/2/e/LongFast/!00001000"));
+
+        var bucketCount = MapProjectionStore.CountCoordinateBuckets(store.Current.Nodes);
+
+        Assert.Equal(2, bucketCount);
+    }
+
     private static RealtimePacketWorkerResult CreatePacketResult(
         string nodeId = "!0000162e",
         uint nodeNumber = 5678,

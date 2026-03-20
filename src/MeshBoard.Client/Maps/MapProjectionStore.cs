@@ -1,10 +1,14 @@
 using MeshBoard.Client.Realtime;
+using System.Globalization;
 
 namespace MeshBoard.Client.Maps;
 
 public sealed class MapProjectionStore
 {
     private const int MaxRetainedNodes = 5_000;
+    private const int CoordinateBucketPrecision = 5;
+    private const int OverlapRingSlotCount = 8;
+    private const double OverlapRingSpacingMeters = 35;
     private readonly Dictionary<string, int> _pendingActivityPulseCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly ProjectionPacketDeduper _packetDeduper = new(4_096);
     private readonly MapProjectionState _state;
@@ -134,17 +138,40 @@ public sealed class MapProjectionStore
     {
         ArgumentNullException.ThrowIfNull(nodes);
 
-        return nodes.Select(
-                node => new MapNodePoint
-                {
-                    NodeId = node.NodeId,
-                    DisplayName = node.DisplayName,
-                    Channel = node.Channel,
-                    Latitude = node.Latitude,
-                    Longitude = node.Longitude,
-                    BatteryLevelPercent = node.BatteryLevelPercent
-                })
-            .ToArray();
+        var points = new List<MapNodePoint>(nodes.Count);
+
+        foreach (var group in nodes
+                     .GroupBy(CreateCoordinateBucketKey, StringComparer.Ordinal)
+                     .Select(group => group
+                         .OrderByDescending(node => node.LastHeardAtUtc)
+                         .ThenBy(node => node.DisplayName, StringComparer.OrdinalIgnoreCase)
+                         .ToArray()))
+        {
+            if (group.Length == 1)
+            {
+                points.Add(CreatePoint(group[0], group[0].Latitude, group[0].Longitude));
+                continue;
+            }
+
+            for (var index = 0; index < group.Length; index += 1)
+            {
+                var node = group[index];
+                var (latitude, longitude) = ApplyOverlapOffset(node.Latitude, node.Longitude, index, group.Length);
+                points.Add(CreatePoint(node, latitude, longitude));
+            }
+        }
+
+        return points;
+    }
+
+    public static int CountCoordinateBuckets(IReadOnlyCollection<MapProjectionEnvelope> nodes)
+    {
+        ArgumentNullException.ThrowIfNull(nodes);
+
+        return nodes
+            .Select(CreateCoordinateBucketKey)
+            .Distinct(StringComparer.Ordinal)
+            .Count();
     }
 
     private void RecordActivityPulse(string nodeId)
@@ -228,6 +255,52 @@ public sealed class MapProjectionStore
     {
         return !string.IsNullOrWhiteSpace(source) &&
             source.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static MapNodePoint CreatePoint(MapProjectionEnvelope node, double latitude, double longitude)
+    {
+        return new MapNodePoint
+        {
+            NodeId = node.NodeId,
+            DisplayName = node.DisplayName,
+            Channel = node.Channel,
+            Latitude = latitude,
+            Longitude = longitude,
+            BatteryLevelPercent = node.BatteryLevelPercent
+        };
+    }
+
+    private static (double Latitude, double Longitude) ApplyOverlapOffset(
+        double latitude,
+        double longitude,
+        int groupIndex,
+        int groupSize)
+    {
+        if (groupSize <= 1)
+        {
+            return (latitude, longitude);
+        }
+
+        var ringIndex = groupIndex / OverlapRingSlotCount;
+        var slotIndex = groupIndex % OverlapRingSlotCount;
+        var slotsInRing = Math.Min(OverlapRingSlotCount, groupSize - (ringIndex * OverlapRingSlotCount));
+        var angle = (2 * Math.PI * slotIndex) / Math.Max(1, slotsInRing);
+        var radiusMeters = OverlapRingSpacingMeters * (ringIndex + 1);
+
+        var latitudeOffsetDegrees = (radiusMeters * Math.Sin(angle)) / 111_320d;
+        var longitudeScale = Math.Cos(latitude * Math.PI / 180d);
+        var longitudeOffsetDegrees = Math.Abs(longitudeScale) < 0.00001d
+            ? 0d
+            : (radiusMeters * Math.Cos(angle)) / (111_320d * longitudeScale);
+
+        return (latitude + latitudeOffsetDegrees, longitude + longitudeOffsetDegrees);
+    }
+
+    private static string CreateCoordinateBucketKey(MapProjectionEnvelope node)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{Math.Round(node.Latitude, CoordinateBucketPrecision):F5}|{Math.Round(node.Longitude, CoordinateBucketPrecision):F5}");
     }
 
     private static DateTimeOffset? Max(DateTimeOffset? left, DateTimeOffset? right)
