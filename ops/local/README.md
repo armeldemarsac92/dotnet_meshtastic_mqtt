@@ -56,6 +56,7 @@ cp ops/local/.env.example ops/local/.env.local
 Edit `ops/local/.env.local`:
 
 ```dotenv
+CF_TUNNEL_TRANSPORT_PROTOCOL=http2
 CF_TUNNEL_TOKEN=your-tunnel-token
 MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL=true
 MESHBOARD_BROKER_PATH=/mqtt
@@ -71,6 +72,7 @@ docker compose --env-file ops/local/.env.local -f ops/local/compose.yaml --profi
 Notes:
 
 - Do not commit the tunnel token.
+- If your network blocks outbound UDP to Cloudflare, set `CF_TUNNEL_TRANSPORT_PROTOCOL=http2` to avoid QUIC handshake delays.
 - Keep `MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL=true` so the API emits `wss://<public-host>/mqtt` automatically from the incoming request host.
 - `MESHBOARD_PUBLIC_BROKER_URL` is only needed if you intentionally want to override that derived broker URL.
 - The browser should use the public hostname, for example `https://your-public-hostname.example.com`.
