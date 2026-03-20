@@ -1,5 +1,7 @@
 @page "/nodes"
 @attribute [Authorize]
+@using MeshBoard.Client.Nodes
+@using MeshBoard.Contracts.Nodes
 @implements IDisposable
 @inject FavoritePreferenceApiClient FavoritePreferenceApiClient
 @inject NodeProjectionStore NodeProjectionStore

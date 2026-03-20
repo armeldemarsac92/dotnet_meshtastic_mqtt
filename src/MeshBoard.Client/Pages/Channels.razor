@@ -1,5 +1,6 @@
 @page "/channels"
 @attribute [Authorize]
+@using MeshBoard.Client.Channels
 @implements IDisposable
 @inject ChannelPreferenceApiClient ChannelPreferenceApiClient
 @inject ChannelProjectionStore ChannelProjectionStore
@@ -12,8 +13,9 @@
             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
             <h1 class="font-display text-4xl text-cinder-950">Saved channels</h1>
             <p class="text-sm leading-7 text-cinder-800/82">
-                Saved topic filters still live in the API, but the browser now tracks live observed channels locally
-                from the realtime stream.
+                Saved channel filters are API-backed receive preferences for the active server. The bridge combines them
+                with saved topic presets to decide which upstream topics feed the live stream, while the browser tracks
+                observed channels locally from that stream.
             </p>
         </div>
 
@@ -47,7 +49,7 @@
         <div class="mt-8 flex items-center justify-between gap-4">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Saved filters</p>
-                <h2 class="mt-2 font-display text-3xl text-cinder-950">Persisted topic intents</h2>
+                <h2 class="mt-2 font-display text-3xl text-cinder-950">Persisted receive filters</h2>
             </div>
 
             <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
@@ -68,7 +70,7 @@
         else if (_savedChannels.Count == 0)
         {
             <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
-                No saved channel filters are stored for the active broker yet.
+                No saved channel filters are stored for the active server yet.
             </div>
         }
         else
