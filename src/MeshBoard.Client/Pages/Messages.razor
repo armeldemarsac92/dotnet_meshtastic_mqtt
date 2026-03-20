@@ -1,10 +1,13 @@
 @page "/messages"
 @attribute [Authorize]
 @implements IDisposable
+@using MeshBoard.Client.Components.Details
+@using MeshBoard.Client.Nodes
 @inject BrowserRealtimeClient BrowserRealtimeClient
 @inject BrokerPreferenceApiClient BrokerPreferenceApiClient
 @inject ChannelPreferenceApiClient ChannelPreferenceApiClient
 @inject DecryptedMessageStore DecryptedMessageStore
+@inject NodeProjectionStore NodeProjectionStore
 @inject RealtimeClientState RealtimeClientState
 @inject ReceiveScopeSummaryBuilder ReceiveScopeSummaryBuilder
 @inject TopicPresetPreferenceApiClient TopicPresetPreferenceApiClient
@@ -16,11 +19,10 @@
         <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Traffic</p>
-                <h1 class="mt-2 font-display text-4xl text-cinder-950">Live decoded message stream</h1>
-                <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
-                    This view is powered by local client projections. The browser filters and renders decoded
-                    Meshtastic packets directly from the live stream without server-owned plaintext history. The active
-                    server's saved topic presets and saved channels decide which upstream receive topics feed this view.
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Message stream</h1>
+                <p class="mt-3 max-w-4xl text-sm leading-7 text-cinder-800/82">
+                    The browser filters and renders locally decoded Meshtastic traffic directly from the live stream.
+                    Channel and node drill-downs now use the same popup flow restored on the other client pages.
                 </p>
             </div>
 
@@ -131,23 +133,12 @@
                         }
                         else
                         {
-                            <div class="mt-4 space-y-3">
+                            <div class="mt-4 flex flex-wrap gap-2">
                                 @foreach (var topic in _receiveScope.Topics)
                                 {
-                                    <div class="rounded-2xl border border-sand-200 bg-slate-50/60 px-4 py-3">
-                                        <div class="flex flex-wrap items-center gap-2">
-                                            <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
-                                                @topic.SourceLabel
-                                            </span>
-                                            @if (topic.IsFallback)
-                                            {
-                                                <span class="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-amber-700">
-                                                    Fallback
-                                                </span>
-                                            }
-                                        </div>
-                                        <code class="mt-3 block break-all text-xs leading-6 text-cinder-950">@topic.TopicPattern</code>
-                                    </div>
+                                    <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
+                                        @topic.SourceLabel: @topic.TopicPattern
+                                    </span>
                                 }
                             </div>
                         }
@@ -157,32 +148,30 @@
         </article>
     </header>
 
-    <section class="shell-panel rounded-[2rem] p-6">
-        <div class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
-            <label class="space-y-2">
-                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
-                <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
-                       @bind="_searchText"
-                       @bind:event="oninput"
-                       placeholder="Topic, preview, broker, port" />
-            </label>
+    <section class="shell-panel grid gap-4 rounded-[2rem] p-6 lg:grid-cols-[1.15fr_0.75fr_0.75fr]">
+        <label class="space-y-2">
+            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
+            <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                   @bind="_searchText"
+                   @bind:event="oninput"
+                   placeholder="Node id, name, packet type, preview text" />
+        </label>
 
-            <label class="space-y-2">
-                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker</span>
-                <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
-                       @bind="_brokerFilter"
-                       @bind:event="oninput"
-                       placeholder="Filter by broker" />
-            </label>
+        <label class="space-y-2">
+            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker</span>
+            <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                   @bind="_brokerFilter"
+                   @bind:event="oninput"
+                   placeholder="Filter by broker" />
+        </label>
 
-            <label class="space-y-2">
-                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packet type</span>
-                <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
-                       @bind="_packetTypeFilter"
-                       @bind:event="oninput"
-                       placeholder="Text, Telemetry, Node Info" />
-            </label>
-        </div>
+        <label class="space-y-2">
+            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packet type</span>
+            <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                   @bind="_packetTypeFilter"
+                   @bind:event="oninput"
+                   placeholder="Text, Telemetry, Node Info" />
+        </label>
     </section>
 
     <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
@@ -199,18 +188,20 @@
             <div class="overflow-x-auto">
                 <table class="min-w-full table-fixed border-collapse">
                     <colgroup>
+                        <col class="w-[16%]" />
                         <col class="w-[14%]" />
-                        <col class="w-[16%]" />
-                        <col class="w-[16%]" />
-                        <col class="w-[22%]" />
+                        <col class="w-[14%]" />
+                        <col class="w-[14%]" />
+                        <col class="w-[10%]" />
                         <col class="w-[32%]" />
                     </colgroup>
                     <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
                         <tr>
                             <th class="px-5 py-4">Received</th>
-                            <th class="px-5 py-4">Broker</th>
-                            <th class="px-5 py-4">Packet</th>
-                            <th class="px-5 py-4">Source topic</th>
+                            <th class="px-5 py-4">Type</th>
+                            <th class="px-5 py-4">Channel</th>
+                            <th class="px-5 py-4">From</th>
+                            <th class="px-5 py-4">To</th>
                             <th class="px-5 py-4">Preview</th>
                         </tr>
                     </thead>
@@ -218,26 +209,68 @@
                         @foreach (var message in FilteredMessages)
                         {
                             <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
-                                <td class="px-5 py-4 align-top whitespace-nowrap">@message.ReceivedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                                <td class="px-5 py-4 align-top break-words">@message.BrokerServer</td>
+                                <td class="px-5 py-4 align-top whitespace-nowrap">@FormatTimestamp(message.ReceivedAtUtc)</td>
                                 <td class="px-5 py-4 align-top">
-                                    <div class="font-medium text-cinder-950">@message.PacketType</div>
-                                    <div class="mt-2 text-xs text-cinder-800/62">@message.PortNumName (@message.PortNumValue)</div>
+                                    <span class="@GetPacketTypeBadgeClass(message.PacketType)">@FormatPacketType(message.PacketType)</span>
+                                    <div class="mt-2 text-xs text-cinder-800/62">@FormatPacketMetadata(message)</div>
                                     <div class="mt-2 text-xs text-cinder-800/68">@DescribeProjectionState(message)</div>
                                 </td>
-                                <td class="px-5 py-4 align-top break-words font-medium">
-                                    <div>@message.SourceTopic</div>
-                                    @if (!string.IsNullOrWhiteSpace(message.DownstreamTopic))
+                                <td class="px-5 py-4 align-top">
+                                    @if (TryGetChannelLabel(message.SourceTopic, out var channelLabel, out var channelKey))
                                     {
-                                        <div class="mt-2 text-xs font-normal text-cinder-800/62">@message.DownstreamTopic</div>
+                                        <button type="button"
+                                                class="shell-button rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
+                                                @onclick="() => OpenChannelDetails(channelKey)">
+                                            @channelLabel
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900">
+                                            Unknown
+                                        </span>
                                     }
                                 </td>
                                 <td class="px-5 py-4 align-top">
-                                    <div class="mb-2 text-sm font-medium text-cinder-950">@message.PayloadPreview</div>
-                                    <div class="mb-2 text-xs text-cinder-800/68">Payload size: @message.PayloadSizeBytes bytes</div>
-                                    <code class="block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">
-                                        @TruncatePayload(message.PayloadBase64)
-                                    </code>
+                                    @if (TryGetSenderNodeId(message, out var senderNodeId))
+                                    {
+                                        <button type="button"
+                                                class="text-left"
+                                                @onclick="() => OpenNodeDetails(senderNodeId)">
+                                            <div class="font-medium text-cinder-950">@GetNodeDisplayName(senderNodeId)</div>
+                                            <div class="mt-2 text-xs text-cinder-800/62">@senderNodeId</div>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-cinder-800/72">Unknown</span>
+                                    }
+                                </td>
+                                <td class="px-5 py-4 align-top text-cinder-800/80">
+                                    @if (TryGetDestinationNodeId(message, out var destinationNodeId))
+                                    {
+                                        <button type="button"
+                                                class="text-left"
+                                                @onclick="() => OpenNodeDetails(destinationNodeId)">
+                                            <div class="font-medium text-cinder-950">@GetNodeDisplayName(destinationNodeId)</div>
+                                            <div class="mt-2 text-xs text-cinder-800/62">@destinationNodeId</div>
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span>Broadcast</span>
+                                    }
+                                </td>
+                                <td class="px-5 py-4 align-top">
+                                    <div class="space-y-2">
+                                        <p class="break-words leading-6">@GetTruncatedPreview(message.PayloadPreview)</p>
+                                        <div class="text-xs text-cinder-800/68">Broker: @DisplayValue(message.BrokerServer)</div>
+                                        <button type="button"
+                                                class="shell-button shell-button-accent rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
+                                                @onclick="() => OpenMessagePreview(message)">
+                                            See message
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -248,23 +281,110 @@
     </section>
 </div>
 
+@if (_previewMessage is not null)
+{
+    <div class="fixed inset-0 z-40 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
+         @onclick="CloseMessagePreview">
+        <article class="shell-panel max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-[1.6rem]"
+                 @onclick:stopPropagation="true">
+            <header class="flex items-center justify-between gap-4 border-b border-sand-100/80 px-5 py-4">
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Message details</p>
+                    <p class="text-sm text-cinder-900">@FormatTimestamp(_previewMessage.ReceivedAtUtc)</p>
+                </div>
+
+                <button type="button"
+                        class="shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="CloseMessagePreview">
+                    Close
+                </button>
+            </header>
+
+            <div class="max-h-[70vh] space-y-4 overflow-y-auto px-5 py-4 text-sm text-cinder-900">
+                <div class="flex flex-wrap gap-2">
+                    <span class="@GetPacketTypeBadgeClass(_previewMessage.PacketType)">@FormatPacketType(_previewMessage.PacketType)</span>
+                    @if (TryGetChannelLabel(_previewMessage.SourceTopic, out var channelLabel, out var channelKey))
+                    {
+                        <button type="button"
+                                class="shell-button rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
+                                @onclick="() => OpenChannelDetailsFromPreview(channelKey)">
+                            @channelLabel
+                        </button>
+                    }
+                    @if (TryGetSenderNodeId(_previewMessage, out var previewSenderNodeId))
+                    {
+                        <button type="button"
+                                class="shell-button rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
+                                @onclick="() => OpenNodeDetailsFromPreview(previewSenderNodeId)">
+                            @GetNodeDisplayName(previewSenderNodeId)
+                        </button>
+                    }
+                </div>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <div class="shell-subpanel rounded-2xl p-4">
+                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Broker</p>
+                        <p class="mt-2 break-words text-sm text-cinder-950">@DisplayValue(_previewMessage.BrokerServer)</p>
+                    </div>
+
+                    <div class="shell-subpanel rounded-2xl p-4">
+                        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Projection state</p>
+                        <p class="mt-2 text-sm text-cinder-950">@DescribeProjectionState(_previewMessage)</p>
+                    </div>
+                </div>
+
+                <section class="shell-subpanel rounded-2xl p-4">
+                    <h2 class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Source topic</h2>
+                    <code class="mt-3 block break-all text-xs leading-6 text-cinder-950">@_previewMessage.SourceTopic</code>
+                    @if (!string.IsNullOrWhiteSpace(_previewMessage.DownstreamTopic))
+                    {
+                        <p class="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Downstream topic</p>
+                        <code class="mt-3 block break-all text-xs leading-6 text-cinder-950">@_previewMessage.DownstreamTopic</code>
+                    }
+                </section>
+
+                <section class="shell-subpanel rounded-2xl p-4">
+                    <h2 class="text-xs font-semibold uppercase tracking-[0.14em] text-cinder-800/68">Full preview</h2>
+                    <p class="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-cinder-950">@FormatPayloadPreview(_previewMessage.PayloadPreview)</p>
+                </section>
+            </div>
+        </article>
+    </div>
+}
+
+<NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
+                  NodeId="@(_selectedNodeId ?? string.Empty)"
+                  OnClose="CloseNodeDetails"
+                  OnOpenChannel="OpenChannelDetailsAsync" />
+
+<ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedChannelKey))"
+                     ChannelKey="@(_selectedChannelKey ?? string.Empty)"
+                     OnClose="CloseChannelDetails"
+                     OnOpenNode="OpenNodeDetailsAsync" />
+
 @code {
     private string? _commandError;
     private string _brokerFilter = string.Empty;
     private RealtimeClientSnapshot _connectionSnapshot = new();
     private DecryptedMessageSnapshot _messageSnapshot = new();
+    private NodeProjectionSnapshot _nodeSnapshot = new();
     private string _packetTypeFilter = string.Empty;
+    private DecryptedMessageEnvelope? _previewMessage;
     private ReceiveScopeSummary _receiveScope = ReceiveScopeSummary.Empty;
     private string _searchText = string.Empty;
     private bool _isScopeLoading;
     private string? _scopeError;
+    private string? _selectedChannelKey;
+    private string? _selectedNodeId;
 
     protected override void OnInitialized()
     {
         _connectionSnapshot = RealtimeClientState.Snapshot;
         _messageSnapshot = DecryptedMessageStore.Current;
+        _nodeSnapshot = NodeProjectionStore.Current;
         RealtimeClientState.Changed += HandleConnectionChanged;
         DecryptedMessageStore.Changed += HandleFeedChanged;
+        NodeProjectionStore.Changed += HandleNodeProjectionChanged;
     }
 
     protected override async Task OnInitializedAsync()
@@ -276,6 +396,7 @@
     {
         RealtimeClientState.Changed -= HandleConnectionChanged;
         DecryptedMessageStore.Changed -= HandleFeedChanged;
+        NodeProjectionStore.Changed -= HandleNodeProjectionChanged;
     }
 
     private string ConnectLabel => _connectionSnapshot.IsConnecting
@@ -290,6 +411,7 @@
 
     private void ClearFeed()
     {
+        _previewMessage = null;
         DecryptedMessageStore.Clear();
     }
 
@@ -374,6 +496,12 @@
         InvokeAsync(StateHasChanged);
     }
 
+    private void HandleNodeProjectionChanged()
+    {
+        _nodeSnapshot = NodeProjectionStore.Current;
+        InvokeAsync(StateHasChanged);
+    }
+
     private IReadOnlyList<DecryptedMessageEnvelope> FilteredMessages =>
         _messageSnapshot.Messages
             .Where(MatchesBrokerFilter)
@@ -406,7 +534,11 @@
         return message.SourceTopic.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
             message.PayloadPreview.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
             message.BrokerServer.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            message.PortNumName.Contains(filter, StringComparison.OrdinalIgnoreCase);
+            message.PortNumName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            message.PacketType.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            GetNodeDisplayName(message).Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            TryGetChannelLabel(message.SourceTopic, out var channelLabel, out _) &&
+            channelLabel.Contains(filter, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string TruncatePayload(string payloadBase64)
@@ -421,5 +553,168 @@
         return message.IsEncrypted
             ? "Projected from locally decrypted traffic"
             : "Projected from decoded transport packet";
+    }
+
+    private static string FormatPacketType(string? packetType)
+    {
+        return string.IsNullOrWhiteSpace(packetType) ? "Decoded packet" : packetType.Trim();
+    }
+
+    private static string FormatPayloadPreview(string? payloadPreview)
+    {
+        return string.IsNullOrWhiteSpace(payloadPreview)
+            ? "No payload preview captured for this packet."
+            : payloadPreview.Trim();
+    }
+
+    private static string GetTruncatedPreview(string? payloadPreview)
+    {
+        var preview = FormatPayloadPreview(payloadPreview);
+        return preview.Length <= 140 ? preview : $"{preview[..140]}...";
+    }
+
+    private static string FormatPacketMetadata(DecryptedMessageEnvelope message)
+    {
+        return string.IsNullOrWhiteSpace(message.PortNumName)
+            ? $"Port {message.PortNumValue}"
+            : $"{message.PortNumName} ({message.PortNumValue})";
+    }
+
+    private string GetNodeDisplayName(DecryptedMessageEnvelope message)
+    {
+        return TryGetSenderNodeId(message, out var senderNodeId)
+            ? GetNodeDisplayName(senderNodeId)
+            : "Unknown";
+    }
+
+    private string GetNodeDisplayName(string nodeId)
+    {
+        var node = _nodeSnapshot.Nodes
+            .FirstOrDefault(candidate => string.Equals(candidate.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+
+        return node?.DisplayName ?? nodeId;
+    }
+
+    private static string GetPacketTypeBadgeClass(string? packetType)
+    {
+        var normalizedPacketType = packetType?.Trim() ?? string.Empty;
+
+        return normalizedPacketType switch
+        {
+            "Text Message" or "Compressed Text Message" =>
+                "inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-emerald-700",
+            "Telemetry" =>
+                "inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-amber-700",
+            "Node Info" or "Position Update" =>
+                "inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-cinder-900",
+            _ =>
+                "inline-flex rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-rose-700"
+        };
+    }
+
+    private static bool TryGetChannelLabel(string sourceTopic, out string channelLabel, out string channelKey)
+    {
+        channelLabel = string.Empty;
+        channelKey = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(sourceTopic))
+        {
+            return false;
+        }
+
+        var segments = sourceTopic
+            .Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+        if (segments.Length < 5 || !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var transportSegment = segments[3];
+        if (!string.Equals(transportSegment, "e", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(transportSegment, "json", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var region = segments[1];
+        var channelName = segments[4];
+
+        if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(channelName))
+        {
+            return false;
+        }
+
+        channelKey = $"{region}/{channelName}";
+        channelLabel = channelKey;
+        return true;
+    }
+
+    private static bool TryGetSenderNodeId(DecryptedMessageEnvelope message, out string nodeId)
+    {
+        nodeId = ProjectionDetailsSupport.FormatNodeId(message.SourceNodeNumber ?? message.FromNodeNumber) ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(nodeId);
+    }
+
+    private static bool TryGetDestinationNodeId(DecryptedMessageEnvelope message, out string nodeId)
+    {
+        nodeId = ProjectionDetailsSupport.FormatNodeId(message.DestinationNodeNumber) ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(nodeId);
+    }
+
+    private void OpenMessagePreview(DecryptedMessageEnvelope message)
+    {
+        _previewMessage = message;
+    }
+
+    private void CloseMessagePreview()
+    {
+        _previewMessage = null;
+    }
+
+    private void OpenNodeDetails(string nodeId)
+    {
+        CloseMessagePreview();
+        _selectedChannelKey = null;
+        _selectedNodeId = nodeId;
+    }
+
+    private Task OpenNodeDetailsAsync(string nodeId)
+    {
+        OpenNodeDetails(nodeId);
+        return Task.CompletedTask;
+    }
+
+    private void OpenNodeDetailsFromPreview(string nodeId)
+    {
+        OpenNodeDetails(nodeId);
+    }
+
+    private void CloseNodeDetails()
+    {
+        _selectedNodeId = null;
+    }
+
+    private void OpenChannelDetails(string channelKey)
+    {
+        CloseMessagePreview();
+        _selectedNodeId = null;
+        _selectedChannelKey = channelKey;
+    }
+
+    private Task OpenChannelDetailsAsync(string channelKey)
+    {
+        OpenChannelDetails(channelKey);
+        return Task.CompletedTask;
+    }
+
+    private void OpenChannelDetailsFromPreview(string channelKey)
+    {
+        OpenChannelDetails(channelKey);
+    }
+
+    private void CloseChannelDetails()
+    {
+        _selectedChannelKey = null;
     }
 }
