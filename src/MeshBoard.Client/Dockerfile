@@ -30,19 +30,31 @@ RUN dotnet publish src/MeshBoard.Client/MeshBoard.Client.csproj -c Release -o /a
 RUN set -eu; \
     framework_dir=/app/publish/wwwroot/_framework; \
     cd "$framework_dir"; \
-    for file in blazor.webassembly.*.js; do cp "$file" blazor.webassembly.js; break; done; \
-    for file in dotnet.*.js; do \
+    blazor_hashed_file=""; \
+    for file in blazor.webassembly.*.js; do \
         case "$file" in \
-            dotnet.native.*|dotnet.runtime.*) ;; \
-            *) cp "$file" dotnet.js; break ;; \
+            blazor.webassembly.js|blazor.webassembly.bootstrap.*) ;; \
+            *) blazor_hashed_file="$file"; cp "$file" blazor.webassembly.js; break ;; \
         esac; \
     done; \
+    dotnet_hashed_file=""; \
+    for file in dotnet.*.js; do \
+        case "$file" in \
+            dotnet.js|dotnet.bootstrap.*|dotnet.native.*|dotnet.runtime.*) ;; \
+            *) dotnet_hashed_file="$file"; cp "$file" dotnet.js; break ;; \
+        esac; \
+    done; \
+    blazor_bootstrap_file="$(printf '%s\n' "$blazor_hashed_file" | sed 's/^blazor[.]webassembly[.]/blazor.webassembly.bootstrap./')"; \
+    dotnet_bootstrap_file="$(printf '%s\n' "$dotnet_hashed_file" | sed 's/^dotnet[.]/dotnet.bootstrap./')"; \
+    cp "$dotnet_hashed_file" "$dotnet_bootstrap_file"; \
+    sed "s|\\./dotnet\\.js|./$dotnet_bootstrap_file|g" "$blazor_hashed_file" > "$blazor_bootstrap_file"; \
     for file in dotnet.runtime.*.js; do cp "$file" dotnet.runtime.js; break; done; \
     for file in dotnet.native.*.js; do cp "$file" dotnet.native.js; break; done; \
     for file in dotnet.native.*.wasm; do cp "$file" dotnet.native.wasm; break; done; \
     index_file=/app/publish/wwwroot/index.html; \
     awk 'BEGIN{skip=0} /<script type="importmap">/{skip=1; next} skip && /<\/script>/{skip=0; next} !skip {print}' "$index_file" > "$index_file.tmp"; \
-    mv "$index_file.tmp" "$index_file"
+    mv "$index_file.tmp" "$index_file"; \
+    sed -i "s|_framework/blazor\\.webassembly[^\"#]*\\.js|_framework/$blazor_bootstrap_file|g" "$index_file"
 
 FROM caddy:2.10.2-alpine AS final
 WORKDIR /srv
