@@ -1,0 +1,390 @@
+@using System.Globalization
+@using MeshBoard.Client.Messages
+@using MeshBoard.Client.Nodes
+@using MeshBoard.Contracts.Nodes
+@implements IDisposable
+@inject DecryptedMessageStore DecryptedMessageStore
+@inject NodeProjectionStore NodeProjectionStore
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-40 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
+         @onclick="CloseAsync">
+        <article class="shell-panel flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.8rem]"
+                 @onclick:stopPropagation="true">
+            <header class="flex items-center justify-between gap-4 border-b border-sand-100/80 px-5 py-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Node details</p>
+                </div>
+
+                <button type="button"
+                        class="shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="CloseAsync">
+                    Close
+                </button>
+            </header>
+
+            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                @if (_node is null)
+                {
+                    <div class="space-y-2">
+                        <h2 class="font-display text-3xl text-cinder-950">Node not found</h2>
+                        <p class="text-sm leading-7 text-cinder-800/80">
+                            No locally projected node currently matches
+                            <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@NodeId</code>.
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <div class="flex h-full min-h-0 flex-col gap-6">
+                        <header class="space-y-3">
+                            <div>
+                                <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@_node.DisplayName</h2>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_node.NodeId</code>
+                                @if (!string.IsNullOrWhiteSpace(_node.LastHeardChannel))
+                                {
+                                    <button type="button"
+                                            class="shell-button shell-button-accent rounded-full px-3 py-1 text-xs font-semibold"
+                                            @onclick="() => OpenChannelAsync(_node.LastHeardChannel!)">
+                                        @_node.LastHeardChannel
+                                    </button>
+                                }
+                                <span class="rounded-full bg-white/75 px-3 py-1 text-xs text-cinder-800/78">@_node.ObservedPacketCount observed packets</span>
+                            </div>
+                        </header>
+
+                        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Observed packets</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_node.ObservedPacketCount</strong>
+                            </article>
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Buffered messages</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_relatedMessages.Count</strong>
+                            </article>
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last heard</p>
+                                <strong class="mt-2 block text-sm text-cinder-950">@FormatTimestamp(_node.LastHeardAtUtc)</strong>
+                            </article>
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Position</p>
+                                <strong class="mt-2 block text-sm text-cinder-950">@FormatPosition(_node)</strong>
+                            </article>
+                        </section>
+
+                        <section class="grid gap-4 xl:grid-cols-2">
+                            <article class="shell-panel rounded-[1.6rem] px-6 pt-7 pb-6">
+                                <h3 class="font-display text-3xl text-cinder-950">Device telemetry</h3>
+                                <dl class="mt-5 grid gap-3 text-sm text-cinder-900">
+                                    @foreach (var item in GetDeviceTelemetryItems(_node))
+                                    {
+                                        <div class="flex items-center justify-between gap-4 rounded-2xl border border-sand-100/80 bg-white/55 px-4 py-3">
+                                            <dt class="text-cinder-800/68">@item.Label</dt>
+                                            <dd class="text-right">@item.Value</dd>
+                                        </div>
+                                    }
+                                </dl>
+                            </article>
+
+                            <article class="shell-panel rounded-[1.6rem] px-6 pt-7 pb-6">
+                                <h3 class="font-display text-3xl text-cinder-950">Environment telemetry</h3>
+                                <dl class="mt-5 grid gap-3 text-sm text-cinder-900">
+                                    @foreach (var item in GetEnvironmentTelemetryItems(_node))
+                                    {
+                                        <div class="flex items-center justify-between gap-4 rounded-2xl border border-sand-100/80 bg-white/55 px-4 py-3">
+                                            <dt class="text-cinder-800/68">@item.Label</dt>
+                                            <dd class="text-right">@item.Value</dd>
+                                        </div>
+                                    }
+                                </dl>
+                            </article>
+                        </section>
+
+                        <section class="grid min-h-0 flex-1 gap-4 xl:grid-cols-2">
+                            <article class="shell-panel flex min-h-[20rem] flex-col overflow-hidden rounded-[1.6rem]">
+                                <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
+                                    <h3 class="font-display text-3xl text-cinder-950">Recent decoded messages</h3>
+                                </div>
+
+                                @if (_relatedMessages.Count == 0)
+                                {
+                                    <div class="flex flex-1 items-center p-6 text-sm leading-7 text-cinder-800/78">
+                                        No decoded messages from this node are currently retained in the local browser buffer.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="min-h-0 flex-1 overflow-y-auto p-5">
+                                        <ul class="space-y-3 text-sm text-cinder-900">
+                                            @foreach (var message in _relatedMessages)
+                                            {
+                                                <li class="shell-subpanel rounded-2xl p-4">
+                                                    <div class="flex flex-wrap items-center gap-2">
+                                                        <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@FormatPacketType(message.PacketType)</span>
+                                                        <span class="text-xs text-cinder-800/70">@FormatTimestamp(message.ReceivedAtUtc)</span>
+                                                    </div>
+                                                    <p class="mt-3 leading-7 text-cinder-900">@FormatPayloadPreview(message.PayloadPreview)</p>
+                                                    <p class="mt-2 text-xs text-cinder-800/68">From @FormatNodeId(message.SourceNodeNumber ?? message.FromNodeNumber) to @(FormatNodeId(message.DestinationNodeNumber) ?? "Broadcast")</p>
+                                                </li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+                            </article>
+
+                            <article class="shell-panel flex min-h-[20rem] flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
+                                <h3 class="font-display text-3xl text-cinder-950">Map</h3>
+
+                                @if (TryBuildMapEmbedUrl(_node, out var mapEmbedUrl))
+                                {
+                                    <div class="mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-sand-200/80">
+                                        <iframe title="Node position map"
+                                                class="block h-full min-h-[16rem] w-full"
+                                                src="@mapEmbedUrl"></iframe>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p class="mt-4 text-sm leading-7 text-cinder-800/78">No coordinates are available for this node yet.</p>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(_node.LastPayloadPreview))
+                                {
+                                    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-7 text-cinder-900">
+                                        @_node.LastPayloadPreview
+                                    </div>
+                                }
+                            </article>
+                        </section>
+                    </div>
+                }
+            </div>
+        </article>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public string NodeId { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnOpenChannel { get; set; }
+
+    private NodeProjectionEnvelope? _node;
+    private IReadOnlyList<DecryptedMessageEnvelope> _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
+
+    protected override void OnInitialized()
+    {
+        NodeProjectionStore.Changed += HandleStoreChanged;
+        DecryptedMessageStore.Changed += HandleStoreChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        RefreshProjectionData();
+    }
+
+    public void Dispose()
+    {
+        NodeProjectionStore.Changed -= HandleStoreChanged;
+        DecryptedMessageStore.Changed -= HandleStoreChanged;
+    }
+
+    private void HandleStoreChanged()
+    {
+        if (!IsOpen)
+        {
+            return;
+        }
+
+        RefreshProjectionData();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshProjectionData()
+    {
+        if (!IsOpen || string.IsNullOrWhiteSpace(NodeId))
+        {
+            _node = null;
+            _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
+            return;
+        }
+
+        _node = NodeProjectionStore.Current.Nodes
+            .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
+
+        if (_node is null || !ProjectionDetailsSupport.TryParseNodeNumber(_node.NodeId, out var nodeNumber))
+        {
+            _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
+            return;
+        }
+
+        _relatedMessages = DecryptedMessageStore.Current.Messages
+            .Where(message => message.SourceNodeNumber == nodeNumber || message.FromNodeNumber == nodeNumber)
+            .OrderByDescending(message => message.ReceivedAtUtc)
+            .Take(40)
+            .ToArray();
+    }
+
+    private async Task CloseAsync()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task OpenChannelAsync(string channelKey)
+    {
+        if (!OnOpenChannel.HasDelegate)
+        {
+            return;
+        }
+
+        await OnClose.InvokeAsync();
+        await OnOpenChannel.InvokeAsync(channelKey);
+    }
+
+    private static IReadOnlyList<DetailItem> GetDeviceTelemetryItems(NodeProjectionEnvelope node)
+    {
+        var items = new List<DetailItem>();
+
+        if (node.BatteryLevelPercent.HasValue)
+        {
+            items.Add(new DetailItem("Battery", $"{node.BatteryLevelPercent.Value}%"));
+        }
+
+        if (node.Voltage.HasValue)
+        {
+            items.Add(new DetailItem("Voltage", FormattableString.Invariant($"{node.Voltage.Value:F2}V")));
+        }
+
+        if (node.ChannelUtilization.HasValue)
+        {
+            items.Add(new DetailItem("Channel utilization", FormattableString.Invariant($"{node.ChannelUtilization.Value:F1}%")));
+        }
+
+        if (node.AirUtilTx.HasValue)
+        {
+            items.Add(new DetailItem("Air utilization TX", FormattableString.Invariant($"{node.AirUtilTx.Value:F1}%")));
+        }
+
+        if (node.UptimeSeconds.HasValue)
+        {
+            items.Add(new DetailItem("Uptime", FormatDuration(node.UptimeSeconds.Value)));
+        }
+
+        if (items.Count == 0)
+        {
+            items.Add(new DetailItem("Status", "No device telemetry yet"));
+        }
+
+        return items;
+    }
+
+    private static IReadOnlyList<DetailItem> GetEnvironmentTelemetryItems(NodeProjectionEnvelope node)
+    {
+        var items = new List<DetailItem>();
+
+        if (node.TemperatureCelsius.HasValue)
+        {
+            items.Add(new DetailItem("Temperature", FormattableString.Invariant($"{node.TemperatureCelsius.Value:F1}C")));
+        }
+
+        if (node.RelativeHumidity.HasValue)
+        {
+            items.Add(new DetailItem("Humidity", FormattableString.Invariant($"{node.RelativeHumidity.Value:F1}% RH")));
+        }
+
+        if (node.BarometricPressure.HasValue)
+        {
+            items.Add(new DetailItem("Pressure", FormattableString.Invariant($"{node.BarometricPressure.Value:F1} hPa")));
+        }
+
+        if (items.Count == 0)
+        {
+            items.Add(new DetailItem("Status", "No environment telemetry yet"));
+        }
+
+        return items;
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Unknown";
+    }
+
+    private static string FormatPacketType(string? packetType)
+    {
+        return string.IsNullOrWhiteSpace(packetType) ? "Decoded packet" : packetType.Trim();
+    }
+
+    private static string FormatPayloadPreview(string? payloadPreview)
+    {
+        return string.IsNullOrWhiteSpace(payloadPreview)
+            ? "No payload preview captured for this packet."
+            : payloadPreview.Trim();
+    }
+
+    private static string FormatPosition(NodeProjectionEnvelope node)
+    {
+        return node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue
+            ? FormattableString.Invariant($"{node.LastKnownLatitude.Value:F5}, {node.LastKnownLongitude.Value:F5}")
+            : "No position yet";
+    }
+
+    private static string FormatNodeId(uint? nodeNumber)
+    {
+        return ProjectionDetailsSupport.FormatNodeId(nodeNumber) ?? "Unknown";
+    }
+
+    private static string FormatDuration(long uptimeSeconds)
+    {
+        var uptime = TimeSpan.FromSeconds(uptimeSeconds);
+
+        if (uptime.TotalDays >= 1)
+        {
+            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        }
+
+        if (uptime.TotalHours >= 1)
+        {
+            return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+        }
+
+        return $"{uptime.Minutes}m";
+    }
+
+    private static bool TryBuildMapEmbedUrl(NodeProjectionEnvelope node, out string mapEmbedUrl)
+    {
+        if (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue)
+        {
+            mapEmbedUrl = string.Empty;
+            return false;
+        }
+
+        var latitude = node.LastKnownLatitude.Value;
+        var longitude = node.LastKnownLongitude.Value;
+        const double delta = 0.02;
+
+        var left = longitude - delta;
+        var right = longitude + delta;
+        var top = latitude + delta;
+        var bottom = latitude - delta;
+
+        mapEmbedUrl =
+            $"https://www.openstreetmap.org/export/embed.html?bbox={left.ToString(CultureInfo.InvariantCulture)}%2C{bottom.ToString(CultureInfo.InvariantCulture)}%2C{right.ToString(CultureInfo.InvariantCulture)}%2C{top.ToString(CultureInfo.InvariantCulture)}&layer=mapnik&marker={latitude.ToString(CultureInfo.InvariantCulture)}%2C{longitude.ToString(CultureInfo.InvariantCulture)}";
+        return true;
+    }
+
+    private sealed record DetailItem(string Label, string Value);
+}

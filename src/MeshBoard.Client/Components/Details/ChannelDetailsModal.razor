@@ -1,0 +1,334 @@
+@using MeshBoard.Client.Channels
+@using MeshBoard.Client.Messages
+@using MeshBoard.Client.Nodes
+@implements IDisposable
+@inject ChannelProjectionStore ChannelProjectionStore
+@inject DecryptedMessageStore DecryptedMessageStore
+@inject NodeProjectionStore NodeProjectionStore
+
+@if (IsOpen)
+{
+    <div class="fixed inset-0 z-40 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
+         @onclick="CloseAsync">
+        <article class="shell-panel flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.8rem]"
+                 @onclick:stopPropagation="true">
+            <header class="flex items-center justify-between gap-4 border-b border-sand-100/80 px-5 py-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Channel details</p>
+                </div>
+
+                <button type="button"
+                        class="shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="CloseAsync">
+                    Close
+                </button>
+            </header>
+
+            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                @if (!HasChannelIdentity)
+                {
+                    <div class="space-y-2">
+                        <h2 class="font-display text-3xl text-cinder-950">Channel not found</h2>
+                        <p class="text-sm leading-7 text-cinder-800/80">
+                            No valid channel identity was supplied for this detail view.
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <div class="flex h-full min-h-0 flex-col gap-6">
+                        <header class="space-y-3">
+                            <div>
+                                <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@_channelName</h2>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
+                                <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_region</span>
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@TopicFilter</code>
+                                @if (_channel is not null)
+                                {
+                                    <span class="rounded-full bg-white/75 px-3 py-1 text-xs text-cinder-800/78">@_channel.ObservedPacketCount observed packets</span>
+                                }
+                            </div>
+                        </header>
+
+                        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Packets</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@(_channel?.ObservedPacketCount ?? 0)</strong>
+                            </article>
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Unique senders</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@_topNodes.Count</strong>
+                            </article>
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Decoded ratio</p>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@ComputeDecodedRatio()%</strong>
+                            </article>
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last seen</p>
+                                <strong class="mt-2 block text-sm text-cinder-950">@FormatTimestamp(_channel?.LastObservedAtUtc)</strong>
+                            </article>
+                        </section>
+
+                        @if (_channel is not null)
+                        {
+                            <section class="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+                                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Latest topic</p>
+                                    <code class="mt-3 block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">
+                                        @_channel.LatestSourceTopic
+                                    </code>
+                                </article>
+
+                                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Latest payload preview</p>
+                                    <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-7 text-cinder-900">
+                                        @(string.IsNullOrWhiteSpace(_channel.LastPayloadPreview) ? "No payload preview captured for the latest packet." : _channel.LastPayloadPreview)
+                                    </div>
+                                </article>
+                            </section>
+                        }
+
+                        <section class="grid min-h-0 flex-1 gap-4 xl:grid-cols-2">
+                            <article class="shell-panel flex min-h-[20rem] flex-col overflow-hidden rounded-[1.6rem]">
+                                <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
+                                    <h3 class="font-display text-3xl text-cinder-950">Top nodes</h3>
+                                </div>
+
+                                @if (_topNodes.Count == 0)
+                                {
+                                    <div class="flex flex-1 items-center p-6 text-sm leading-7 text-cinder-800/78">
+                                        No locally decoded traffic has been retained for this channel yet.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="min-h-0 flex-1 overflow-y-auto">
+                                        <table class="min-w-full border-collapse">
+                                            <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                                                <tr>
+                                                    <th class="px-5 py-4">Node</th>
+                                                    <th class="px-5 py-4">Packets</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var topNode in _topNodes)
+                                                {
+                                                    <tr class="border-t border-sand-100/80 text-sm text-cinder-900">
+                                                        <td class="px-5 py-4">
+                                                            <button type="button"
+                                                                    class="shell-button rounded-full px-3 py-1 text-xs font-semibold"
+                                                                    @onclick="() => OpenNodeAsync(topNode.NodeId)">
+                                                                @topNode.DisplayName
+                                                            </button>
+                                                        </td>
+                                                        <td class="px-5 py-4">@topNode.PacketCount</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            </article>
+
+                            <article class="shell-panel flex min-h-[20rem] flex-col overflow-hidden rounded-[1.6rem]">
+                                <div class="border-b border-sand-100/80 px-5 pt-5 pb-4">
+                                    <h3 class="font-display text-3xl text-cinder-950">Recent decoded messages</h3>
+                                </div>
+
+                                @if (_channelMessages.Count == 0)
+                                {
+                                    <div class="flex flex-1 items-center p-6 text-sm leading-7 text-cinder-800/78">
+                                        No decoded messages for this channel are currently retained in the local browser buffer.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="min-h-0 flex-1 overflow-y-auto p-5">
+                                        <ul class="space-y-3 text-sm text-cinder-900">
+                                            @foreach (var message in _channelMessages)
+                                            {
+                                                <li class="shell-subpanel rounded-2xl p-4">
+                                                    <div class="flex flex-wrap items-center gap-2">
+                                                        <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@FormatPacketType(message.PacketType)</span>
+                                                        <span class="text-xs text-cinder-800/70">@FormatTimestamp(message.ReceivedAtUtc)</span>
+                                                    </div>
+                                                    <p class="mt-3 leading-7 text-cinder-900">@FormatPayloadPreview(message.PayloadPreview)</p>
+                                                    <p class="mt-2 text-xs text-cinder-800/68">From @ResolveNodeDisplayName(message) to @(FormatNodeId(message.DestinationNodeNumber) ?? "Broadcast")</p>
+                                                </li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+                            </article>
+                        </section>
+                    </div>
+                }
+            </div>
+        </article>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public string ChannelKey { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnOpenNode { get; set; }
+
+    private ChannelProjectionEnvelope? _channel;
+    private IReadOnlyList<DecryptedMessageEnvelope> _channelMessages = Array.Empty<DecryptedMessageEnvelope>();
+    private IReadOnlyList<TopNodeEntry> _topNodes = Array.Empty<TopNodeEntry>();
+    private string _channelName = string.Empty;
+    private string _region = string.Empty;
+
+    private bool HasChannelIdentity =>
+        !string.IsNullOrWhiteSpace(_region) &&
+        !string.IsNullOrWhiteSpace(_channelName);
+
+    private string TopicFilter =>
+        HasChannelIdentity
+            ? ProjectionDetailsSupport.BuildTopicFilter(_region, _channelName, _channel?.LatestSourceTopic)
+            : string.Empty;
+
+    protected override void OnInitialized()
+    {
+        ChannelProjectionStore.Changed += HandleStoreChanged;
+        DecryptedMessageStore.Changed += HandleStoreChanged;
+        NodeProjectionStore.Changed += HandleStoreChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        RefreshProjectionData();
+    }
+
+    public void Dispose()
+    {
+        ChannelProjectionStore.Changed -= HandleStoreChanged;
+        DecryptedMessageStore.Changed -= HandleStoreChanged;
+        NodeProjectionStore.Changed -= HandleStoreChanged;
+    }
+
+    private void HandleStoreChanged()
+    {
+        if (!IsOpen)
+        {
+            return;
+        }
+
+        RefreshProjectionData();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshProjectionData()
+    {
+        if (!IsOpen || !ProjectionDetailsSupport.TryParseChannelKey(ChannelKey, out _region, out _channelName))
+        {
+            _region = string.Empty;
+            _channelName = string.Empty;
+            _channel = null;
+            _channelMessages = Array.Empty<DecryptedMessageEnvelope>();
+            _topNodes = Array.Empty<TopNodeEntry>();
+            return;
+        }
+
+        _channel = ChannelProjectionStore.Current.Channels
+            .FirstOrDefault(channel => string.Equals(channel.ChannelKey, ChannelKey, StringComparison.OrdinalIgnoreCase));
+
+        _channelMessages = DecryptedMessageStore.Current.Messages
+            .Where(message => ProjectionDetailsSupport.IsTopicInChannel(message.SourceTopic, _region, _channelName))
+            .OrderByDescending(message => message.ReceivedAtUtc)
+            .Take(40)
+            .ToArray();
+
+        _topNodes = _channelMessages
+            .GroupBy(message => ProjectionDetailsSupport.FormatNodeId(message.SourceNodeNumber ?? message.FromNodeNumber) ?? "Unknown", StringComparer.OrdinalIgnoreCase)
+            .Select(group => new TopNodeEntry(group.Key, ResolveNodeDisplayName(group.Key), group.Count()))
+            .OrderByDescending(entry => entry.PacketCount)
+            .ThenBy(entry => entry.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToArray();
+    }
+
+    private int ComputeDecodedRatio()
+    {
+        var observedPacketCount = _channel?.ObservedPacketCount ?? 0;
+        if (observedPacketCount <= 0)
+        {
+            return 0;
+        }
+
+        return (int)Math.Round(
+            Math.Min(_channelMessages.Count, observedPacketCount) * 100d / observedPacketCount,
+            MidpointRounding.AwayFromZero);
+    }
+
+    private async Task CloseAsync()
+    {
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task OpenNodeAsync(string nodeId)
+    {
+        if (!OnOpenNode.HasDelegate || string.IsNullOrWhiteSpace(nodeId) || string.Equals(nodeId, "Unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await OnClose.InvokeAsync();
+        await OnOpenNode.InvokeAsync(nodeId);
+    }
+
+    private string ResolveNodeDisplayName(DecryptedMessageEnvelope message)
+    {
+        var nodeId = ProjectionDetailsSupport.FormatNodeId(message.SourceNodeNumber ?? message.FromNodeNumber);
+        return ResolveNodeDisplayName(nodeId);
+    }
+
+    private string ResolveNodeDisplayName(string? nodeId)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return "Unknown";
+        }
+
+        var node = NodeProjectionStore.Current.Nodes
+            .FirstOrDefault(candidate => string.Equals(candidate.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+
+        return node?.DisplayName ?? nodeId;
+    }
+
+    private static string? FormatNodeId(uint? nodeNumber)
+    {
+        return ProjectionDetailsSupport.FormatNodeId(nodeNumber);
+    }
+
+    private static string FormatPacketType(string? packetType)
+    {
+        return string.IsNullOrWhiteSpace(packetType) ? "Decoded packet" : packetType.Trim();
+    }
+
+    private static string FormatPayloadPreview(string? payloadPreview)
+    {
+        return string.IsNullOrWhiteSpace(payloadPreview)
+            ? "No payload preview captured for this packet."
+            : payloadPreview.Trim();
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Unknown";
+    }
+
+    private sealed record TopNodeEntry(string NodeId, string DisplayName, int PacketCount);
+}

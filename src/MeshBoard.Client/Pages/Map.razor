@@ -1,4 +1,5 @@
 @page "/map"
+@using MeshBoard.Client.Components.Details
 @using MeshBoard.Client.Maps
 @attribute [Authorize]
 @implements IAsyncDisposable
@@ -7,212 +8,206 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="grid gap-6 xl:grid-cols-[0.94fr_1.26fr]">
-    <section class="space-y-6">
-        <header class="shell-panel rounded-[2rem] p-8">
-            <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Geospatial view</p>
-                    <h1 class="mt-2 font-display text-4xl text-cinder-950">Live node map</h1>
-                    <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
-                        This globe is driven entirely by local map projections in the browser. It reuses the Cesium map
-                        protocol from the previous implementation, but it no longer depends on server-owned node tables.
-                    </p>
+<div class="flex h-[calc(100dvh-3rem)] min-h-0 flex-col gap-4 sm:h-[calc(100dvh-4rem)] lg:h-[calc(100dvh-5rem)]">
+    <header class="space-y-2">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Geospatial view</p>
+            <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
+        </div>
+        <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
+            Browse all locally projected nodes on a 3D globe. Click a node to pin focus, click the globe again to release it,
+            hover to reveal its shared-channel cohort, and open node or channel details in the restored popup flow.
+        </p>
+    </header>
+
+    <section class="shell-panel shrink-0 space-y-3 overflow-hidden rounded-[1.6rem] p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 text-sm text-cinder-800/82">
+            <div class="space-y-1">
+                <p>@GetMapSummaryText()</p>
+                <p class="text-[0.72rem] text-cinder-800/62">
+                    Hover links show shared-channel cohorts, not proven radio paths.
+                </p>
+            </div>
+
+            <div class="space-y-1 text-right text-xs text-cinder-800/72">
+                <p>Projected nodes: @_snapshot.Nodes.Count</p>
+                <p>Unique map positions: @_visiblePositionCount</p>
+                <p>Last projection: @FormatTimestamp(_snapshot.LastProjectedAtUtc)</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_mapError))
+        {
+            <p class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_mapError</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_focusedChannel))
+        {
+            <div class="shell-subpanel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3">
+                <div class="space-y-1">
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel focus</p>
+                    <p class="break-words text-sm font-semibold text-cinder-950">@_focusedChannel</p>
                 </div>
 
-                <div class="flex flex-wrap gap-3">
-                    <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                            @onclick="ResetViewAsync"
-                            disabled="@(!_visibleNodes.Any() && string.IsNullOrWhiteSpace(_searchText) && string.IsNullOrWhiteSpace(_focusedChannel))">
-                        Reset view
+                <div class="flex flex-wrap gap-2">
+                    <button type="button"
+                            class="shell-button shell-button-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                            @onclick="() => OpenChannelDetails(_focusedChannel!)">
+                        Open channel
                     </button>
-
-                    <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                            @onclick="ClearMapCache"
-                            disabled="@(_snapshot.Nodes.Count == 0)">
-                        Clear map cache
+                    <button type="button"
+                            class="shell-button rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ClearFocusedChannelAsync">
+                        Clear focus
                     </button>
                 </div>
             </div>
+        }
 
-            @if (!string.IsNullOrWhiteSpace(_mapError))
-            {
-                <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_mapError</p>
-            }
-
-            <div class="mt-6 grid gap-4 md:grid-cols-4">
-                <article class="shell-subpanel rounded-[1.6rem] p-5">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Projected nodes</p>
-                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@_snapshot.Nodes.Count</p>
-                    <p class="mt-2 text-sm text-cinder-800/72">Bounded in-memory nodes with coordinates.</p>
-                </article>
-
-                <article class="shell-subpanel rounded-[1.6rem] p-5">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Matching filters</p>
-                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@_visibleNodes.Count</p>
-                    <p class="mt-2 text-sm text-cinder-800/72">@GetMapSummaryText()</p>
-                </article>
-
-                <article class="shell-subpanel rounded-[1.6rem] p-5">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Map positions</p>
-                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@_visiblePositionCount</p>
-                    <p class="mt-2 text-sm text-cinder-800/72">Nodes sharing coordinates are fanned out locally.</p>
-                </article>
-
-                <article class="shell-subpanel rounded-[1.6rem] p-5">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last projection</p>
-                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_snapshot.LastProjectedAtUtc)</p>
-                    <p class="mt-2 text-sm text-cinder-800/72">Projection events: @_snapshot.TotalProjected</p>
-                </article>
+        <div class="space-y-2 text-sm text-cinder-800/82">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel cohorts</p>
+                <p class="text-[0.72rem] text-cinder-800/66">Click a chip to isolate that cohort on the globe.</p>
             </div>
-        </header>
 
-        <section class="shell-panel rounded-[2rem] p-6">
-            <div class="grid gap-4">
-                <label class="space-y-2">
-                    <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search map nodes</span>
-                    <input class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
-                           @bind="_searchText"
-                           @bind:event="oninput"
-                           @bind:after="HandleSearchChangedAsync"
-                           placeholder="Node id, name, channel, packet type" />
-                </label>
-
-                @if (!string.IsNullOrWhiteSpace(_focusedChannel))
-                {
-                    <div class="shell-subpanel flex flex-wrap items-center justify-between gap-3 rounded-[1.6rem] p-4">
-                        <div>
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Channel focus</p>
-                            <p class="mt-2 break-words text-sm font-semibold text-cinder-950">@_focusedChannel</p>
-                        </div>
-
-                        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                                @onclick="ClearFocusedChannelAsync">
-                            Clear focus
-                        </button>
-                    </div>
-                }
-
-                <div class="space-y-3">
-                    <div class="flex items-center justify-between gap-3">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Channel cohorts</p>
-                        <p class="text-xs text-cinder-800/62">Tap a cohort to isolate it on the globe.</p>
-                    </div>
-
-                    @if (_channelLegendEntries.Count == 0)
-                    {
-                        <div class="shell-subpanel rounded-[1.6rem] p-4 text-sm leading-7 text-cinder-800/76">
-                            No mapped channel cohorts match the current search yet.
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="flex flex-wrap gap-2">
-                            @foreach (var entry in _channelLegendEntries)
-                            {
-                                var isFocused = string.Equals(_focusedChannel, entry.Channel, StringComparison.Ordinal);
-
-                                <button type="button"
-                                        class="@GetChannelChipClass(isFocused)"
-                                        @onclick="() => ToggleFocusedChannelAsync(entry.Channel)">
-                                    <span class="h-2.5 w-2.5 rounded-full ring-1 ring-cinder-950/20"
-                                          style="background-color:@entry.ColorCss"></span>
-                                    <span>@entry.Channel</span>
-                                    <span class="text-cinder-800/62">@entry.NodeCount</span>
-                                </button>
-                            }
-                        </div>
-
-                        @if (_hiddenChannelLegendCount > 0)
-                        {
-                            <p class="text-xs text-cinder-800/62">+ @_hiddenChannelLegendCount more channel cohorts in the current search result.</p>
-                        }
-                    }
-                </div>
-            </div>
-        </section>
-
-        <aside class="shell-panel rounded-[2rem] p-8">
-            @if (FocusedNode is null)
+            @if (_channelLegendEntries.Count == 0)
             {
-                <div class="space-y-3">
-                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Focused node</p>
-                    <h2 class="font-display text-3xl text-cinder-950">No node selected</h2>
-                    <p class="text-sm leading-7 text-cinder-800/82">
-                        Hover a node to inspect its current local state or click a marker to pin it while you pan the globe.
-                    </p>
-                </div>
+                <p class="text-xs text-cinder-800/70">No channel cohort matched the current search.</p>
             }
             else
             {
-                <div class="flex items-start justify-between gap-4">
-                    <div>
-                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Focused node</p>
-                        <h2 class="mt-2 font-display text-3xl text-cinder-950">@FocusedNode.DisplayName</h2>
-                        <p class="mt-2 text-sm text-cinder-800/72">@FocusedNode.NodeId</p>
-                    </div>
-
-                    @if (!string.IsNullOrWhiteSpace(_pinnedNodeId))
+                <div class="flex flex-wrap gap-2">
+                    @foreach (var entry in _channelLegendEntries)
                     {
-                        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                                @onclick="ReleasePinnedNodeAsync">
-                            Release pin
+                        var isFocused = string.Equals(_focusedChannel, entry.Channel, StringComparison.Ordinal);
+
+                        <button type="button"
+                                class="@GetChannelChipClass(isFocused)"
+                                @onclick="() => ToggleFocusedChannelAsync(entry.Channel)">
+                            <span class="h-2.5 w-2.5 rounded-full ring-1 ring-cinder-950/20"
+                                  style="background-color:@entry.ColorCss"></span>
+                            <span>@entry.Channel</span>
+                            <span class="text-cinder-800/62">@entry.NodeCount</span>
                         </button>
                     }
                 </div>
 
-                <div class="mt-6 grid gap-4 md:grid-cols-2">
-                    <article class="shell-subpanel rounded-[1.6rem] p-5">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Live state</p>
-                        <dl class="mt-4 space-y-3 text-sm text-cinder-900">
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Last heard</dt>
-                                <dd>@FormatTimestamp(FocusedNode.LastHeardAtUtc)</dd>
-                            </div>
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Last packet</dt>
-                                <dd>@(FocusedNode.LastPacketType ?? "Unknown")</dd>
-                            </div>
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Observed packets</dt>
-                                <dd>@FocusedNode.ObservedPacketCount</dd>
-                            </div>
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Visible peers</dt>
-                                <dd>@FocusedNodePeerCount</dd>
-                            </div>
-                        </dl>
-                    </article>
-
-                    <article class="shell-subpanel rounded-[1.6rem] p-5">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Location</p>
-                        <dl class="mt-4 space-y-3 text-sm text-cinder-900">
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Channel</dt>
-                                <dd>@(FocusedNode.Channel ?? "Unknown")</dd>
-                            </div>
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Battery</dt>
-                                <dd>@FormatBattery(FocusedNode.BatteryLevelPercent)</dd>
-                            </div>
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Coordinates</dt>
-                                <dd>@FormatCoordinates(FocusedNode)</dd>
-                            </div>
-                            <div class="flex items-center justify-between gap-4">
-                                <dt class="text-cinder-800/68">Broker</dt>
-                                <dd class="truncate text-right">@FocusedNode.BrokerServer</dd>
-                            </div>
-                        </dl>
-                    </article>
-                </div>
+                @if (_hiddenChannelLegendCount > 0)
+                {
+                    <p class="text-[0.72rem] text-cinder-800/68">+ @_hiddenChannelLegendCount more channel cohorts in view.</p>
+                }
             }
-        </aside>
+        </div>
     </section>
 
-    <section class="shell-panel relative overflow-hidden rounded-[2rem] p-4">
+    <section class="shell-panel relative min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
         <div id="@MapElementId"
-             class="meshboard-node-map h-[42rem] w-full overflow-hidden rounded-[1.6rem] border border-sand-200/80 bg-slate-50/60"></div>
+             class="meshboard-node-map h-full w-full overflow-hidden rounded-[1.25rem] border border-sand-200/80 bg-slate-50/60"></div>
+
+        <div class="pointer-events-none absolute inset-x-7 top-7 z-10 flex items-start justify-between gap-3">
+            <div class="pointer-events-auto w-full max-w-md">
+                <label class="relative block">
+                    <span class="sr-only">Search on map</span>
+                    <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-cinder-800/68">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4">
+                            <path fill-rule="evenodd" d="M9 3.75a5.25 5.25 0 1 0 3.285 9.347l3.809 3.809a.75.75 0 1 0 1.06-1.06l-3.808-3.81A5.25 5.25 0 0 0 9 3.75ZM5.25 9a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0Z" clip-rule="evenodd" />
+                        </svg>
+                    </span>
+                    <input class="shell-input w-full rounded-full px-4 py-3 pl-10 text-sm text-cinder-950 shadow-lg shadow-cinder-950/35"
+                           @bind="_searchText"
+                           @bind:event="oninput"
+                           @bind:after="HandleSearchChangedAsync"
+                           placeholder="Search node id, name, or channel" />
+                </label>
+            </div>
+
+            <div class="pointer-events-auto flex shrink-0 flex-wrap gap-2">
+                <button type="button"
+                        class="shell-button shell-button-accent rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35"
+                        @onclick="RefreshMapAsync">
+                    Refresh map
+                </button>
+                <button type="button"
+                        class="shell-button rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35"
+                        @onclick="ResetViewAsync"
+                        disabled="@(!_visibleNodes.Any() && string.IsNullOrWhiteSpace(_searchText) && string.IsNullOrWhiteSpace(_focusedChannel))">
+                    Reset view
+                </button>
+                <button type="button"
+                        class="shell-button rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35"
+                        @onclick="ClearMapCache"
+                        disabled="@(_snapshot.Nodes.Count == 0)">
+                    Clear cache
+                </button>
+            </div>
+        </div>
+
+        <div class="pointer-events-none absolute bottom-7 right-7 z-10 w-full max-w-sm">
+            <div class="pointer-events-auto shell-subpanel space-y-3 rounded-[1.35rem] border border-white/70 bg-white/90 p-4 shadow-lg shadow-cinder-950/15">
+                <div class="space-y-1">
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Focused node</p>
+
+                    @if (FocusedNode is null)
+                    {
+                        <p class="text-xs leading-6 text-cinder-800/72">
+                            Hover a node on the globe to inspect its active channel cohort, or click one to pin this panel.
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="space-y-1">
+                            <p class="text-sm font-semibold text-cinder-950">@FocusedNode.DisplayName</p>
+                            <p class="break-words text-[0.72rem] text-cinder-800/72">@FocusedNode.NodeId</p>
+                        </div>
+
+                        <dl class="grid gap-2 text-[0.72rem] text-cinder-800/78 sm:grid-cols-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Channel</dt>
+                                <dd class="mt-1 break-words text-cinder-950">@(FocusedNode.Channel ?? "Unknown")</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Visible peers</dt>
+                                <dd class="mt-1 text-cinder-950">@FocusedNodePeerCount</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Battery</dt>
+                                <dd class="mt-1 text-cinder-950">@FormatBattery(FocusedNode.BatteryLevelPercent)</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Coordinates</dt>
+                                <dd class="mt-1 text-cinder-950">@FormatCoordinates(FocusedNode)</dd>
+                            </div>
+                        </dl>
+
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button"
+                                    class="shell-button shell-button-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                    @onclick="() => OpenNodeDetails(FocusedNode.NodeId)">
+                                Open node
+                            </button>
+
+                            @if (!string.IsNullOrWhiteSpace(FocusedNode.Channel))
+                            {
+                                <button type="button"
+                                        class="shell-button rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="() => OpenChannelDetails(FocusedNode.Channel!)">
+                                    Open channel
+                                </button>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(_pinnedNodeId))
+                            {
+                                <button type="button"
+                                        class="shell-button rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="ReleasePinnedNodeAsync">
+                                    Release pin
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
 
         @if (_visibleNodes.Count == 0)
         {
@@ -235,6 +230,16 @@
     </section>
 </div>
 
+<NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
+                  NodeId="@(_selectedNodeId ?? string.Empty)"
+                  OnClose="CloseNodeDetails"
+                  OnOpenChannel="OpenChannelDetailsAsync" />
+
+<ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedChannelKey))"
+                     ChannelKey="@(_selectedChannelKey ?? string.Empty)"
+                     OnClose="CloseChannelDetails"
+                     OnOpenNode="OpenNodeDetailsAsync" />
+
 @code {
     private const string MapElementId = "meshboard-client-node-map";
     private const int MaxVisibleLegendEntries = 10;
@@ -256,6 +261,8 @@
     private string? _hoveredNodeId;
     private string? _mapError;
     private string? _pinnedNodeId;
+    private string? _selectedChannelKey;
+    private string? _selectedNodeId;
 
     private MapProjectionEnvelope? FocusedNode =>
         ResolveNode(_pinnedNodeId) ??
@@ -368,6 +375,13 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async Task RefreshMapAsync()
+    {
+        _shouldFitMapToNodes = true;
+        RefreshView(mergeActivityPulses: false);
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task ResetViewAsync()
     {
         _searchText = string.Empty;
@@ -391,8 +405,44 @@
         _focusedChannel = null;
         _hoveredNodeId = null;
         _pinnedNodeId = null;
+        _selectedNodeId = null;
+        _selectedChannelKey = null;
         _shouldFitMapToNodes = true;
         ProjectionStore.Clear();
+    }
+
+    private void OpenNodeDetails(string nodeId)
+    {
+        _selectedChannelKey = null;
+        _selectedNodeId = nodeId;
+    }
+
+    private Task OpenNodeDetailsAsync(string nodeId)
+    {
+        OpenNodeDetails(nodeId);
+        return Task.CompletedTask;
+    }
+
+    private void CloseNodeDetails()
+    {
+        _selectedNodeId = null;
+    }
+
+    private void OpenChannelDetails(string channelKey)
+    {
+        _selectedNodeId = null;
+        _selectedChannelKey = channelKey;
+    }
+
+    private Task OpenChannelDetailsAsync(string channelKey)
+    {
+        OpenChannelDetails(channelKey);
+        return Task.CompletedTask;
+    }
+
+    private void CloseChannelDetails()
+    {
+        _selectedChannelKey = null;
     }
 
     private void RefreshView(bool mergeActivityPulses)
