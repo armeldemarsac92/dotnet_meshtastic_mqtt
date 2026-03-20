@@ -37,8 +37,43 @@ That generates:
 ## Start The Stack
 
 ```bash
-docker compose -f ops/local/compose.yaml up --build
+cp ops/local/.env.example ops/local/.env.local
+docker compose --env-file ops/local/.env.local -f ops/local/compose.yaml up --build
 ```
+
+## Optional Cloudflare Tunnel
+
+You can expose the same-origin client edge for remote testing by enabling the optional `cloudflared` profile.
+Only `meshboard-client` should be exposed. The client edge already proxies `/api/*` to `meshboard-api` and `/mqtt`
+to VerneMQ, so the public hostname stays same-origin for the browser.
+
+Before starting the tunnel profile, export:
+
+```bash
+cp ops/local/.env.example ops/local/.env.local
+```
+
+Edit `ops/local/.env.local`:
+
+```dotenv
+CF_TUNNEL_TOKEN=your-tunnel-token
+MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL=true
+MESHBOARD_BROKER_PATH=/mqtt
+MESHBOARD_ALLOW_INSECURE_BROKER_URL=false
+```
+
+Then start:
+
+```bash
+docker compose --env-file ops/local/.env.local -f ops/local/compose.yaml --profile tunnel up --build -d
+```
+
+Notes:
+
+- Do not commit the tunnel token.
+- Keep `MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL=true` so the API emits `wss://<public-host>/mqtt` automatically from the incoming request host.
+- `MESHBOARD_PUBLIC_BROKER_URL` is only needed if you intentionally want to override that derived broker URL.
+- The browser should use the public hostname, for example `https://your-public-hostname.example.com`.
 
 Useful endpoints:
 

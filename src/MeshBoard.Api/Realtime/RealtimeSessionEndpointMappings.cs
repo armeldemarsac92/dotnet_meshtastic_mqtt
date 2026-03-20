@@ -27,7 +27,8 @@ internal static class RealtimeSessionEndpointMappings
                 {
                     await antiforgery.ValidateRequestAsync(httpContext);
 
-                    var session = await realtimeSessionService.CreateSessionAsync(cancellationToken);
+                    var requestOrigin = new Uri($"{httpContext.Request.Scheme}://{httpContext.Request.Host}");
+                    var session = await realtimeSessionService.CreateSessionAsync(requestOrigin, cancellationToken);
                     return Results.Ok(session);
                 })
             .RequireAuthorization();

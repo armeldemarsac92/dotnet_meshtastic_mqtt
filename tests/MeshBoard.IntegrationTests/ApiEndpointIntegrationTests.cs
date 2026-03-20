@@ -185,6 +185,23 @@ public sealed class ApiEndpointIntegrationTests
     }
 
     [Fact]
+    public async Task RealtimeSession_WhenRequestOriginBrokerModeEnabled_ShouldUseRequestOriginHost()
+    {
+        await using var host = new ApiIntegrationTestHost(useRequestOriginBrokerUrl: true);
+        using var client = host.CreateApiClient(new Uri("https://meshboard-public.example.com"));
+
+        await RegisterAsync(client, host);
+
+        var sessionResponse = await PostJsonAsync(client, host, "/api/realtime/session", payload: null);
+
+        Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
+
+        var sessionPayload = await sessionResponse.Content.ReadFromJsonAsync<RealtimeSessionPayload>();
+        Assert.NotNull(sessionPayload);
+        Assert.Equal("wss://meshboard-public.example.com/mqtt", sessionPayload!.BrokerUrl);
+    }
+
+    [Fact]
     public async Task RealtimeJwks_ShouldExposeVerificationKeyThatValidatesIssuedBrokerTokens()
     {
         await using var host = new ApiIntegrationTestHost();

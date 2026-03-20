@@ -46,8 +46,10 @@ services:
       Persistence__Provider: PostgreSQL
       Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
       Persistence__SeedLegacyDefaultWorkspace: "false"
-      RealtimeSession__BrokerUrl: ws://localhost:8082/mqtt
-      RealtimeSession__AllowInsecureBrokerUrl: "true"
+      RealtimeSession__BrokerUrl: ${MESHBOARD_PUBLIC_BROKER_URL:-ws://localhost:8082/mqtt}
+      RealtimeSession__UseRequestOriginBrokerUrl: ${MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL:-true}
+      RealtimeSession__BrokerPath: ${MESHBOARD_BROKER_PATH:-/mqtt}
+      RealtimeSession__AllowInsecureBrokerUrl: ${MESHBOARD_ALLOW_INSECURE_BROKER_URL:-true}
       RealtimeSession__Issuer: meshboard-api-local-compose
       RealtimeSession__Audience: meshboard-realtime
       RealtimeSession__KeyId: meshboard-compose-k1
@@ -114,6 +116,22 @@ services:
       RealtimeDownstreamBroker__ClientId: meshboard-realtime-bridge
       RealtimeDownstreamBroker__Username: meshboard-bridge
       RealtimeDownstreamBroker__Password: meshboard-bridge-local-secret
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: meshboard-cloudflared
+    profiles:
+      - tunnel
+    depends_on:
+      meshboard-client:
+        condition: service_started
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CF_TUNNEL_TOKEN:-}
     restart: unless-stopped
 
 volumes:

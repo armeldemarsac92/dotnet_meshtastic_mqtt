@@ -11,7 +11,9 @@ namespace MeshBoard.Application.Services;
 
 public interface IRealtimeSessionService
 {
-    Task<RealtimeSessionResponse> CreateSessionAsync(CancellationToken cancellationToken = default);
+    Task<RealtimeSessionResponse> CreateSessionAsync(
+        Uri? requestOrigin = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class RealtimeSessionService : IRealtimeSessionService
@@ -43,9 +45,13 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
         _timeProvider = timeProvider;
     }
 
-    public Task<RealtimeSessionResponse> CreateSessionAsync(CancellationToken cancellationToken = default)
+    public Task<RealtimeSessionResponse> CreateSessionAsync(
+        Uri? requestOrigin = null,
+        CancellationToken cancellationToken = default)
     {
-        var brokerUri = ValidateAndGetBrokerUri(_options);
+        ValidateOptions(_options);
+
+        var brokerUri = ResolveBrokerUri(_options, requestOrigin);
         var userId = _currentUserContextAccessor.GetUserId();
         var workspaceId = _workspaceContextAccessor.GetWorkspaceId();
         var accessPolicy = _realtimeTopicAccessPolicyService.CreateForWorkspace(workspaceId);
@@ -99,24 +105,8 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
             : sanitized[..MaxClientIdPrefixLength];
     }
 
-    private static Uri ValidateAndGetBrokerUri(RealtimeSessionOptions options)
+    private static void ValidateOptions(RealtimeSessionOptions options)
     {
-        if (!Uri.TryCreate(options.BrokerUrl, UriKind.Absolute, out var brokerUri))
-        {
-            throw new InvalidOperationException("RealtimeSession:BrokerUrl must be an absolute URI.");
-        }
-
-        var isSecureWebSocket = string.Equals(brokerUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
-        var isInsecureWebSocket = string.Equals(brokerUri.Scheme, "ws", StringComparison.OrdinalIgnoreCase);
-
-        if (!isSecureWebSocket && !(options.AllowInsecureBrokerUrl && isInsecureWebSocket))
-        {
-            throw new InvalidOperationException(
-                options.AllowInsecureBrokerUrl
-                    ? "RealtimeSession:BrokerUrl must use the ws or wss scheme."
-                    : "RealtimeSession:BrokerUrl must use the wss scheme.");
-        }
-
         if (string.IsNullOrWhiteSpace(options.Issuer))
         {
             throw new InvalidOperationException("RealtimeSession:Issuer is required.");
@@ -143,8 +133,77 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
             throw new InvalidOperationException(
                 "RealtimeSession:SigningPrivateKeyPem or RealtimeSession:SigningPrivateKeyPemFile is required.");
         }
+    }
 
+    private static Uri ResolveBrokerUri(RealtimeSessionOptions options, Uri? requestOrigin)
+    {
+        return options.UseRequestOriginBrokerUrl
+            ? ResolveBrokerUriFromRequestOrigin(options, requestOrigin)
+            : ValidateConfiguredBrokerUri(options);
+    }
+
+    private static Uri ResolveBrokerUriFromRequestOrigin(RealtimeSessionOptions options, Uri? requestOrigin)
+    {
+        if (requestOrigin is null || !requestOrigin.IsAbsoluteUri)
+        {
+            throw new InvalidOperationException(
+                "RealtimeSession:UseRequestOriginBrokerUrl requires an absolute request origin.");
+        }
+
+        var scheme = requestOrigin.Scheme.ToLowerInvariant() switch
+        {
+            "https" => "wss",
+            "http" when options.AllowInsecureBrokerUrl => "ws",
+            "http" => throw new InvalidOperationException(
+                "RealtimeSession:UseRequestOriginBrokerUrl requires https unless AllowInsecureBrokerUrl is enabled."),
+            _ => throw new InvalidOperationException(
+                "RealtimeSession:UseRequestOriginBrokerUrl only supports http or https request origins.")
+        };
+
+        var brokerPath = string.IsNullOrWhiteSpace(options.BrokerPath)
+            ? "/mqtt"
+            : options.BrokerPath.Trim();
+
+        if (!brokerPath.StartsWith('/'))
+        {
+            brokerPath = $"/{brokerPath}";
+        }
+
+        var builder = new UriBuilder(requestOrigin)
+        {
+            Scheme = scheme,
+            Port = requestOrigin.IsDefaultPort ? -1 : requestOrigin.Port,
+            Path = brokerPath,
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        return builder.Uri;
+    }
+
+    private static Uri ValidateConfiguredBrokerUri(RealtimeSessionOptions options)
+    {
+        if (!Uri.TryCreate(options.BrokerUrl, UriKind.Absolute, out var brokerUri))
+        {
+            throw new InvalidOperationException("RealtimeSession:BrokerUrl must be an absolute URI.");
+        }
+
+        ValidateBrokerScheme(options, brokerUri);
         return brokerUri;
+    }
+
+    private static void ValidateBrokerScheme(RealtimeSessionOptions options, Uri brokerUri)
+    {
+        var isSecureWebSocket = string.Equals(brokerUri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
+        var isInsecureWebSocket = string.Equals(brokerUri.Scheme, "ws", StringComparison.OrdinalIgnoreCase);
+
+        if (!isSecureWebSocket && !(options.AllowInsecureBrokerUrl && isInsecureWebSocket))
+        {
+            throw new InvalidOperationException(
+                options.AllowInsecureBrokerUrl
+                    ? "RealtimeSession broker URLs must use the ws or wss scheme."
+                    : "RealtimeSession broker URLs must use the wss scheme.");
+        }
     }
 
     private string CreateToken(

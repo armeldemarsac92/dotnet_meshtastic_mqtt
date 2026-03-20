@@ -53,15 +53,22 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
         -----END PRIVATE KEY-----
         """;
 
+    private readonly bool _useRequestOriginBrokerUrl;
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"meshboard-api-tests-{Guid.NewGuid():N}.db");
 
-    public HttpClient CreateApiClient()
+    public ApiIntegrationTestHost(bool useRequestOriginBrokerUrl = false)
+    {
+        _useRequestOriginBrokerUrl = useRequestOriginBrokerUrl;
+    }
+
+    public HttpClient CreateApiClient(Uri? baseAddress = null)
     {
         return CreateClient(
             new WebApplicationFactoryClientOptions
             {
                 AllowAutoRedirect = false,
-                HandleCookies = true
+                HandleCookies = true,
+                BaseAddress = baseAddress ?? new Uri("http://localhost")
             });
     }
 
@@ -90,6 +97,8 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
                     new KeyValuePair<string, string?>("Persistence:SeedLegacyDefaultWorkspace", "false"),
                     new KeyValuePair<string, string?>("Persistence:MessageRetentionDays", "30"),
                     new KeyValuePair<string, string?>("RealtimeSession:BrokerUrl", RealtimeBrokerUrl),
+                    new KeyValuePair<string, string?>("RealtimeSession:UseRequestOriginBrokerUrl", _useRequestOriginBrokerUrl.ToString()),
+                    new KeyValuePair<string, string?>("RealtimeSession:BrokerPath", "/mqtt"),
                     new KeyValuePair<string, string?>("RealtimeSession:Audience", RealtimeAudience),
                     new KeyValuePair<string, string?>("RealtimeSession:Issuer", RealtimeIssuer),
                     new KeyValuePair<string, string?>("RealtimeSession:KeyId", RealtimeKeyId),
