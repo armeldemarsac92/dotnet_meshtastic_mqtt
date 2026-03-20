@@ -27,7 +27,7 @@ internal static class ChannelPreferenceEndpointMappings
                 catch (NotFoundException exception)
                 {
                     return Results.NotFound(
-                        CreateProblemDetails(StatusCodes.Status404NotFound, "Active broker not found", exception.Message));
+                        CreateProblemDetails(StatusCodes.Status404NotFound, "Active server not found", exception.Message));
                 }
             });
 
@@ -55,7 +55,7 @@ internal static class ChannelPreferenceEndpointMappings
                 catch (NotFoundException exception)
                 {
                     return Results.NotFound(
-                        CreateProblemDetails(StatusCodes.Status404NotFound, "Active broker not found", exception.Message));
+                        CreateProblemDetails(StatusCodes.Status404NotFound, "Active server not found", exception.Message));
                 }
             });
 
@@ -106,7 +106,7 @@ internal static class ChannelPreferenceEndpointMappings
         catch (NotFoundException exception)
         {
             return Results.NotFound(
-                CreateProblemDetails(StatusCodes.Status404NotFound, "Active broker not found", exception.Message));
+                CreateProblemDetails(StatusCodes.Status404NotFound, "Active server not found", exception.Message));
         }
     }
 

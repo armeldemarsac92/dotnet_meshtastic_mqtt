@@ -72,7 +72,7 @@ public sealed class ProductBrokerPreferenceService : IProductBrokerPreferenceSer
         var existingProfile = await _brokerServerProfileService.GetServerProfileById(profileId, cancellationToken);
         if (existingProfile is null)
         {
-            throw new NotFoundException($"Broker server profile '{profileId}' was not found.");
+            throw new NotFoundException($"Server profile '{profileId}' was not found.");
         }
 
         var profile = await _brokerServerProfileService.SaveServerProfile(

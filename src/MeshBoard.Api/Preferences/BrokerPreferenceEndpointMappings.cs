@@ -47,7 +47,7 @@ internal static class BrokerPreferenceEndpointMappings
                 catch (BadRequestException exception)
                 {
                     return Results.BadRequest(
-                        CreateProblemDetails(StatusCodes.Status400BadRequest, "Broker save failed", exception.Message));
+                        CreateProblemDetails(StatusCodes.Status400BadRequest, "Server save failed", exception.Message));
                 }
             });
 
@@ -71,8 +71,8 @@ internal static class BrokerPreferenceEndpointMappings
                         return Results.NotFound(
                             CreateProblemDetails(
                                 StatusCodes.Status404NotFound,
-                                "Broker not found",
-                                $"Broker server profile '{id}' was not found."));
+                                "Server not found",
+                                $"Server profile '{id}' was not found."));
                     }
 
                     var savedProfile = await brokerPreferenceService.UpdateBrokerPreference(
@@ -85,7 +85,7 @@ internal static class BrokerPreferenceEndpointMappings
                 catch (BadRequestException exception)
                 {
                     return Results.BadRequest(
-                        CreateProblemDetails(StatusCodes.Status400BadRequest, "Broker save failed", exception.Message));
+                        CreateProblemDetails(StatusCodes.Status400BadRequest, "Server save failed", exception.Message));
                 }
             });
 
@@ -105,7 +105,7 @@ internal static class BrokerPreferenceEndpointMappings
                     return Results.NotFound(
                         new
                         {
-                            title = "Active broker not found",
+                            title = "Active server not found",
                             detail = exception.Message
                         });
                 }
@@ -130,7 +130,7 @@ internal static class BrokerPreferenceEndpointMappings
                 catch (NotFoundException exception)
                 {
                     return Results.NotFound(
-                        CreateProblemDetails(StatusCodes.Status404NotFound, "Broker not found", exception.Message));
+                        CreateProblemDetails(StatusCodes.Status404NotFound, "Server not found", exception.Message));
                 }
             });
 

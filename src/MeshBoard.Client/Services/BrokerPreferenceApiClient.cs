@@ -25,7 +25,7 @@ public sealed class BrokerPreferenceApiClient
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                ApiProblemDetailsParser.GetMessage(response, "Loading the active broker failed."));
+                ApiProblemDetailsParser.GetMessage(response, "Loading the active server failed."));
         }
 
         return response.Content;
@@ -37,7 +37,7 @@ public sealed class BrokerPreferenceApiClient
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                ApiProblemDetailsParser.GetMessage(response, "Loading broker profiles failed."));
+                ApiProblemDetailsParser.GetMessage(response, "Loading server profiles failed."));
         }
 
         return response.Content ?? [];
@@ -51,11 +51,11 @@ public sealed class BrokerPreferenceApiClient
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                ApiProblemDetailsParser.GetMessage(response, "Saving the broker profile failed."));
+                ApiProblemDetailsParser.GetMessage(response, "Saving the server profile failed."));
         }
 
         return response.Content
-            ?? throw new InvalidOperationException("The API returned an empty broker profile payload.");
+            ?? throw new InvalidOperationException("The API returned an empty server profile payload.");
     }
 
     public async Task<SavedBrokerServerProfile> UpdateAsync(
@@ -67,11 +67,11 @@ public sealed class BrokerPreferenceApiClient
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                ApiProblemDetailsParser.GetMessage(response, "Updating the broker profile failed."));
+                ApiProblemDetailsParser.GetMessage(response, "Updating the server profile failed."));
         }
 
         return response.Content
-            ?? throw new InvalidOperationException("The API returned an empty broker profile payload.");
+            ?? throw new InvalidOperationException("The API returned an empty server profile payload.");
     }
 
     public async Task<SavedBrokerServerProfile> ActivateAsync(Guid id, CancellationToken cancellationToken = default)
@@ -80,10 +80,10 @@ public sealed class BrokerPreferenceApiClient
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                ApiProblemDetailsParser.GetMessage(response, "Activating the broker profile failed."));
+                ApiProblemDetailsParser.GetMessage(response, "Activating the server profile failed."));
         }
 
         return response.Content
-            ?? throw new InvalidOperationException("The API returned an empty broker profile payload.");
+            ?? throw new InvalidOperationException("The API returned an empty server profile payload.");
     }
 }
