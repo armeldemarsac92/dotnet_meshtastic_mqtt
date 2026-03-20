@@ -5,19 +5,17 @@
                 <Found Context="routeData">
                     <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
                         <NotAuthorized>
-                            <LayoutView Layout="@typeof(MainLayout)">
-                                <section class="shell-panel rounded-[2rem] p-8 text-center">
-                                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Authentication</p>
-                                    <h1 class="mt-4 font-display text-4xl text-cinder-950">Sign in required</h1>
-                                    <p class="mt-4 text-sm leading-7 text-cinder-800/80">
-                                        This area needs an authenticated MeshBoard session.
-                                    </p>
-                                    <a class="shell-button shell-button-accent mt-6 inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                                       href="/login">
-                                        Go to login
-                                    </a>
-                                </section>
-                            </LayoutView>
+                            <section class="shell-panel rounded-[2rem] p-8 text-center">
+                                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Authentication</p>
+                                <h1 class="mt-4 font-display text-4xl text-cinder-950">Sign in required</h1>
+                                <p class="mt-4 text-sm leading-7 text-cinder-800/80">
+                                    This area needs an authenticated MeshBoard session.
+                                </p>
+                                <a class="shell-button shell-button-accent mt-6 inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                   href="/login">
+                                    Go to login
+                                </a>
+                            </section>
                         </NotAuthorized>
                     </AuthorizeRouteView>
                     <FocusOnNavigate RouteData="@routeData" Selector="h1" />

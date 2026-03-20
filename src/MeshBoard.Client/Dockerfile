@@ -27,6 +27,23 @@ COPY src ./src
 
 RUN dotnet publish src/MeshBoard.Client/MeshBoard.Client.csproj -c Release -o /app/publish --no-restore
 
+RUN set -eu; \
+    framework_dir=/app/publish/wwwroot/_framework; \
+    cd "$framework_dir"; \
+    for file in blazor.webassembly.*.js; do cp "$file" blazor.webassembly.js; break; done; \
+    for file in dotnet.*.js; do \
+        case "$file" in \
+            dotnet.native.*|dotnet.runtime.*) ;; \
+            *) cp "$file" dotnet.js; break ;; \
+        esac; \
+    done; \
+    for file in dotnet.runtime.*.js; do cp "$file" dotnet.runtime.js; break; done; \
+    for file in dotnet.native.*.js; do cp "$file" dotnet.native.js; break; done; \
+    for file in dotnet.native.*.wasm; do cp "$file" dotnet.native.wasm; break; done; \
+    index_file=/app/publish/wwwroot/index.html; \
+    awk 'BEGIN{skip=0} /<script type="importmap">/{skip=1; next} skip && /<\/script>/{skip=0; next} !skip {print}' "$index_file" > "$index_file.tmp"; \
+    mv "$index_file.tmp" "$index_file"
+
 FROM caddy:2.10.2-alpine AS final
 WORKDIR /srv
 
