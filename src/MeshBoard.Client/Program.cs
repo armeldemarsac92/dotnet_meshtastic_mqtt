@@ -51,6 +51,7 @@ public class Program
         builder.Services.AddScoped<NodeProjectionStore>();
         builder.Services.AddScoped<NodeProjectionState>();
         builder.Services.AddScoped<LocalVaultService>();
+        builder.Services.AddScoped<ReceiveScopeSummaryBuilder>();
         builder.Services.AddScoped<RealtimeClientState>();
         builder.Services.AddScoped<IRealtimePacketWorkerKeyRingClient>(sp => sp.GetRequiredService<RealtimePacketWorkerClient>());
         builder.Services.AddScoped<RealtimePacketWorkerKeyRingSyncService>();
