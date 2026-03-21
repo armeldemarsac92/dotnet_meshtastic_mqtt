@@ -2,6 +2,7 @@ using MeshBoard.Api.SDK.Abstractions;
 using MeshBoard.Api.SDK.DI;
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Channels;
+using MeshBoard.Client.Collector;
 using MeshBoard.Client.Dashboard;
 using MeshBoard.Client.Maps;
 using MeshBoard.Client.Messages;
@@ -50,6 +51,8 @@ public class Program
         builder.Services.AddScoped<MapProjectionState>();
         builder.Services.AddScoped<NodeProjectionStore>();
         builder.Services.AddScoped<NodeProjectionState>();
+        builder.Services.AddScoped<PublicCollectorService>();
+        builder.Services.AddScoped<PublicCollectorState>();
         builder.Services.AddScoped<RadioLinkProjectionStore>();
         builder.Services.AddScoped<LocalVaultService>();
         builder.Services.AddScoped<ReceiveScopeSummaryBuilder>();

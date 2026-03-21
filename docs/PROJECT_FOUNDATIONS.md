@@ -137,7 +137,7 @@ Collector persistence:
 - keeps current node/link state and hourly rollups as the long-run public-map model
 - first read-only public collector APIs are exposed from `MeshBoard.Api`
 - those public collector endpoints are mirrored in `MeshBoard.Api.SDK` through Refit
-- `MeshBoard.Client` now has a dedicated wrapper for the public collector surface; the model is server-owned, not server-internal
+- `MeshBoard.Client` now has a dedicated wrapper and state/service seam for the public collector surface; the model is server-owned, not server-internal
 - documented in [COLLECTOR_POSTGRES_SCHEMA.md](./COLLECTOR_POSTGRES_SCHEMA.md)
 
 Removed legacy persistence surfaces:
