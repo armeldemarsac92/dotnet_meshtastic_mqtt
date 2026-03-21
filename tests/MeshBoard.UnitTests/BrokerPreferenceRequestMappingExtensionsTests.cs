@@ -15,7 +15,6 @@ public sealed class BrokerPreferenceRequestMappingExtensionsTests
         var mapped = request.ToSaveBrokerServerProfileRequest();
 
         Assert.Null(mapped.Id);
-        Assert.Null(mapped.DefaultEncryptionKeyBase64);
         Assert.Equal(string.Empty, mapped.Password);
         Assert.False(mapped.IsActive);
     }
@@ -30,7 +29,6 @@ public sealed class BrokerPreferenceRequestMappingExtensionsTests
             Host = "mqtt.example.com",
             Port = 8883,
             Password = "kept-secret",
-            DefaultEncryptionKeyBase64 = "AQIDBAUGBwgJCgsMDQ4PEA==",
             IsActive = true
         };
 
@@ -45,7 +43,6 @@ public sealed class BrokerPreferenceRequestMappingExtensionsTests
 
         Assert.Equal(existing.Id, mapped.Id);
         Assert.Equal(existing.Password, mapped.Password);
-        Assert.Null(mapped.DefaultEncryptionKeyBase64);
         Assert.True(mapped.IsActive);
     }
 

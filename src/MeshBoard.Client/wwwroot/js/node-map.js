@@ -1,72 +1,77 @@
-const CESIUM_VERSION = "1.138";
-const CESIUM_BASE_URL = `https://cesium.com/downloads/cesiumjs/releases/${CESIUM_VERSION}/Build/Cesium`;
-const CESIUM_CSS_ID = "meshboard-cesium-css";
-const CESIUM_SCRIPT_ID = "meshboard-cesium-script";
-const CESIUM_CSS_URL = `${CESIUM_BASE_URL}/Widgets/widgets.css`;
-const CESIUM_SCRIPT_URL = `${CESIUM_BASE_URL}/Cesium.js`;
-const DEFAULT_CAMERA = {
-    latitude: 20,
-    longitude: 0,
-    height: 22000000
-};
+const MAPLIBRE_SCRIPT_ID = "meshboard-maplibre-script";
+const MAPLIBRE_SCRIPT_URL = "https://unpkg.com/maplibre-gl@^5/dist/maplibre-gl.js";
+const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+const DEM_TILES_URL = "https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png";
 const HOVER_LINK_LIMIT = 18;
-const HOVER_CLEAR_DELAY_MS = 0;
-const MAX_RENDER_RESOLUTION_SCALE = 2;
-const NODE_ENTITY_PREFIX = "node:";
-const LIGHT_BASEMAP_URL = "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer";
+const DEFAULT_CENTER = [0, 20];
+const DEFAULT_ZOOM = 2;
+const NODE_SOURCE_ID = "meshboard-nodes";
+const LINK_SOURCE_ID = "meshboard-links";
+const PULSE_SOURCE_ID = "meshboard-pulse";
+const CONTOUR_SOURCE_ID = "meshboard-contours";
+const NODE_LAYER_ID = "meshboard-node-circles";
+const NODE_LABEL_LAYER_ID = "meshboard-node-labels";
+const LINK_LAYER_ID = "meshboard-link-lines";
+const BUILDINGS_LAYER_ID = "meshboard-buildings";
+const PULSE_LAYER_ID = "meshboard-pulse-circles";
+const CONTOUR_LAYER_ID = "meshboard-contour-lines";
+const MINI_NODE_SOURCE_ID = "meshboard-mini-node";
+const MINI_CONTOUR_SOURCE_ID = "meshboard-mini-contours";
+const MINI_NODE_LAYER_ID = "meshboard-mini-node-circle";
+const MINI_BUILDINGS_LAYER_ID = "meshboard-mini-buildings";
+const MINI_CONTOUR_LAYER_ID = "meshboard-mini-contour-lines";
 
-let cesiumLoadPromise = null;
+let maplibreLoadPromise = null;
+let demSource = null;
 const mapStates = new Map();
+const miniMapStates = new Map();
 
-function ensureCesiumCss() {
-    if (document.getElementById(CESIUM_CSS_ID)) {
-        return;
-    }
-
-    const link = document.createElement("link");
-    link.id = CESIUM_CSS_ID;
-    link.rel = "stylesheet";
-    link.href = CESIUM_CSS_URL;
-    document.head.appendChild(link);
-}
-
-function ensureCesiumScript() {
-    const existing = document.getElementById(CESIUM_SCRIPT_ID);
+function ensureMapLibreScript() {
+    const existing = document.getElementById(MAPLIBRE_SCRIPT_ID);
 
     if (existing) {
-        if (window.Cesium) {
+        if (window.maplibregl) {
             return Promise.resolve();
         }
 
         return new Promise((resolve, reject) => {
             existing.addEventListener("load", () => resolve(), { once: true });
-            existing.addEventListener("error", () => reject(new Error("Failed to load CesiumJS.")), { once: true });
+            existing.addEventListener("error", () => reject(new Error("Failed to load MapLibre GL JS.")), { once: true });
         });
     }
 
     return new Promise((resolve, reject) => {
-        window.CESIUM_BASE_URL = CESIUM_BASE_URL;
-
         const script = document.createElement("script");
-        script.id = CESIUM_SCRIPT_ID;
-        script.src = CESIUM_SCRIPT_URL;
+        script.id = MAPLIBRE_SCRIPT_ID;
+        script.src = MAPLIBRE_SCRIPT_URL;
         script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Failed to load CesiumJS."));
+        script.onerror = () => reject(new Error("Failed to load MapLibre GL JS."));
         document.head.appendChild(script);
     });
 }
 
-async function ensureCesium() {
-    if (window.Cesium) {
+async function ensureMapLibre() {
+    if (window.maplibregl && demSource) {
         return;
     }
 
-    if (!cesiumLoadPromise) {
-        ensureCesiumCss();
-        cesiumLoadPromise = ensureCesiumScript();
+    if (!maplibreLoadPromise) {
+        maplibreLoadPromise = (async () => {
+            await ensureMapLibreScript();
+
+            if (!demSource && window.mlcontour) {
+                demSource = new window.mlcontour.DemSource({
+                    url: DEM_TILES_URL,
+                    encoding: "mapbox",
+                    maxzoom: 12,
+                    worker: true
+                });
+                demSource.setupMaplibre(window.maplibregl);
+            }
+        })();
     }
 
-    await cesiumLoadPromise;
+    await maplibreLoadPromise;
 }
 
 function resolveBatteryColor(batteryLevelPercent) {
@@ -89,286 +94,33 @@ function resolveBatteryColor(batteryLevelPercent) {
     return { stroke: "#317e49", fill: "#73c98f" };
 }
 
-async function createBaseImageryProvider(Cesium) {
-    try {
-        return await Cesium.ArcGisMapServerImageryProvider.fromUrl(LIGHT_BASEMAP_URL);
+function resolveChannelColorHex(channel) {
+    if (!channel) {
+        return "#6bb6ef";
     }
-    catch {
-        return new Cesium.OpenStreetMapImageryProvider({
-            maximumLevel: 19,
-            url: "https://tile.openstreetmap.org/"
-        });
+
+    let hash = 0;
+    for (let index = 0; index < channel.length; index += 1) {
+        hash = ((hash << 5) - hash) + channel.charCodeAt(index);
+        hash |= 0;
     }
+
+    const hue = Math.abs(hash) % 360;
+    return hslToHex(hue, 72, 58);
 }
 
-async function createViewer(container) {
-    const Cesium = window.Cesium;
-    const viewer = new Cesium.Viewer(container, {
-        animation: false,
-        baseLayerPicker: false,
-        fullscreenButton: false,
-        geocoder: false,
-        homeButton: false,
-        infoBox: false,
-        navigationHelpButton: false,
-        projectionPicker: false,
-        sceneModePicker: false,
-        selectionIndicator: false,
-        timeline: false,
-        shouldAnimate: true
-    });
+function hslToHex(h, s, l) {
+    const sl = s / 100;
+    const ll = l / 100;
+    const a = sl * Math.min(ll, 1 - ll);
 
-    viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(await createBaseImageryProvider(Cesium));
-
-    const baseLayer = viewer.imageryLayers.get(0);
-    if (baseLayer) {
-        baseLayer.alpha = 0.92;
-        baseLayer.brightness = 1.12;
-        baseLayer.contrast = 0.76;
-        baseLayer.gamma = 1.02;
-        baseLayer.saturation = 0.05;
+    function channel(n) {
+        const k = (n + h / 30) % 12;
+        const color = ll - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+        return Math.round(255 * color).toString(16).padStart(2, "0");
     }
 
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, MAX_RENDER_RESOLUTION_SCALE);
-    viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#f7f9fc");
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#f2f5f9");
-    viewer.scene.globe.enableLighting = false;
-    viewer.scene.globe.showGroundAtmosphere = false;
-    if (viewer.scene.skyBox) {
-        viewer.scene.skyBox.show = false;
-    }
-    viewer.scene.skyAtmosphere.show = false;
-    viewer.scene.sun.show = false;
-    viewer.scene.moon.show = false;
-    viewer.scene.fog.enabled = false;
-    viewer.scene.requestRenderMode = true;
-    viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
-    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 25000;
-    viewer.scene.screenSpaceCameraController.maximumZoomDistance = 50000000;
-
-    if (viewer.cesiumWidget?.screenSpaceEventHandler) {
-        viewer.cesiumWidget.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
-    }
-
-    viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(
-            DEFAULT_CAMERA.longitude,
-            DEFAULT_CAMERA.latitude,
-            DEFAULT_CAMERA.height)
-    });
-
-    return viewer;
-}
-
-async function getOrCreateMapState(containerId, dotNetCallbackRef) {
-    const existingState = mapStates.get(containerId);
-    if (existingState) {
-        existingState.dotNetCallbackRef = dotNetCallbackRef;
-        return existingState;
-    }
-
-    const container = document.getElementById(containerId);
-    if (!container) {
-        return null;
-    }
-
-    const viewer = await createViewer(container);
-    const mapState = {
-        containerId,
-        dotNetCallbackRef,
-        viewer,
-        interactionHandler: null,
-        mouseLeaveHandler: null,
-        hoverClearTimeoutId: null,
-        nodeDataById: new Map(),
-        nodeEntities: new Map(),
-        hoverLinkSourceNodeId: null,
-        linkEntities: new Map(),
-        hoveredNodeId: null,
-        pinnedNodeId: null,
-        didAutoFrame: false
-    };
-
-    mapStates.set(containerId, mapState);
-    wireInteractions(mapState);
-    return mapState;
-}
-
-function wireInteractions(mapState) {
-    const Cesium = window.Cesium;
-    const handler = new Cesium.ScreenSpaceEventHandler(mapState.viewer.scene.canvas);
-
-    handler.setInputAction((movement) => {
-        const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
-        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.endPosition, activeNodeId);
-
-        if (nodeId) {
-            clearPendingHoverClear(mapState);
-        }
-
-        if (nodeId === mapState.hoveredNodeId) {
-            return;
-        }
-
-        if (!nodeId) {
-            scheduleHoverClear(mapState);
-            return;
-        }
-
-        mapState.hoveredNodeId = nodeId;
-        syncHoverState(mapState);
-        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", nodeId);
-    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
-
-    handler.setInputAction((movement) => {
-        const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
-        const nodeId = resolvePickedNodeIdAtPosition(mapState.viewer.scene, movement.position, activeNodeId);
-
-        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", nodeId);
-
-        if (!nodeId) {
-            mapState.pinnedNodeId = null;
-            mapState.hoveredNodeId = null;
-            syncHoverState(mapState);
-            return;
-        }
-
-        clearPendingHoverClear(mapState);
-        mapState.hoveredNodeId = nodeId;
-        mapState.pinnedNodeId = mapState.pinnedNodeId === nodeId
-            ? null
-            : nodeId;
-        syncHoverState(mapState);
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-    mapState.interactionHandler = handler;
-
-    mapState.mouseLeaveHandler = () => {
-        clearHoverStateImmediately(mapState);
-    };
-
-    mapState.viewer.container.addEventListener("mouseleave", mapState.mouseLeaveHandler);
-}
-
-function getPickResults(scene, position) {
-    if (!position) {
-        return [];
-    }
-
-    try {
-        return scene.drillPick(position, 10) ?? [];
-    }
-    catch {
-        const pickedObject = scene.pick(position);
-        return pickedObject ? [pickedObject] : [];
-    }
-}
-
-function resolvePickedNodeIdAtPosition(scene, position, preferredNodeId = null) {
-    const pickResults = getPickResults(scene, position);
-
-    if (preferredNodeId) {
-        for (const pickedObject of pickResults) {
-            const entityInfo = resolvePickedEntityInfo(pickedObject);
-            if (entityInfo?.nodeId === preferredNodeId) {
-                return preferredNodeId;
-            }
-        }
-    }
-
-    for (const pickedObject of pickResults) {
-        const entityInfo = resolvePickedEntityInfo(pickedObject);
-        if (entityInfo?.isDirectNode) {
-            return entityInfo.nodeId;
-        }
-    }
-
-    for (const pickedObject of pickResults) {
-        const entityInfo = resolvePickedEntityInfo(pickedObject);
-        if (entityInfo?.nodeId) {
-            return entityInfo.nodeId;
-        }
-    }
-
-    return null;
-}
-
-function resolvePickedEntityInfo(pickedObject) {
-    if (!pickedObject?.id) {
-        return null;
-    }
-
-    const entity = pickedObject.id;
-    const rawId = typeof entity === "string" ? entity : entity.id;
-
-    if (typeof rawId === "string" && rawId.startsWith(NODE_ENTITY_PREFIX)) {
-        return {
-            nodeId: rawId.slice(NODE_ENTITY_PREFIX.length),
-            isDirectNode: true
-        };
-    }
-
-    if (typeof entity?.meshboardHoverNodeId === "string") {
-        return {
-            nodeId: entity.meshboardHoverNodeId,
-            isDirectNode: false
-        };
-    }
-
-    return null;
-}
-
-function clearPendingHoverClear(mapState) {
-    if (!mapState.hoverClearTimeoutId) {
-        return;
-    }
-
-    window.clearTimeout(mapState.hoverClearTimeoutId);
-    mapState.hoverClearTimeoutId = null;
-}
-
-function scheduleHoverClear(mapState) {
-    if (mapState.pinnedNodeId) {
-        notifyHoverCleared(mapState);
-        return;
-    }
-
-    clearPendingHoverClear(mapState);
-    mapState.hoverClearTimeoutId = window.setTimeout(() => {
-        mapState.hoverClearTimeoutId = null;
-
-        if (!mapStates.has(mapState.containerId) || mapState.viewer.isDestroyed()) {
-            return;
-        }
-
-        if (mapState.hoveredNodeId === null) {
-            return;
-        }
-
-        clearHoverStateImmediately(mapState);
-    }, HOVER_CLEAR_DELAY_MS);
-}
-
-function notifyHoverCleared(mapState) {
-    mapState.hoveredNodeId = null;
-    mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
-}
-
-function clearHoverStateImmediately(mapState) {
-    clearPendingHoverClear(mapState);
-
-    if (mapState.viewer.isDestroyed()) {
-        return;
-    }
-
-    if (mapState.hoveredNodeId === null) {
-        return;
-    }
-
-    notifyHoverCleared(mapState);
-    syncHoverState(mapState);
+    return `#${channel(0)}${channel(8)}${channel(4)}`;
 }
 
 function normalizeNodes(nodes) {
@@ -386,195 +138,56 @@ function normalizeNodes(nodes) {
         .filter((node) => Number.isFinite(node.latitude) && Number.isFinite(node.longitude));
 }
 
-function syncNodeEntities(mapState, nodes) {
-    const Cesium = window.Cesium;
-    const nextNodeIds = new Set();
-
-    for (const node of nodes) {
-        nextNodeIds.add(node.nodeId);
-        mapState.nodeDataById.set(node.nodeId, node);
-
-        let entity = mapState.nodeEntities.get(node.nodeId);
-        const isHovered = node.nodeId === mapState.hoveredNodeId;
-
-        if (!entity) {
-            entity = mapState.viewer.entities.add({
-                id: `${NODE_ENTITY_PREFIX}${node.nodeId}`,
-                position: Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0),
-                point: {
-                    pixelSize: 12,
-                    color: Cesium.Color.WHITE,
-                    outlineColor: Cesium.Color.BLACK,
-                    outlineWidth: 2,
-                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+function buildNodeGeoJson(nodes, hoveredNodeId) {
+    return {
+        type: "FeatureCollection",
+        features: nodes.map((node) => {
+            const battery = resolveBatteryColor(node.batteryLevelPercent);
+            const isHovered = node.nodeId === hoveredNodeId;
+            return {
+                type: "Feature",
+                id: node.nodeId,
+                geometry: {
+                    type: "Point",
+                    coordinates: [node.longitude, node.latitude]
                 },
-                label: {
-                    text: node.displayName,
-                    show: false,
-                    font: "600 14px ui-sans-serif, system-ui, sans-serif",
-                    fillColor: Cesium.Color.fromCssColorString("#f7efe1"),
-                    outlineColor: Cesium.Color.fromCssColorString("#132130"),
-                    outlineWidth: 4,
-                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                    showBackground: true,
-                    backgroundColor: Cesium.Color.fromCssColorString("#10202f").withAlpha(0.82),
-                    pixelOffset: new Cesium.Cartesian2(0, -22),
-                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                    heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                properties: {
+                    nodeId: node.nodeId,
+                    displayName: node.displayName,
+                    channel: node.channel ?? "",
+                    fillColor: battery.fill,
+                    strokeColor: isHovered ? resolveChannelColorHex(node.channel) : battery.stroke,
+                    radius: isHovered ? 9 : 7,
+                    strokeWidth: isHovered ? 3 : 2,
+                    showLabel: isHovered ? 1 : 0
                 }
-            });
-
-            mapState.nodeEntities.set(node.nodeId, entity);
-        }
-
-        entity.position = Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0);
-        entity.label.text = buildNodeLabel(node);
-        applyNodeAppearance(entity, node, isHovered);
-    }
-
-    for (const [nodeId, entity] of mapState.nodeEntities.entries()) {
-        if (nextNodeIds.has(nodeId)) {
-            continue;
-        }
-
-        mapState.viewer.entities.remove(entity);
-        mapState.nodeEntities.delete(nodeId);
-        mapState.nodeDataById.delete(nodeId);
-    }
-
-    if (mapState.hoveredNodeId && !mapState.nodeDataById.has(mapState.hoveredNodeId)) {
-        mapState.hoveredNodeId = null;
-    }
-
-    if (mapState.pinnedNodeId && !mapState.nodeDataById.has(mapState.pinnedNodeId)) {
-        mapState.pinnedNodeId = null;
-    }
+            };
+        })
+    };
 }
 
-function buildNodeLabel(node) {
-    const channelLabel = node.channel ? `Channel ${node.channel}` : "Channel unknown";
-    return `${node.displayName}\n${channelLabel}`;
-}
-
-function applyNodeAppearance(entity, node, isHovered) {
-    const Cesium = window.Cesium;
-    const batteryColor = resolveBatteryColor(node.batteryLevelPercent);
-    const linkColor = resolveChannelColor(node.channel, 1);
-
-    entity.point.pixelSize = isHovered ? 16 : 12;
-    entity.point.color = Cesium.Color.fromCssColorString(batteryColor.fill);
-    entity.point.outlineWidth = isHovered ? 3 : 2;
-    entity.point.outlineColor = isHovered
-        ? linkColor
-        : Cesium.Color.fromCssColorString(batteryColor.stroke);
-    entity.label.show = isHovered;
-}
-
-function syncHoverState(mapState) {
-    clearPendingHoverClear(mapState);
-
-    const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
-
-    for (const [nodeId, entity] of mapState.nodeEntities.entries()) {
-        const node = mapState.nodeDataById.get(nodeId);
-        if (!node) {
-            continue;
-        }
-
-        applyNodeAppearance(entity, node, nodeId === activeNodeId);
+function buildLinkGeoJson(hoveredNode, peers) {
+    if (!hoveredNode || peers.length === 0) {
+        return { type: "FeatureCollection", features: [] };
     }
 
-    const hoveredNode = activeNodeId
-        ? mapState.nodeDataById.get(activeNodeId)
-        : null;
-
-    mapState.viewer.container.style.cursor = hoveredNode ? "pointer" : "grab";
-
-    if (!hoveredNode?.channel) {
-        clearHoverLinks(mapState);
-        mapState.viewer.scene.requestRender();
-        return;
-    }
-
-    const peers = Array.from(mapState.nodeDataById.values())
-        .filter((node) => node.nodeId !== hoveredNode.nodeId && node.channel === hoveredNode.channel)
-        .sort((left, right) => distanceBetweenNodes(hoveredNode, left) - distanceBetweenNodes(hoveredNode, right))
-        .slice(0, HOVER_LINK_LIMIT);
-
-    if (peers.length === 0) {
-        clearHoverLinks(mapState);
-        mapState.viewer.scene.requestRender();
-        return;
-    }
-
-    const Cesium = window.Cesium;
-    const linkColor = resolveChannelColor(hoveredNode.channel, 0.92);
-    const peerNodeIds = peers.map((peer) => peer.nodeId);
-    const shouldRebuildLinks =
-        mapState.hoverLinkSourceNodeId !== hoveredNode.nodeId ||
-        mapState.linkEntities.size !== peerNodeIds.length ||
-        peerNodeIds.some((peerNodeId) => !mapState.linkEntities.has(peerNodeId));
-
-    if (shouldRebuildLinks) {
-        clearHoverLinks(mapState);
-        mapState.hoverLinkSourceNodeId = hoveredNode.nodeId;
-
-        for (const peer of peers) {
-            const linkMaterial = new Cesium.PolylineOutlineMaterialProperty({
-                color: linkColor,
-                outlineColor: Cesium.Color.fromCssColorString("#10202f").withAlpha(0.52),
-                outlineWidth: 2
-            });
-
-            const linkEntity = mapState.viewer.entities.add({
-                polyline: {
-                    positions: [
-                        Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 0),
-                        Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 0)
-                    ],
-                    width: 8,
-                    arcType: Cesium.ArcType.GEODESIC,
-                    material: linkMaterial,
-                    clampToGround: true,
-                    zIndex: 8
-                }
-            });
-
-            linkEntity.meshboardHoverNodeId = hoveredNode.nodeId;
-            mapState.linkEntities.set(peer.nodeId, linkEntity);
-        }
-    }
-
-    for (const peer of peers) {
-        const linkEntity = mapState.linkEntities.get(peer.nodeId);
-        if (!linkEntity) {
-            continue;
-        }
-
-        linkEntity.meshboardHoverNodeId = hoveredNode.nodeId;
-        linkEntity.polyline.positions = [
-            Cesium.Cartesian3.fromDegrees(hoveredNode.longitude, hoveredNode.latitude, 0),
-            Cesium.Cartesian3.fromDegrees(peer.longitude, peer.latitude, 0)
-        ];
-    }
-
-    mapState.viewer.scene.requestRender();
-}
-
-function clearHoverLinks(mapState) {
-    if (mapState.linkEntities.size === 0) {
-        mapState.hoverLinkSourceNodeId = null;
-        return;
-    }
-
-    for (const entity of mapState.linkEntities.values()) {
-        mapState.viewer.entities.remove(entity);
-    }
-
-    mapState.linkEntities.clear();
-    mapState.hoverLinkSourceNodeId = null;
+    return {
+        type: "FeatureCollection",
+        features: peers.map((peer) => ({
+            type: "Feature",
+            geometry: {
+                type: "LineString",
+                coordinates: [
+                    [hoveredNode.longitude, hoveredNode.latitude],
+                    [peer.longitude, peer.latitude]
+                ]
+            },
+            properties: {
+                color: resolveChannelColorHex(hoveredNode.channel),
+                nodeId: hoveredNode.nodeId
+            }
+        }))
+    };
 }
 
 function distanceBetweenNodes(source, target) {
@@ -595,21 +208,315 @@ function toRadians(value) {
     return value * Math.PI / 180;
 }
 
-function resolveChannelColor(channel, alpha) {
-    const Cesium = window.Cesium;
-
-    if (!channel) {
-        return Cesium.Color.fromCssColorString("#6bb6ef").withAlpha(alpha);
+function findFirstLabelLayerId(map) {
+    for (const layer of map.getStyle().layers) {
+        if (layer.type === "symbol" && layer.layout?.["text-field"]) {
+            return layer.id;
+        }
     }
 
-    let hash = 0;
-    for (let index = 0; index < channel.length; index += 1) {
-        hash = ((hash << 5) - hash) + channel.charCodeAt(index);
-        hash |= 0;
+    return undefined;
+}
+
+function addBuildingsLayer(map, layerId) {
+    const labelLayerId = findFirstLabelLayerId(map);
+
+    map.addLayer(
+        {
+            id: layerId,
+            type: "fill-extrusion",
+            source: "openmaptiles",
+            "source-layer": "building",
+            minzoom: 15,
+            filter: ["!=", ["get", "hide_3d"], true],
+            paint: {
+                "fill-extrusion-color": "#ddd8cf",
+                "fill-extrusion-height": [
+                    "interpolate", ["linear"], ["zoom"],
+                    15, 0,
+                    16, ["get", "render_height"]
+                ],
+                "fill-extrusion-base": [
+                    "case",
+                    [">=", ["get", "zoom"], 16],
+                    ["get", "render_min_height"],
+                    0
+                ],
+                "fill-extrusion-opacity": 0.82
+            }
+        },
+        labelLayerId
+    );
+}
+
+function buildContourSourceData() {
+    if (!demSource) {
+        return null;
     }
 
-    const hue = (Math.abs(hash) % 360) / 360;
-    return Cesium.Color.fromHsl(hue, 0.72, 0.58, alpha);
+    return {
+        type: "vector",
+        tiles: [
+            demSource.contourProtocolUrl({
+                multiplier: 1,
+                overzoom: 1,
+                thresholds: {
+                    11: [200, 1000],
+                    12: [100, 500],
+                    13: [50, 200],
+                    14: [20, 100],
+                    15: [10, 50]
+                },
+                elevationKey: "ele",
+                levelKey: "level",
+                contourLayer: "contours"
+            })
+        ],
+        maxzoom: 15
+    };
+}
+
+function addContourLayers(map, sourceId, layerId) {
+    const labelLayerId = findFirstLabelLayerId(map);
+
+    map.addLayer(
+        {
+            id: layerId,
+            type: "line",
+            source: sourceId,
+            "source-layer": "contours",
+            paint: {
+                "line-color": "#b8a896",
+                "line-opacity": ["match", ["get", "level"], 1, 0.6, 0.3],
+                "line-width": ["match", ["get", "level"], 1, 1, 0.5]
+            }
+        },
+        labelLayerId
+    );
+}
+
+function createMap(container, center, zoom) {
+    const map = new window.maplibregl.Map({
+        container,
+        style: STYLE_URL,
+        center: center ?? DEFAULT_CENTER,
+        zoom: zoom ?? DEFAULT_ZOOM,
+        projection: "mercator",
+        attributionControl: false
+    });
+
+    map.addControl(new window.maplibregl.AttributionControl({ compact: true }), "bottom-left");
+
+    return map;
+}
+
+function addMapSources(map) {
+    map.addSource(NODE_SOURCE_ID, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] }
+    });
+
+    map.addSource(LINK_SOURCE_ID, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] }
+    });
+
+    map.addSource(PULSE_SOURCE_ID, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] }
+    });
+
+    const contourSourceData = buildContourSourceData();
+    if (contourSourceData) {
+        map.addSource(CONTOUR_SOURCE_ID, contourSourceData);
+    }
+}
+
+function addMapLayers(map) {
+    addBuildingsLayer(map, BUILDINGS_LAYER_ID);
+
+    if (map.getSource(CONTOUR_SOURCE_ID)) {
+        addContourLayers(map, CONTOUR_SOURCE_ID, CONTOUR_LAYER_ID);
+    }
+
+    map.addLayer({
+        id: LINK_LAYER_ID,
+        type: "line",
+        source: LINK_SOURCE_ID,
+        paint: {
+            "line-color": ["get", "color"],
+            "line-width": 2.5,
+            "line-opacity": 0.72
+        }
+    });
+
+    map.addLayer({
+        id: PULSE_LAYER_ID,
+        type: "circle",
+        source: PULSE_SOURCE_ID,
+        paint: {
+            "circle-radius": ["get", "radius"],
+            "circle-color": ["get", "color"],
+            "circle-opacity": ["get", "opacity"],
+            "circle-stroke-width": 0
+        }
+    });
+
+    map.addLayer({
+        id: NODE_LAYER_ID,
+        type: "circle",
+        source: NODE_SOURCE_ID,
+        paint: {
+            "circle-radius": ["get", "radius"],
+            "circle-color": ["get", "fillColor"],
+            "circle-stroke-color": ["get", "strokeColor"],
+            "circle-stroke-width": ["get", "strokeWidth"]
+        }
+    });
+
+    map.addLayer({
+        id: NODE_LABEL_LAYER_ID,
+        type: "symbol",
+        source: NODE_SOURCE_ID,
+        filter: ["==", ["get", "showLabel"], 1],
+        layout: {
+            "text-field": ["concat", ["get", "displayName"], "\n", ["case",
+                ["!=", ["get", "channel"], ""], ["concat", "Channel ", ["get", "channel"]],
+                "Channel unknown"
+            ]],
+            "text-font": ["Noto Sans Bold", "Noto Sans Regular"],
+            "text-size": 12,
+            "text-offset": [0, -1.8],
+            "text-anchor": "bottom",
+            "text-max-width": 14
+        },
+        paint: {
+            "text-color": "#f7efe1",
+            "text-halo-color": "#10202f",
+            "text-halo-width": 2
+        }
+    });
+}
+
+async function getOrCreateMapState(containerId, dotNetCallbackRef) {
+    const existingState = mapStates.get(containerId);
+    if (existingState) {
+        existingState.dotNetCallbackRef = dotNetCallbackRef;
+        return existingState;
+    }
+
+    const container = document.getElementById(containerId);
+    if (!container) {
+        return null;
+    }
+
+    const map = createMap(container);
+
+    const mapState = {
+        containerId,
+        dotNetCallbackRef,
+        map,
+        nodeDataById: new Map(),
+        hoveredNodeId: null,
+        pinnedNodeId: null,
+        didAutoFrame: false,
+        activePulses: [],
+        rafId: null
+    };
+
+    mapStates.set(containerId, mapState);
+
+    await new Promise((resolve) => {
+        map.once("load", () => {
+            addMapSources(map);
+            addMapLayers(map);
+            wireInteractions(mapState);
+            resolve();
+        });
+    });
+
+    return mapState;
+}
+
+function wireInteractions(mapState) {
+    const { map } = mapState;
+
+    map.on("mousemove", NODE_LAYER_ID, (event) => {
+        if (!event.features?.length) {
+            return;
+        }
+
+        const nodeId = event.features[0].properties.nodeId;
+
+        if (nodeId === mapState.hoveredNodeId) {
+            return;
+        }
+
+        mapState.hoveredNodeId = nodeId;
+        map.getCanvas().style.cursor = "pointer";
+        refreshNodeAppearance(mapState);
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", nodeId);
+    });
+
+    map.on("mouseleave", NODE_LAYER_ID, () => {
+        if (mapState.pinnedNodeId) {
+            mapState.hoveredNodeId = null;
+            refreshNodeAppearance(mapState);
+            mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+            return;
+        }
+
+        mapState.hoveredNodeId = null;
+        map.getCanvas().style.cursor = "grab";
+        refreshNodeAppearance(mapState);
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+    });
+
+    map.on("click", NODE_LAYER_ID, (event) => {
+        if (!event.features?.length) {
+            return;
+        }
+
+        const nodeId = event.features[0].properties.nodeId;
+        mapState.hoveredNodeId = nodeId;
+        mapState.pinnedNodeId = mapState.pinnedNodeId === nodeId ? null : nodeId;
+        refreshNodeAppearance(mapState);
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", nodeId);
+    });
+
+    map.on("click", (event) => {
+        const features = map.queryRenderedFeatures(event.point, { layers: [NODE_LAYER_ID] });
+        if (features.length > 0) {
+            return;
+        }
+
+        mapState.pinnedNodeId = null;
+        mapState.hoveredNodeId = null;
+        map.getCanvas().style.cursor = "grab";
+        refreshNodeAppearance(mapState);
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", null);
+    });
+}
+
+function refreshNodeAppearance(mapState) {
+    const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
+    const nodes = Array.from(mapState.nodeDataById.values());
+
+    mapState.map.getSource(NODE_SOURCE_ID)?.setData(buildNodeGeoJson(nodes, activeNodeId));
+
+    const hoveredNode = activeNodeId ? mapState.nodeDataById.get(activeNodeId) : null;
+
+    if (!hoveredNode) {
+        mapState.map.getSource(LINK_SOURCE_ID)?.setData({ type: "FeatureCollection", features: [] });
+        return;
+    }
+
+    const peers = nodes
+        .filter((node) => node.nodeId !== hoveredNode.nodeId && node.channel && node.channel === hoveredNode.channel)
+        .sort((a, b) => distanceBetweenNodes(hoveredNode, a) - distanceBetweenNodes(hoveredNode, b))
+        .slice(0, HOVER_LINK_LIMIT);
+
+    mapState.map.getSource(LINK_SOURCE_ID)?.setData(buildLinkGeoJson(hoveredNode, peers));
 }
 
 function maybeFrameCamera(mapState, nodes, fitCameraToNodes) {
@@ -617,145 +524,181 @@ function maybeFrameCamera(mapState, nodes, fitCameraToNodes) {
         return;
     }
 
-    const Cesium = window.Cesium;
+    mapState.didAutoFrame = true;
 
     if (nodes.length === 0) {
-        mapState.viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(
-                DEFAULT_CAMERA.longitude,
-                DEFAULT_CAMERA.latitude,
-                DEFAULT_CAMERA.height),
-            duration: 0.8
-        });
-        mapState.didAutoFrame = true;
+        mapState.map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 800 });
         return;
     }
 
     if (nodes.length === 1) {
-        const node = nodes[0];
-        mapState.viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 1800000),
-            duration: 0.8
+        mapState.map.flyTo({
+            center: [nodes[0].longitude, nodes[0].latitude],
+            zoom: 10,
+            duration: 800
         });
-        mapState.didAutoFrame = true;
         return;
     }
 
-    const points = nodes.map((node) => Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0));
-    const boundingSphere = Cesium.BoundingSphere.fromPoints(points);
+    const lngs = nodes.map((n) => n.longitude);
+    const lats = nodes.map((n) => n.latitude);
+    const bounds = [
+        [Math.min(...lngs), Math.min(...lats)],
+        [Math.max(...lngs), Math.max(...lats)]
+    ];
 
-    mapState.viewer.camera.flyToBoundingSphere(boundingSphere, {
-        duration: 0.95,
-        offset: new Cesium.HeadingPitchRange(0, -1.15, Math.max(boundingSphere.radius * 3.2, 2200000))
-    });
-
-    mapState.didAutoFrame = true;
+    mapState.map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 950 });
 }
 
 function triggerActivityPulses(mapState, activityPulses) {
     for (const activityPulse of activityPulses ?? []) {
         const nodeId = activityPulse?.nodeId;
-        const pulseCount = Number.isFinite(Number(activityPulse?.pulseCount))
-            ? Math.max(1, Number(activityPulse.pulseCount))
-            : 1;
-
         if (!nodeId) {
             continue;
         }
 
-        for (let pulseIndex = 0; pulseIndex < pulseCount; pulseIndex += 1) {
-            window.setTimeout(() => {
-                const currentState = mapStates.get(mapState.containerId);
-                if (!currentState || currentState.viewer.isDestroyed()) {
-                    return;
-                }
-
-                triggerActivityPulse(currentState, nodeId);
-            }, pulseIndex * 180);
+        const node = mapState.nodeDataById.get(nodeId);
+        if (!node) {
+            continue;
         }
+
+        triggerActivityPulse(mapState, node);
     }
 }
 
-function triggerActivityPulse(mapState, nodeId) {
-    const node = mapState.nodeDataById.get(nodeId);
-    if (!node) {
+function triggerActivityPulse(mapState, node) {
+    const startedAt = performance.now();
+    mapState.activePulses.push({
+        node,
+        startedAt,
+        duration: 1200,
+        maxRadius: 40,
+        color: resolveChannelColorHex(node.channel)
+    });
+    schedulePulseFrame(mapState);
+}
+
+function schedulePulseFrame(mapState) {
+    if (mapState.rafId !== null) {
         return;
     }
 
-    const Cesium = window.Cesium;
-    const pulseState = {
-        radius: 2200,
-        pointSize: 30,
-        alpha: 0.95
-    };
-
-    const pulseColor = resolveChannelColor(node.channel, 0.98);
-    const groundPulseEntity = mapState.viewer.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0),
-        ellipse: {
-            semiMajorAxis: new Cesium.CallbackProperty(() => pulseState.radius, false),
-            semiMinorAxis: new Cesium.CallbackProperty(() => pulseState.radius, false),
-            height: 0,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-            material: new Cesium.ColorMaterialProperty(
-                new Cesium.CallbackProperty(
-                    () => pulseColor.withAlpha(Math.max(pulseState.alpha * 0.34, 0)),
-                    false)),
-            outline: true,
-            outlineColor: new Cesium.CallbackProperty(
-                () => pulseColor.withAlpha(Math.max(pulseState.alpha, 0)),
-                false),
-            outlineWidth: 4,
-            zIndex: 20
-        }
+    mapState.rafId = requestAnimationFrame((now) => {
+        mapState.rafId = null;
+        updatePulses(mapState, now);
     });
-
-    const pointPulseEntity = mapState.viewer.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(node.longitude, node.latitude, 0),
-        point: {
-            pixelSize: new Cesium.CallbackProperty(() => pulseState.pointSize, false),
-            color: new Cesium.CallbackProperty(
-                () => pulseColor.withAlpha(Math.max(pulseState.alpha, 0)),
-                false),
-            outlineColor: new Cesium.CallbackProperty(
-                () => Cesium.Color.WHITE.withAlpha(Math.max(pulseState.alpha * 0.95, 0)),
-                false),
-            outlineWidth: 4,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY
-        }
-    });
-
-    const startedAt = performance.now();
-    const durationMilliseconds = 1700;
-
-    const animatePulse = (now) => {
-        const currentState = mapStates.get(mapState.containerId);
-        if (!currentState || currentState.viewer.isDestroyed()) {
-            return;
-        }
-
-        const progress = Math.min(1, (now - startedAt) / durationMilliseconds);
-        pulseState.radius = 2200 + (progress * 30000);
-        pulseState.pointSize = 30 + (progress * 42);
-        pulseState.alpha = 0.95 * (1 - progress);
-        currentState.viewer.scene.requestRender();
-
-        if (progress < 1) {
-            requestAnimationFrame(animatePulse);
-            return;
-        }
-
-        currentState.viewer.entities.remove(groundPulseEntity);
-        currentState.viewer.entities.remove(pointPulseEntity);
-        currentState.viewer.scene.requestRender();
-    };
-
-    requestAnimationFrame(animatePulse);
 }
 
+function updatePulses(mapState, now) {
+    if (!mapStates.has(mapState.containerId)) {
+        return;
+    }
+
+    mapState.activePulses = mapState.activePulses.filter((pulse) => (now - pulse.startedAt) < pulse.duration);
+
+    const features = mapState.activePulses.map((pulse) => {
+        const progress = Math.min(1, (now - pulse.startedAt) / pulse.duration);
+        return {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [pulse.node.longitude, pulse.node.latitude] },
+            properties: {
+                radius: progress * pulse.maxRadius,
+                color: pulse.color,
+                opacity: 0.7 * (1 - progress)
+            }
+        };
+    });
+
+    mapState.map.getSource(PULSE_SOURCE_ID)?.setData({ type: "FeatureCollection", features });
+
+    if (mapState.activePulses.length > 0) {
+        schedulePulseFrame(mapState);
+    } else {
+        mapState.map.getSource(PULSE_SOURCE_ID)?.setData({ type: "FeatureCollection", features: [] });
+    }
+}
+
+// --- Mini map (node details modal) ---
+
+export async function renderMiniMap(containerId, latitude, longitude) {
+    await ensureMapLibre();
+
+    const existing = miniMapStates.get(containerId);
+
+    if (existing) {
+        existing.map.setCenter([longitude, latitude]);
+        existing.map.getSource(MINI_NODE_SOURCE_ID)?.setData({
+            type: "FeatureCollection",
+            features: [{
+                type: "Feature",
+                geometry: { type: "Point", coordinates: [longitude, latitude] },
+                properties: {}
+            }]
+        });
+        return;
+    }
+
+    const container = document.getElementById(containerId);
+    if (!container) {
+        return;
+    }
+
+    const map = createMap(container, [longitude, latitude], 14);
+    miniMapStates.set(containerId, { containerId, map });
+
+    await new Promise((resolve) => {
+        map.once("load", () => {
+            addBuildingsLayer(map, MINI_BUILDINGS_LAYER_ID);
+
+            const contourSourceData = buildContourSourceData();
+            if (contourSourceData) {
+                map.addSource(MINI_CONTOUR_SOURCE_ID, contourSourceData);
+                addContourLayers(map, MINI_CONTOUR_SOURCE_ID, MINI_CONTOUR_LAYER_ID);
+            }
+
+            map.addSource(MINI_NODE_SOURCE_ID, {
+                type: "geojson",
+                data: {
+                    type: "FeatureCollection",
+                    features: [{
+                        type: "Feature",
+                        geometry: { type: "Point", coordinates: [longitude, latitude] },
+                        properties: {}
+                    }]
+                }
+            });
+
+            map.addLayer({
+                id: MINI_NODE_LAYER_ID,
+                type: "circle",
+                source: MINI_NODE_SOURCE_ID,
+                paint: {
+                    "circle-radius": 8,
+                    "circle-color": "#6bb6ef",
+                    "circle-stroke-color": "#2f6ea8",
+                    "circle-stroke-width": 2.5
+                }
+            });
+
+            resolve();
+        });
+    });
+}
+
+export function disposeMiniMap(containerId) {
+    const miniState = miniMapStates.get(containerId);
+    if (!miniState) {
+        return;
+    }
+
+    miniState.map.remove();
+    miniMapStates.delete(containerId);
+}
+
+// --- Main node map ---
+
 export async function renderNodeMap(containerId, nodes, activityPulses, fitCameraToNodes, dotNetCallbackRef) {
-    await ensureCesium();
+    await ensureMapLibre();
 
     const mapState = await getOrCreateMapState(containerId, dotNetCallbackRef);
     if (!mapState) {
@@ -763,25 +706,29 @@ export async function renderNodeMap(containerId, nodes, activityPulses, fitCamer
     }
 
     const normalizedNodes = normalizeNodes(nodes);
-    syncNodeEntities(mapState, normalizedNodes);
-    syncHoverState(mapState);
+    mapState.nodeDataById = new Map(normalizedNodes.map((n) => [n.nodeId, n]));
+
+    if (mapState.hoveredNodeId && !mapState.nodeDataById.has(mapState.hoveredNodeId)) {
+        mapState.hoveredNodeId = null;
+    }
+
+    if (mapState.pinnedNodeId && !mapState.nodeDataById.has(mapState.pinnedNodeId)) {
+        mapState.pinnedNodeId = null;
+    }
+
+    refreshNodeAppearance(mapState);
     maybeFrameCamera(mapState, normalizedNodes, Boolean(fitCameraToNodes));
     triggerActivityPulses(mapState, activityPulses);
-    mapState.viewer.scene.requestRender();
 }
 
 export function setPinnedNode(containerId, nodeId) {
     const mapState = mapStates.get(containerId);
-    if (!mapState || mapState.viewer.isDestroyed()) {
+    if (!mapState) {
         return;
     }
 
-    mapState.pinnedNodeId = typeof nodeId === "string" && nodeId.length > 0
-        ? nodeId
-        : null;
-
-    syncHoverState(mapState);
-    mapState.viewer.scene.requestRender();
+    mapState.pinnedNodeId = typeof nodeId === "string" && nodeId.length > 0 ? nodeId : null;
+    refreshNodeAppearance(mapState);
 }
 
 export function disposeNodeMap(containerId) {
@@ -790,17 +737,11 @@ export function disposeNodeMap(containerId) {
         return;
     }
 
-    clearHoverLinks(mapState);
-    clearPendingHoverClear(mapState);
-    if (mapState.mouseLeaveHandler) {
-        mapState.viewer.container.removeEventListener("mouseleave", mapState.mouseLeaveHandler);
-        mapState.mouseLeaveHandler = null;
-    }
-    mapState.interactionHandler?.destroy();
-
-    if (!mapState.viewer.isDestroyed()) {
-        mapState.viewer.destroy();
+    if (mapState.rafId !== null) {
+        cancelAnimationFrame(mapState.rafId);
+        mapState.rafId = null;
     }
 
+    mapState.map.remove();
     mapStates.delete(containerId);
 }

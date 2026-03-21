@@ -61,7 +61,6 @@ public static class ServiceCollectionExtensions
 
     private static void AddMeshtasticIngestionCoreServices(IServiceCollection services)
     {
-        services.Replace(ServiceDescriptor.Singleton<ITopicEncryptionKeyResolver, TopicPresetEncryptionKeyResolver>());
         services.TryAddSingleton<IMeshtasticEnvelopeReader, MeshtasticEnvelopeReader>();
         services.TryAddSingleton<MeshtasticInboundMessageQueue>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMqttInboundMessageSink, MeshtasticInboundQueueSink>());

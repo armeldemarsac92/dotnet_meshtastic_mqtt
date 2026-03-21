@@ -15,18 +15,15 @@ public sealed class BrokerRuntimeBootstrapServiceTests
         var defaultWorkspaceProfile = CreateProfile(
             "default",
             "Default Workspace",
-            "mqtt-default.example.org",
-            "msh/US/2/e/Legacy/#");
+            "mqtt-default.example.org");
         var workspaceAProfile = CreateProfile(
             "workspace-a",
             "Workspace A",
-            "mqtt-a.example.org",
-            "msh/US/2/e/LongFast/#");
+            "mqtt-a.example.org");
         var workspaceBProfile = CreateProfile(
             "workspace-b",
             "Workspace B",
-            "mqtt-b.example.org",
-            "msh/EU_868/2/e/MediumFast/#");
+            "mqtt-b.example.org");
         var profileRepository = new FakeBrokerServerProfileRepository(
             [defaultWorkspaceProfile, workspaceAProfile, workspaceBProfile],
             [workspaceAProfile, workspaceBProfile]);
@@ -49,8 +46,7 @@ public sealed class BrokerRuntimeBootstrapServiceTests
     private static WorkspaceBrokerServerProfile CreateProfile(
         string workspaceId,
         string name,
-        string host,
-        string defaultTopicPattern)
+        string host)
     {
         return new WorkspaceBrokerServerProfile
         {
@@ -64,7 +60,6 @@ public sealed class BrokerRuntimeBootstrapServiceTests
                 UseTls = false,
                 Username = string.Empty,
                 Password = string.Empty,
-                DefaultTopicPattern = defaultTopicPattern,
                 DownlinkTopic = "msh/US/2/json/mqtt/",
                 EnableSend = true,
                 IsActive = true

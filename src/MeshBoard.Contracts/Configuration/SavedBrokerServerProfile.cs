@@ -16,8 +16,6 @@ public sealed class SavedBrokerServerProfile
 
     public bool HasPasswordConfigured { get; set; }
 
-    public string DefaultTopicPattern { get; set; } = string.Empty;
-
     public string DownlinkTopic { get; set; } = string.Empty;
 
     public bool EnableSend { get; set; }

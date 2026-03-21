@@ -10,7 +10,6 @@ using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
 using MeshBoard.Contracts.Realtime;
-using MeshBoard.Contracts.Topics;
 using MeshBoard.Contracts.Workspaces;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.Data.Sqlite;
@@ -230,15 +229,10 @@ public sealed class PersistenceIntegrationTests
             {
                 await using var scope = provider.CreateAsyncScope();
                 var profileRepository = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileRepository>();
-                var topicPresetRepository = scope.ServiceProvider.GetRequiredService<ITopicPresetRepository>();
 
                 var legacyProfiles = await profileRepository.GetAllAsync(WorkspaceConstants.DefaultWorkspaceId);
-                var legacyPresets = await topicPresetRepository.GetAllAsync(
-                    WorkspaceConstants.DefaultWorkspaceId,
-                    Guid.NewGuid());
 
                 Assert.Empty(legacyProfiles);
-                Assert.Empty(legacyPresets);
             }
             finally
             {
@@ -1066,124 +1060,7 @@ public sealed class PersistenceIntegrationTests
     }
 
     [Fact]
-    public async Task TopicPreset_ShouldDiscardServerSideEncryptionKeyOverride()
-    {
-        var databasePath = CreateTemporaryDatabasePath();
-
-        try
-        {
-            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
-            var hostedServices = provider.GetServices<IHostedService>().ToArray();
-            await StartHostedServicesAsync(hostedServices);
-
-            try
-            {
-                await using var scope = provider.CreateAsyncScope();
-                var topicPresetService = scope.ServiceProvider.GetRequiredService<ITopicPresetService>();
-
-                var savedPreset = await topicPresetService.SaveTopicPreset(
-                    new SaveTopicPresetRequest
-                    {
-                        Name = "EU MediumFast",
-                        TopicPattern = "msh/EU_868/2/e/MediumFast/#",
-                        EncryptionKeyBase64 = "d4f1bb3a20290759f0bcffabcf4e6901",
-                        IsDefault = false
-                    });
-
-                Assert.Null(savedPreset.EncryptionKeyBase64);
-
-                var presets = await topicPresetService.GetTopicPresets();
-                var reloaded = presets.Single(preset => preset.TopicPattern == "msh/EU_868/2/e/MediumFast/#");
-                Assert.Null(reloaded.EncryptionKeyBase64);
-            }
-            finally
-            {
-                await StopHostedServicesAsync(hostedServices);
-            }
-        }
-        finally
-        {
-            DeleteDatabaseFile(databasePath);
-        }
-    }
-
-    [Fact]
-    public async Task TopicPreset_ShouldBeScopedToActiveServer()
-    {
-        var databasePath = CreateTemporaryDatabasePath();
-
-        try
-        {
-            await using var provider = CreateServiceProvider(databasePath, includeApplicationServices: true);
-            var hostedServices = provider.GetServices<IHostedService>().ToArray();
-            await StartHostedServicesAsync(hostedServices);
-
-            try
-            {
-                await using var scope = provider.CreateAsyncScope();
-                var topicPresetService = scope.ServiceProvider.GetRequiredService<ITopicPresetService>();
-                var brokerServerProfileService = scope.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
-
-                var defaultProfile = await brokerServerProfileService.GetActiveServerProfile();
-                var sharedTopicPattern = "msh/US/2/e/Shared/#";
-
-                await topicPresetService.SaveTopicPreset(
-                    new SaveTopicPresetRequest
-                    {
-                        Name = "Default server preset",
-                        TopicPattern = sharedTopicPattern,
-                        EncryptionKeyBase64 = "AQ==",
-                        IsDefault = false
-                    });
-
-                await brokerServerProfileService.SaveServerProfile(
-                    new SaveBrokerServerProfileRequest
-                    {
-                        Name = "EU profile",
-                        Host = defaultProfile.Host,
-                        Port = defaultProfile.Port,
-                        UseTls = defaultProfile.UseTls,
-                        Username = string.Empty,
-                        Password = string.Empty,
-                        DefaultTopicPattern = "msh/EU_868/2/e/#",
-                        DefaultEncryptionKeyBase64 = null,
-                        DownlinkTopic = "msh/EU_868/2/json/mqtt/",
-                        EnableSend = true,
-                        IsActive = true
-                    });
-
-                await topicPresetService.SaveTopicPreset(
-                    new SaveTopicPresetRequest
-                    {
-                        Name = "EU server preset",
-                        TopicPattern = sharedTopicPattern,
-                        EncryptionKeyBase64 = "AQ==",
-                        IsDefault = false
-                    });
-
-                var euPresets = await topicPresetService.GetTopicPresets();
-                Assert.Contains(euPresets, preset => preset.Name == "EU server preset");
-                Assert.DoesNotContain(euPresets, preset => preset.Name == "Default server preset");
-
-                await brokerServerProfileService.SetActiveServerProfile(defaultProfile.Id);
-
-                var defaultPresets = await topicPresetService.GetTopicPresets();
-                Assert.Contains(defaultPresets, preset => preset.Name == "Default server preset");
-                Assert.DoesNotContain(defaultPresets, preset => preset.Name == "EU server preset");
-            }
-            finally
-            {
-                await StopHostedServicesAsync(hostedServices);
-            }
-        }
-        finally
-        {
-            DeleteDatabaseFile(databasePath);
-        }
-    }
-
-    [Fact]
-    public async Task WorkspaceScopedServices_ShouldIsolateProfilesPresetsAndFavorites()
+    public async Task WorkspaceScopedServices_ShouldIsolateProfilesAndFavorites()
     {
         var databasePath = CreateTemporaryDatabasePath();
 
@@ -1207,7 +1084,6 @@ public sealed class PersistenceIntegrationTests
             {
                 await using var scopeA = providerA.CreateAsyncScope();
                 var profilesA = scopeA.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
-                var topicPresetsA = scopeA.ServiceProvider.GetRequiredService<ITopicPresetService>();
                 var favoritesA = scopeA.ServiceProvider.GetRequiredService<IFavoriteNodeService>();
 
                 var workspaceAProfile = await profilesA.SaveServerProfile(
@@ -1219,20 +1095,9 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
-                    });
-
-                await topicPresetsA.SaveTopicPreset(
-                    new SaveTopicPresetRequest
-                    {
-                        Name = "Workspace A preset",
-                        TopicPattern = "msh/US/2/e/LongFast/#",
-                        EncryptionKeyBase64 = null,
-                        IsDefault = false
                     });
 
                 await favoritesA.SaveFavoriteNode(
@@ -1245,7 +1110,6 @@ public sealed class PersistenceIntegrationTests
 
                 await using var scopeB = providerB.CreateAsyncScope();
                 var profilesB = scopeB.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
-                var topicPresetsB = scopeB.ServiceProvider.GetRequiredService<ITopicPresetService>();
                 var favoritesB = scopeB.ServiceProvider.GetRequiredService<IFavoriteNodeService>();
 
                 var workspaceBProfile = await profilesB.SaveServerProfile(
@@ -1257,20 +1121,9 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
-                    });
-
-                await topicPresetsB.SaveTopicPreset(
-                    new SaveTopicPresetRequest
-                    {
-                        Name = "Workspace B preset",
-                        TopicPattern = "msh/US/2/e/LongFast/#",
-                        EncryptionKeyBase64 = null,
-                        IsDefault = false
                     });
 
                 await favoritesB.SaveFavoriteNode(
@@ -1283,8 +1136,6 @@ public sealed class PersistenceIntegrationTests
 
                 var workspaceAProfiles = await profilesA.GetServerProfiles();
                 var workspaceBProfiles = await profilesB.GetServerProfiles();
-                var workspaceAPresets = await topicPresetsA.GetTopicPresets();
-                var workspaceBPresets = await topicPresetsB.GetTopicPresets();
                 var workspaceAFavorites = await favoritesA.GetFavoriteNodes();
                 var workspaceBFavorites = await favoritesB.GetFavoriteNodes();
 
@@ -1293,11 +1144,6 @@ public sealed class PersistenceIntegrationTests
                 Assert.NotEqual(workspaceAProfile.Id, workspaceBProfile.Id);
                 Assert.Equal("Shared broker name", workspaceAProfiles.Single().Name);
                 Assert.Equal("Shared broker name", workspaceBProfiles.Single().Name);
-
-                var presetA = Assert.Single(workspaceAPresets);
-                var presetB = Assert.Single(workspaceBPresets);
-                Assert.Equal("Workspace A preset", presetA.Name);
-                Assert.Equal("Workspace B preset", presetB.Name);
 
                 var favoriteA = Assert.Single(workspaceAFavorites);
                 var favoriteB = Assert.Single(workspaceBFavorites);
@@ -1466,8 +1312,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1482,8 +1326,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/EU_868/2/e/#",
-                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/EU_868/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = false
@@ -1507,8 +1349,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1575,8 +1415,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1593,8 +1431,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/EU_868/2/e/#",
-                        DefaultEncryptionKeyBase64 = null,
                         DownlinkTopic = "msh/EU_868/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -1609,7 +1445,6 @@ public sealed class PersistenceIntegrationTests
                 Assert.Equal(2, relevantProfiles.Length);
                 Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-a" && profile.Profile.Name == "Workspace A profile");
                 Assert.Contains(relevantProfiles, profile => profile.WorkspaceId == "workspace-b" && profile.Profile.Name == "Workspace B profile");
-                Assert.All(relevantProfiles, profile => Assert.Null(profile.Profile.DefaultEncryptionKeyBase64));
             }
             finally
             {
@@ -2044,15 +1879,11 @@ public sealed class PersistenceIntegrationTests
             {
                 await using var workspaceScope = workspaceProvider.CreateAsyncScope();
                 var brokerServerProfileService = workspaceScope.ServiceProvider.GetRequiredService<IBrokerServerProfileService>();
-                var topicPresetService = workspaceScope.ServiceProvider.GetRequiredService<ITopicPresetService>();
 
                 var activeProfile = await brokerServerProfileService.GetActiveServerProfile();
-                var presets = await topicPresetService.GetTopicPresets();
 
                 Assert.Equal("Default server", activeProfile.Name);
                 Assert.Equal("mqtt.meshtastic.org", activeProfile.Host);
-                Assert.Contains(presets, preset => preset.Name == "US Public Feed");
-                Assert.Contains(presets, preset => preset.Name == "EU Public Feed");
             }
             finally
             {
@@ -2178,8 +2009,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/EU_868/2/e/#",
-                        DefaultEncryptionKeyBase64 = "AQ==",
                         DownlinkTopic = "msh/EU_868/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -2256,8 +2085,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true
@@ -2276,8 +2103,6 @@ public sealed class PersistenceIntegrationTests
                         UseTls = false,
                         Username = string.Empty,
                         Password = string.Empty,
-                        DefaultTopicPattern = "msh/US/2/e/#",
-                        DefaultEncryptionKeyBase64 = TopicEncryptionKey.DefaultKeyBase64,
                         DownlinkTopic = "msh/US/2/json/mqtt/",
                         EnableSend = true,
                         IsActive = true

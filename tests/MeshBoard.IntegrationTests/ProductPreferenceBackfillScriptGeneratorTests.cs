@@ -127,56 +127,14 @@ public sealed class ProductPreferenceBackfillScriptGeneratorTests
             Assert.Contains("INSERT INTO users", script, StringComparison.Ordinal);
             Assert.Contains("INSERT INTO broker_server_profiles", script, StringComparison.Ordinal);
             Assert.Contains("INSERT INTO favorite_nodes", script, StringComparison.Ordinal);
-            Assert.Contains("INSERT INTO topic_presets", script, StringComparison.Ordinal);
-            Assert.Contains("INSERT INTO saved_channel_filters", script, StringComparison.Ordinal);
+            Assert.DoesNotContain("INSERT INTO topic_presets", script, StringComparison.Ordinal);
+            Assert.DoesNotContain("INSERT INTO saved_channel_filters", script, StringComparison.Ordinal);
             Assert.Contains("Alice''s Broker", script, StringComparison.Ordinal);
-            Assert.Contains("broker_server_profile_id", script, StringComparison.Ordinal);
             Assert.Contains("'11111111-1111-1111-1111-111111111111'", script, StringComparison.Ordinal);
             Assert.DoesNotContain("default_encryption_key_base64", script, StringComparison.Ordinal);
             Assert.DoesNotContain("encryption_key_base64", script, StringComparison.Ordinal);
             Assert.DoesNotContain("AQIDBAUGBwgJCgsMDQ4PEA==", script, StringComparison.Ordinal);
             Assert.DoesNotContain("AQ==", script, StringComparison.Ordinal);
-        }
-        finally
-        {
-            TryDelete(databasePath);
-        }
-    }
-
-    [Fact]
-    public async Task GenerateFromSqliteAsync_ShouldFallbackToSubscriptionIntents_WhenSavedChannelFiltersAreUnavailable()
-    {
-        var databasePath = Path.Combine(Path.GetTempPath(), $"meshboard-backfill-{Guid.NewGuid():N}.db");
-
-        try
-        {
-            await using var connection = new SqliteConnection($"Data Source={databasePath}");
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText =
-                """
-                CREATE TABLE subscription_intents (
-                    workspace_id TEXT NOT NULL,
-                    broker_server_profile_id TEXT NOT NULL,
-                    topic_filter TEXT NOT NULL,
-                    created_at_utc TEXT NOT NULL
-                );
-                """;
-            await command.ExecuteNonQueryAsync();
-
-            await InsertRowAsync(
-                connection,
-                """
-                INSERT INTO subscription_intents (workspace_id, broker_server_profile_id, topic_filter, created_at_utc)
-                VALUES ('workspace-a', '11111111-1111-1111-1111-111111111111', 'msh/US/2/e/LongFast/#', '2026-03-19T08:10:00.0000000+00:00');
-                """);
-
-            var generator = new ProductPreferenceBackfillScriptGenerator();
-            var script = await generator.GenerateFromSqliteAsync(databasePath);
-
-            Assert.Contains("INSERT INTO saved_channel_filters", script, StringComparison.Ordinal);
-            Assert.Contains("msh/US/2/e/LongFast/#", script, StringComparison.Ordinal);
-            Assert.DoesNotContain("INSERT INTO subscription_intents", script, StringComparison.Ordinal);
         }
         finally
         {

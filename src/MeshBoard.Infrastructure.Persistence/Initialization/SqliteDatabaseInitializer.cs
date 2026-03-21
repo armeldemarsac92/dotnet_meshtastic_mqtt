@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+
 namespace MeshBoard.Infrastructure.Persistence.Initialization;
 
 internal sealed class SqliteDatabaseInitializer : IPersistenceInitializer
@@ -57,7 +58,6 @@ internal sealed class SqliteDatabaseInitializer : IPersistenceInitializer
         await MigrateFavoriteNodesAsync(connection, cancellationToken);
         await MigrateBrokerServerProfilesAsync(connection, cancellationToken);
         await MigrateDiscoveredTopicsAsync(connection, cancellationToken);
-        await MigrateTopicPresetsAsync(connection, cancellationToken);
         await MigrateRuntimePipelineStatusAsync(connection, cancellationToken);
 
         var retentionCommand = new CommandDefinition(
@@ -74,27 +74,7 @@ internal sealed class SqliteDatabaseInitializer : IPersistenceInitializer
 
         if (_persistenceOptions.SeedLegacyDefaultWorkspace)
         {
-            var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
-            var defaultProfileId = await SeedBrokerServerProfileAsync(connection, cancellationToken);
-
-            await SeedTopicPresetAsync(
-                connection,
-                WorkspaceConstants.DefaultWorkspaceId,
-                defaultProfileId,
-                fallbackBrokerServer,
-                "US Public Feed",
-                _brokerOptions.DefaultTopicPattern,
-                true,
-                cancellationToken);
-            await SeedTopicPresetAsync(
-                connection,
-                WorkspaceConstants.DefaultWorkspaceId,
-                defaultProfileId,
-                fallbackBrokerServer,
-                "EU Public Feed",
-                "msh/EU_433/2/e/#",
-                false,
-                cancellationToken);
+            await SeedBrokerServerProfileAsync(connection, cancellationToken);
         }
 
         _logger.LogInformation("Initialized the SQLite database successfully");
@@ -539,96 +519,6 @@ internal sealed class SqliteDatabaseInitializer : IPersistenceInitializer
                 cancellationToken: cancellationToken));
     }
 
-    private async Task MigrateTopicPresetsAsync(
-        SqliteConnection connection,
-        CancellationToken cancellationToken)
-    {
-        var fallbackBrokerServer = $"{_brokerOptions.Host}:{_brokerOptions.Port}";
-        var columnCommand = new CommandDefinition(
-            SchemaQueries.GetTopicPresetColumns,
-            cancellationToken: cancellationToken);
-
-        var columns = (await connection.QueryAsync<TableColumnSqlResponse>(columnCommand))
-            .Select(column => column.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        await EnsureColumnAsync(
-            connection,
-            columns,
-            "encryption_key_base64",
-            SchemaQueries.AddTopicPresetsEncryptionKeyBase64Column,
-            cancellationToken);
-
-        await EnsureColumnAsync(
-            connection,
-            columns,
-            "broker_server",
-            SchemaQueries.AddTopicPresetsBrokerServerColumn,
-            cancellationToken);
-
-        await EnsureColumnAsync(
-            connection,
-            columns,
-            "broker_server_profile_id",
-            SchemaQueries.AddTopicPresetsBrokerServerProfileIdColumn,
-            cancellationToken);
-
-        await EnsureColumnAsync(
-            connection,
-            columns,
-            "workspace_id",
-            SchemaQueries.AddTopicPresetsWorkspaceIdColumn,
-            cancellationToken);
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.BackfillTopicPresetsBrokerServer,
-                new
-                {
-                    BrokerServer = fallbackBrokerServer
-                },
-                cancellationToken: cancellationToken));
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.BackfillTopicPresetsWorkspaceId,
-                new
-                {
-                    WorkspaceId = WorkspaceConstants.DefaultWorkspaceId
-                },
-                cancellationToken: cancellationToken));
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.BackfillTopicPresetsBrokerServerProfileIdFromBrokerServer,
-                cancellationToken: cancellationToken));
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.BackfillTopicPresetsBrokerServerProfileIdFromActiveProfile,
-                cancellationToken: cancellationToken));
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.DropTopicPresetsLegacyTopicPatternIndex,
-                cancellationToken: cancellationToken));
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.DropTopicPresetsLegacyBrokerServerTopicPatternIndex,
-                cancellationToken: cancellationToken));
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.DropTopicPresetsWorkspaceBrokerServerTopicPatternIndex,
-                cancellationToken: cancellationToken));
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                SchemaQueries.CreateTopicPresetsWorkspaceBrokerServerProfileTopicPatternIndex,
-                cancellationToken: cancellationToken));
-    }
-
     private static Task EnsureColumnAsync(
         SqliteConnection connection,
         ISet<string> columns,
@@ -654,35 +544,6 @@ internal sealed class SqliteDatabaseInitializer : IPersistenceInitializer
         return new SqliteConnection(_persistenceOptions.ConnectionString);
     }
 
-    private static Task SeedTopicPresetAsync(
-        SqliteConnection connection,
-        string workspaceId,
-        string brokerServerProfileId,
-        string brokerServer,
-        string name,
-        string topicPattern,
-        bool isDefault,
-        CancellationToken cancellationToken)
-    {
-        var command = new CommandDefinition(
-            TopicPresetQueries.InsertTopicPresetIfMissing,
-            new
-            {
-                Id = Guid.NewGuid().ToString(),
-                WorkspaceId = workspaceId,
-                BrokerServerProfileId = brokerServerProfileId,
-                BrokerServer = brokerServer,
-                Name = name,
-                TopicPattern = topicPattern,
-                EncryptionKeyBase64 = (string?)null,
-                IsDefault = isDefault ? 1 : 0,
-                CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")
-            },
-            cancellationToken: cancellationToken);
-
-        return connection.ExecuteAsync(command);
-    }
-
     private async Task<string> SeedBrokerServerProfileAsync(
         SqliteConnection connection,
         CancellationToken cancellationToken)
@@ -700,8 +561,6 @@ internal sealed class SqliteDatabaseInitializer : IPersistenceInitializer
                 UseTls = _brokerOptions.UseTls ? 1 : 0,
                 Username = _brokerOptions.Username,
                 Password = _brokerOptions.Password,
-                DefaultTopicPattern = _brokerOptions.DefaultTopicPattern,
-                DefaultEncryptionKeyBase64 = (string?)null,
                 DownlinkTopic = _brokerOptions.DownlinkTopic,
                 EnableSend = _brokerOptions.EnableSend ? 1 : 0,
                 CreatedAtUtc = DateTimeOffset.UtcNow.ToString("O")

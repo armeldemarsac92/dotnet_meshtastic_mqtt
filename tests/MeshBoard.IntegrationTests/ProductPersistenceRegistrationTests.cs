@@ -53,10 +53,6 @@ public sealed class ProductPersistenceRegistrationTests
             services,
             descriptor => descriptor.ServiceType == typeof(IBrokerServerProfileRepository) &&
                 descriptor.ImplementationType?.Name == "ProductBrokerServerProfileRepository");
-        Assert.Contains(
-            services,
-            descriptor => descriptor.ServiceType == typeof(ITopicPresetRepository) &&
-                descriptor.ImplementationType?.Name == "ProductTopicPresetRepository");
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IMessageRepository));
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(INodeRepository));
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IDiscoveredTopicRepository));

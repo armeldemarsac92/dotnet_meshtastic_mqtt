@@ -97,7 +97,6 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
             UseTls = false,
             Username = string.Empty,
             Password = string.Empty,
-            DefaultTopicPattern = "msh/US/2/e/#",
             DownlinkTopic = "msh/US/2/json/mqtt/",
             EnableSend = true,
             IsActive = true

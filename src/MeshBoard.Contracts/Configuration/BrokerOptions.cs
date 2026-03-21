@@ -16,10 +16,6 @@ public sealed class BrokerOptions
 
     public string Password { get; set; } = string.Empty;
 
-    public string DefaultTopicPattern { get; set; } = "msh/US/2/e/#";
-
-    public string? DefaultEncryptionKeyBase64 { get; set; }
-
     public string DownlinkTopic { get; set; } = "msh/US/2/json/mqtt/";
 
     public bool EnableSend { get; set; }

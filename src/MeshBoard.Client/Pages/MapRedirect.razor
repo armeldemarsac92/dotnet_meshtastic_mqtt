@@ -1,0 +1,9 @@
+@page "/map"
+@inject NavigationManager Navigation
+
+@code {
+    protected override void OnInitialized()
+    {
+        Navigation.NavigateTo("/nodes", replace: true);
+    }
+}

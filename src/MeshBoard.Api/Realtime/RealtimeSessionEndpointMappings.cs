@@ -27,7 +27,10 @@ internal static class RealtimeSessionEndpointMappings
                 {
                     await antiforgery.ValidateRequestAsync(httpContext);
 
-                    var requestOrigin = new Uri($"{httpContext.Request.Scheme}://{httpContext.Request.Host}");
+                    var scheme = httpContext.Request.Headers.TryGetValue("X-Forwarded-Proto", out var forwardedProto)
+                        ? forwardedProto.ToString().Split(',')[0].Trim()
+                        : httpContext.Request.Scheme;
+                    var requestOrigin = new Uri($"{scheme}://{httpContext.Request.Host}");
                     var session = await realtimeSessionService.CreateSessionAsync(requestOrigin, cancellationToken);
                     return Results.Ok(session);
                 })

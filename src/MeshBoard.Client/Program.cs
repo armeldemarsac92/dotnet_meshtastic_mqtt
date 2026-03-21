@@ -37,7 +37,7 @@ public class Program
         builder.Services.AddScoped<BrowserVaultStore>();
         builder.Services.AddScoped<IVaultRuntimeKeyRecordProvider>(sp => sp.GetRequiredService<BrowserVaultStore>());
         builder.Services.AddScoped<BrokerPreferenceApiClient>();
-        builder.Services.AddScoped<ChannelPreferenceApiClient>();
+        builder.Services.AddScoped<ChannelPreferencesStore>();
         builder.Services.AddScoped<ChannelProjectionStore>();
         builder.Services.AddScoped<ChannelProjectionState>();
         builder.Services.AddScoped<ClientDashboardSummaryBuilder>();
@@ -58,7 +58,6 @@ public class Program
         builder.Services.AddScoped<RealtimePacketWorkerRequestFactory>();
         builder.Services.AddScoped<RealtimePacketWorkerClient>();
         builder.Services.AddScoped<RealtimeSessionApiClient>();
-        builder.Services.AddScoped<TopicPresetPreferenceApiClient>();
         builder.Services.AddScoped<VaultSessionState>();
         builder.Services.AddMeshBoardApiSdk(apiBaseAddress);
 

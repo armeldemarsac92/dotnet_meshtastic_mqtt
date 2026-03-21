@@ -61,7 +61,7 @@
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         if (authenticationState.User.Identity?.IsAuthenticated == true)
         {
-            Navigation.NavigateTo("/favorites", forceLoad: false);
+            Navigation.NavigateTo("/", forceLoad: false);
         }
     }
 
@@ -79,7 +79,7 @@
                     Password = _model.Password
                 });
 
-            Navigation.NavigateTo("/favorites", forceLoad: false);
+            Navigation.NavigateTo("/", forceLoad: false);
         }
         catch (Exception exception)
         {

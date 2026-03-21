@@ -15,7 +15,6 @@ public static class BrokerServerProfileMappingExtensions
             UseTls = profile.UseTls,
             Username = profile.Username,
             HasPasswordConfigured = !string.IsNullOrWhiteSpace(profile.Password),
-            DefaultTopicPattern = profile.DefaultTopicPattern,
             DownlinkTopic = profile.DownlinkTopic,
             EnableSend = profile.EnableSend,
             IsActive = profile.IsActive,

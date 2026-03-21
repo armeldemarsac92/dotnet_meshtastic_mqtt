@@ -18,10 +18,6 @@ internal sealed class BrokerServerProfileSqlResponse
 
     public string Password { get; set; } = string.Empty;
 
-    public required string DefaultTopicPattern { get; set; }
-
-    public string? DefaultEncryptionKeyBase64 { get; set; }
-
     public required string DownlinkTopic { get; set; }
 
     public int EnableSend { get; set; }

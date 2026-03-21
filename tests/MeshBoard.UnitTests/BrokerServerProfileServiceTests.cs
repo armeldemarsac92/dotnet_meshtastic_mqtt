@@ -61,21 +61,6 @@ public sealed class BrokerServerProfileServiceTests
     }
 
     [Fact]
-    public async Task SaveServerProfile_ShouldAllowMissingDefaultEncryptionKey()
-    {
-        var savedProfile = CreateProfile(isActive: false);
-        var repository = new FakeBrokerServerProfileRepository
-        {
-            UpsertResult = savedProfile
-        };
-        var service = CreateService(repository);
-
-        await service.SaveServerProfile(CreateSaveRequest(isActive: false, defaultEncryptionKeyBase64: null));
-
-        Assert.Null(repository.LastUpsertRequest!.DefaultEncryptionKeyBase64);
-    }
-
-    [Fact]
     public async Task SetActiveServerProfile_ShouldRollback_WhenProfileDoesNotExist()
     {
         var repository = new FakeBrokerServerProfileRepository();
@@ -111,8 +96,6 @@ public sealed class BrokerServerProfileServiceTests
             Name = "Default server",
             Host = "mqtt.meshtastic.org",
             Port = 1883,
-            DefaultTopicPattern = "msh/US/2/e/#",
-            DefaultEncryptionKeyBase64 = "AQ==",
             DownlinkTopic = "msh/US/2/json/mqtt/",
             EnableSend = true,
             IsActive = isActive,
@@ -120,15 +103,13 @@ public sealed class BrokerServerProfileServiceTests
         };
     }
 
-    private static SaveBrokerServerProfileRequest CreateSaveRequest(bool isActive, string? defaultEncryptionKeyBase64 = "AQ==")
+    private static SaveBrokerServerProfileRequest CreateSaveRequest(bool isActive)
     {
         return new SaveBrokerServerProfileRequest
         {
             Name = "Default server",
             Host = "mqtt.meshtastic.org",
             Port = 1883,
-            DefaultTopicPattern = "msh/US/2/e/#",
-            DefaultEncryptionKeyBase64 = defaultEncryptionKeyBase64,
             DownlinkTopic = "msh/US/2/json/mqtt/",
             EnableSend = true,
             IsActive = isActive
@@ -235,7 +216,6 @@ public sealed class BrokerServerProfileServiceTests
             UpsertAsyncCallCount++;
             LastUpsertRequest = request;
             UpsertResult.IsActive = request.IsActive;
-            UpsertResult.DefaultEncryptionKeyBase64 = request.DefaultEncryptionKeyBase64;
             return Task.FromResult(UpsertResult);
         }
     }

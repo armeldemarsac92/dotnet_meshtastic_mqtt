@@ -16,10 +16,6 @@ public sealed class BrokerServerProfile
 
     public string Password { get; set; } = string.Empty;
 
-    public string DefaultTopicPattern { get; set; } = string.Empty;
-
-    public string? DefaultEncryptionKeyBase64 { get; set; }
-
     public string DownlinkTopic { get; set; } = string.Empty;
 
     public bool EnableSend { get; set; }

@@ -5,6 +5,7 @@ using MeshBoard.Contracts.Meshtastic;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+
 namespace MeshBoard.Infrastructure.Meshtastic.Runtime;
 
 internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandExecutor, IBrokerRuntimeCommandService
@@ -209,72 +210,17 @@ internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandEx
                !string.Equals(snapshot.ActiveServerName, activeProfile.Name, StringComparison.Ordinal);
     }
 
-    private static async Task<HashSet<string>> ResolveDesiredTopicFiltersAsync(
+    private static Task<HashSet<string>> ResolveDesiredTopicFiltersAsync(
         IServiceProvider serviceProvider,
         string workspaceId,
         BrokerServerProfile activeProfile,
         CancellationToken cancellationToken)
     {
-        var desiredFilters = new HashSet<string>(StringComparer.Ordinal);
-
-        var topicPresetRepository = serviceProvider.GetService<ITopicPresetRepository>();
-        if (topicPresetRepository is not null)
-        {
-            var presets = await topicPresetRepository.GetAllAsync(
-                workspaceId,
-                activeProfile.Id,
-                cancellationToken);
-
-            foreach (var preset in presets)
-            {
-                TryAddDesiredFilter(desiredFilters, preset.TopicPattern);
-            }
-        }
-
-        var savedChannelFilterRepository = serviceProvider.GetService<ISavedChannelFilterRepository>();
-        if (savedChannelFilterRepository is not null)
-        {
-            var savedChannels = await savedChannelFilterRepository.GetAllAsync(
-                workspaceId,
-                activeProfile.Id,
-                cancellationToken);
-
-            foreach (var savedChannel in savedChannels)
-            {
-                TryAddDesiredFilter(desiredFilters, savedChannel.TopicFilter);
-            }
-        }
-
-        var subscriptionIntentRepository = serviceProvider.GetService<ISubscriptionIntentRepository>();
-        if (subscriptionIntentRepository is not null)
-        {
-            var intents = await subscriptionIntentRepository.GetAllAsync(workspaceId, activeProfile.Id, cancellationToken);
-
-            foreach (var intent in intents)
-            {
-                TryAddDesiredFilter(desiredFilters, intent.TopicFilter);
-            }
-        }
-
-        if (desiredFilters.Count == 0)
-        {
-            TryAddDesiredFilter(desiredFilters, activeProfile.DefaultTopicPattern);
-        }
-
-        return desiredFilters
-            .SelectMany(ExpandWithCompanionFilter)
+        const string rootFilter = "msh/+/2/e/#";
+        var filters = ExpandWithCompanionFilter(rootFilter)
             .Distinct(StringComparer.Ordinal)
             .ToHashSet(StringComparer.Ordinal);
-    }
-
-    private static void TryAddDesiredFilter(HashSet<string> desiredFilters, string? topicFilter)
-    {
-        if (string.IsNullOrWhiteSpace(topicFilter))
-        {
-            return;
-        }
-
-        desiredFilters.Add(NormalizeTopicFilterForIntent(topicFilter));
+        return Task.FromResult(filters);
     }
 
     private static List<string> ExpandWithCompanionFilter(string topicFilter)

@@ -1,3 +1,4 @@
+@page "/feed"
 @page "/messages"
 @attribute [Authorize]
 @implements IDisposable
@@ -5,164 +6,86 @@
 @using MeshBoard.Client.Nodes
 @inject BrowserRealtimeClient BrowserRealtimeClient
 @inject BrokerPreferenceApiClient BrokerPreferenceApiClient
-@inject ChannelPreferenceApiClient ChannelPreferenceApiClient
 @inject DecryptedMessageStore DecryptedMessageStore
 @inject NodeProjectionStore NodeProjectionStore
 @inject RealtimeClientState RealtimeClientState
-@inject ReceiveScopeSummaryBuilder ReceiveScopeSummaryBuilder
-@inject TopicPresetPreferenceApiClient TopicPresetPreferenceApiClient
 
-<PageTitle>Messages</PageTitle>
+<PageTitle>Feed</PageTitle>
 
-<div class="space-y-6">
-    <header class="shell-panel rounded-[2rem] p-8">
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Traffic</p>
-                <h1 class="mt-2 font-display text-4xl text-cinder-950">Message stream</h1>
-                <p class="mt-3 max-w-4xl text-sm leading-7 text-cinder-800/82">
-                    The browser filters and renders locally decoded Meshtastic traffic directly from the live stream.
-                    Channel and node drill-downs now use the same popup flow restored on the other client pages.
-                </p>
+<div class="space-y-4">
+    <div class="shell-panel rounded-[2rem] px-6 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <span class="size-2.5 rounded-full @(_connectionSnapshot.IsConnected ? "bg-emerald-500" : "bg-cinder-400")"></span>
+                <div>
+                    <p class="text-sm font-semibold text-cinder-950">
+                        @(_connectionSnapshot.IsConnected ? "Connected" : _connectionSnapshot.Status)
+                    </p>
+                    @if (!string.IsNullOrWhiteSpace(_activeBrokerName))
+                    {
+                        <p class="text-xs text-cinder-800/68">@_activeBrokerName</p>
+                    }
+                </div>
             </div>
 
-            <div class="flex flex-wrap gap-3">
-                <button class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                        @onclick="ConnectAsync"
-                        disabled="@(_connectionSnapshot.IsConnecting || _connectionSnapshot.IsConnected)">
-                    @ConnectLabel
-                </button>
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs text-cinder-800/60">
+                    @_messageSnapshot.Messages.Count packets &middot; @_connectionSnapshot.ActiveSubscriptionCount subs
+                </span>
 
-                <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                        @onclick="DisconnectAsync"
-                        disabled="@(!_connectionSnapshot.IsConnected && !_connectionSnapshot.IsConnecting)">
-                    @DisconnectLabel
-                </button>
+                @if (!_connectionSnapshot.IsConnected)
+                {
+                    <button class="shell-button shell-button-accent rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ConnectAsync"
+                            disabled="@_connectionSnapshot.IsConnecting">
+                        @ConnectLabel
+                    </button>
+                }
+                else
+                {
+                    <button class="shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="DisconnectAsync"
+                            disabled="@_connectionSnapshot.IsDisconnecting">
+                        @DisconnectLabel
+                    </button>
+                }
 
-                <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                <button class="shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
                         @onclick="ClearFeed"
                         disabled="@(_messageSnapshot.Messages.Count == 0)">
-                    Clear stream
+                    Clear
                 </button>
             </div>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_commandError))
         {
-            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+            <p class="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
         }
+    </div>
 
-        <div class="mt-6 grid gap-4 md:grid-cols-3">
-            <article class="shell-subpanel rounded-[1.6rem] p-5">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Connection</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_connectionSnapshot.Status</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Client ID: @DisplayValue(_connectionSnapshot.ClientId)</p>
-            </article>
-
-            <article class="shell-subpanel rounded-[1.6rem] p-5">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Buffer size</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FilteredMessages.Count / 100</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Total projected this session: @_messageSnapshot.TotalProjected</p>
-            </article>
-
-            <article class="shell-subpanel rounded-[1.6rem] p-5">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last projection</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_messageSnapshot.LastProjectedAtUtc)</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Subscriptions: @_connectionSnapshot.ActiveSubscriptionCount</p>
-            </article>
-        </div>
-
-        <article class="shell-subpanel mt-4 rounded-[1.6rem] p-5">
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Receive scope</p>
-                    <h2 class="mt-2 font-display text-2xl text-cinder-950">Active upstream topic selection</h2>
-                    <p class="mt-2 max-w-3xl text-sm leading-7 text-cinder-800/78">
-                        This summary shows the active server and the effective upstream topic filters that the bridge
-                        will keep subscribed. Saved topic presets and saved channels win; the server fallback receive
-                        topic is only used when no explicit receive filters exist.
-                    </p>
-                </div>
-
-                <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                        @onclick="LoadReceiveScopeAsync"
-                        disabled="@_isScopeLoading">
-                    @(_isScopeLoading ? "Refreshing..." : "Refresh scope")
-                </button>
+    @if (DiscoveredChannels.Count > 0)
+    {
+        <div class="overflow-x-auto">
+            <div class="flex gap-2 pb-1">
+                <button type="button" class="@GetChipClass(null)" @onclick="() => SelectChannel(null)">All</button>
+                @foreach (var channel in DiscoveredChannels)
+                {
+                    <button type="button" class="@GetChipClass(channel)" @onclick="() => SelectChannel(channel)">
+                        @channel
+                    </button>
+                }
             </div>
+        </div>
+    }
 
-            @if (!string.IsNullOrWhiteSpace(_scopeError))
-            {
-                <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_scopeError</p>
-            }
-            else if (_isScopeLoading)
-            {
-                <p class="mt-5 text-sm text-cinder-800/72">Loading the active receive scope...</p>
-            }
-            else if (!_receiveScope.HasActiveServer)
-            {
-                <div class="mt-5 rounded-[1.5rem] border border-sand-200 bg-white/70 px-4 py-4 text-sm leading-7 text-cinder-800/78">
-                    No active server is configured yet.
-                </div>
-            }
-            else
-            {
-                <div class="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-                    <div class="rounded-[1.5rem] border border-white/70 bg-white/70 px-5 py-4">
-                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active server</p>
-                        <p class="mt-3 text-xl font-semibold text-cinder-950">@DisplayValue(_receiveScope.ServerName)</p>
-                        <p class="mt-2 break-words text-sm text-cinder-800/72">@DisplayValue(_receiveScope.ServerAddress)</p>
-                        <p class="mt-3 text-sm text-cinder-800/78">
-                            @(_receiveScope.UsesFallbackTopic
-                                ? "Using the server fallback receive topic because no saved presets or channels are configured."
-                                : "Using explicit saved topic presets and saved channels.")
-                        </p>
-                    </div>
-
-                    <div class="rounded-[1.5rem] border border-white/70 bg-white/70 px-5 py-4">
-                        <div class="flex items-center justify-between gap-3">
-                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Effective topics</p>
-                            <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
-                                @_receiveScope.Topics.Count topic(s)
-                            </span>
-                        </div>
-
-                        @if (_receiveScope.Topics.Count == 0)
-                        {
-                            <p class="mt-4 text-sm text-cinder-800/78">No upstream receive topics are configured for the active server.</p>
-                        }
-                        else
-                        {
-                            <div class="mt-4 flex flex-wrap gap-2">
-                                @foreach (var topic in _receiveScope.Topics)
-                                {
-                                    <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/68">
-                                        @topic.SourceLabel: @topic.TopicPattern
-                                    </span>
-                                }
-                            </div>
-                        }
-                    </div>
-                </div>
-            }
-        </article>
-    </header>
-
-    <section class="shell-panel grid gap-4 rounded-[2rem] p-6 lg:grid-cols-[1.15fr_0.75fr_0.75fr]">
+    <div class="shell-panel grid gap-4 rounded-[2rem] p-6 sm:grid-cols-2">
         <label class="space-y-2">
             <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
             <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
                    @bind="_searchText"
                    @bind:event="oninput"
-                   placeholder="Node id, name, packet type, preview text" />
-        </label>
-
-        <label class="space-y-2">
-            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker</span>
-            <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
-                   @bind="_brokerFilter"
-                   @bind:event="oninput"
-                   placeholder="Filter by broker" />
+                   placeholder="Node, broker, packet type, preview text" />
         </label>
 
         <label class="space-y-2">
@@ -172,14 +95,14 @@
                    @bind:event="oninput"
                    placeholder="Text, Telemetry, Node Info" />
         </label>
-    </section>
+    </div>
 
     @if (FilteredMessages.Count == 0)
     {
         <div class="shell-panel rounded-[2rem] p-8 text-center">
             <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">No messages yet</p>
             <p class="mt-3 text-sm leading-7 text-cinder-800/78">
-                Open the realtime connection and make sure the active server has at least one saved topic preset or saved channel.
+                Open the realtime connection above to start receiving packets.
             </p>
         </div>
     }
@@ -215,7 +138,7 @@
                                     @onclick="() => OpenNodeDetails(senderNodeId)">
                                 @GetNodeDisplayName(senderNodeId)
                             </button>
-                            <span>→</span>
+                            <span>&rarr;</span>
                         }
                         @if (TryGetDestinationNodeId(message, out var destNodeId))
                         {
@@ -419,17 +342,15 @@
                      OnOpenNode="OpenNodeDetailsAsync" />
 
 @code {
+    private string? _activeBrokerName;
     private string? _commandError;
-    private string _brokerFilter = string.Empty;
     private RealtimeClientSnapshot _connectionSnapshot = new();
     private DecryptedMessageSnapshot _messageSnapshot = new();
     private NodeProjectionSnapshot _nodeSnapshot = new();
     private string _packetTypeFilter = string.Empty;
     private DecryptedMessageEnvelope? _previewMessage;
-    private ReceiveScopeSummary _receiveScope = ReceiveScopeSummary.Empty;
     private string _searchText = string.Empty;
-    private bool _isScopeLoading;
-    private string? _scopeError;
+    private string? _selectedChannelFilter;
     private string? _selectedChannelKey;
     private string? _selectedNodeId;
 
@@ -445,7 +366,15 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadReceiveScopeAsync();
+        try
+        {
+            var server = await BrokerPreferenceApiClient.GetActiveAsync();
+            _activeBrokerName = server?.Name;
+        }
+        catch
+        {
+            // broker name is cosmetic — ignore failures
+        }
     }
 
     public void Dispose()
@@ -465,9 +394,36 @@
         ? "Disconnecting..."
         : "Disconnect";
 
+    private IReadOnlyList<string> DiscoveredChannels =>
+        _messageSnapshot.Messages
+            .Where(m => TryGetChannelLabel(m.SourceTopic, out _, out _))
+            .Select(m =>
+            {
+                TryGetChannelLabel(m.SourceTopic, out _, out var key);
+                return key;
+            })
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToArray();
+
+    private void SelectChannel(string? channelFilter)
+    {
+        _selectedChannelFilter = channelFilter;
+    }
+
+    private string GetChipClass(string? channelFilter)
+    {
+        var isSelected = channelFilter == _selectedChannelFilter;
+        return isSelected
+            ? "shrink-0 rounded-full border border-signal-600 bg-signal-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition-colors"
+            : "shrink-0 rounded-full border border-sand-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-cinder-900 transition-colors hover:border-signal-400";
+    }
+
     private void ClearFeed()
     {
         _previewMessage = null;
+        _selectedChannelFilter = null;
         DecryptedMessageStore.Clear();
     }
 
@@ -496,35 +452,6 @@
         catch (InvalidOperationException exception)
         {
             _commandError = exception.Message;
-        }
-    }
-
-    private async Task LoadReceiveScopeAsync()
-    {
-        _scopeError = null;
-        _isScopeLoading = true;
-
-        try
-        {
-            var activeServerTask = BrokerPreferenceApiClient.GetActiveAsync();
-            var presetsTask = TopicPresetPreferenceApiClient.GetAllAsync();
-            var channelsTask = ChannelPreferenceApiClient.GetAllAsync();
-
-            await Task.WhenAll(activeServerTask, presetsTask, channelsTask);
-
-            _receiveScope = ReceiveScopeSummaryBuilder.Build(
-                await activeServerTask,
-                await presetsTask,
-                await channelsTask);
-        }
-        catch (InvalidOperationException exception)
-        {
-            _scopeError = exception.Message;
-            _receiveScope = ReceiveScopeSummary.Empty;
-        }
-        finally
-        {
-            _isScopeLoading = false;
         }
     }
 
@@ -571,15 +498,16 @@
 
     private IReadOnlyList<DecryptedMessageEnvelope> FilteredMessages =>
         _messageSnapshot.Messages
-            .Where(MatchesBrokerFilter)
+            .Where(MatchesChannelFilter)
             .Where(MatchesPacketTypeFilter)
             .Where(MatchesSearchText)
             .ToArray();
 
-    private bool MatchesBrokerFilter(DecryptedMessageEnvelope message)
+    private bool MatchesChannelFilter(DecryptedMessageEnvelope message)
     {
-        return string.IsNullOrWhiteSpace(_brokerFilter) ||
-            message.BrokerServer.Contains(_brokerFilter.Trim(), StringComparison.OrdinalIgnoreCase);
+        if (_selectedChannelFilter is null) return true;
+        return TryGetChannelLabel(message.SourceTopic, out _, out var channelKey) &&
+            string.Equals(channelKey, _selectedChannelFilter, StringComparison.Ordinal);
     }
 
     private bool MatchesPacketTypeFilter(DecryptedMessageEnvelope message)
@@ -606,13 +534,6 @@
             GetNodeDisplayName(message).Contains(filter, StringComparison.OrdinalIgnoreCase) ||
             TryGetChannelLabel(message.SourceTopic, out var channelLabel, out _) &&
             channelLabel.Contains(filter, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string TruncatePayload(string payloadBase64)
-    {
-        return payloadBase64.Length <= 180
-            ? payloadBase64
-            : $"{payloadBase64[..180]}...";
     }
 
     private static string DescribeProjectionState(DecryptedMessageEnvelope message)

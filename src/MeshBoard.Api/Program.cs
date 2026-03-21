@@ -10,6 +10,7 @@ using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -67,6 +68,14 @@ builder.Services.AddScoped<IWorkspaceContextAccessor, HttpContextWorkspaceContex
 
 var app = builder.Build();
 
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler();
@@ -81,11 +90,9 @@ app.UseAntiforgery();
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 app.MapApiAuthEndpoints();
 app.MapBrokerPreferenceEndpoints();
-app.MapChannelPreferenceEndpoints();
 app.MapFavoritePreferenceEndpoints();
 app.MapRealtimeSessionEndpoints();
 app.MapVernemqWebhookEndpoints();
-app.MapTopicPresetPreferenceEndpoints();
 
 app.Run();
 

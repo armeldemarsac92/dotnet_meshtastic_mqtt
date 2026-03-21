@@ -1,10 +1,14 @@
 :80 {
     handle /api/* {
-        reverse_proxy meshboard-api:8080
+        reverse_proxy meshboard-api:8080 {
+            header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+        }
     }
 
     handle /.well-known/* {
-        reverse_proxy meshboard-api:8080
+        reverse_proxy meshboard-api:8080 {
+            header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+        }
     }
 
     handle /mqtt* {

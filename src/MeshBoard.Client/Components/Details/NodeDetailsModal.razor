@@ -1,16 +1,16 @@
-@using System.Globalization
 @using MeshBoard.Client.Messages
 @using MeshBoard.Client.Nodes
 @using MeshBoard.Contracts.Nodes
-@implements IDisposable
+@implements IAsyncDisposable
 @inject DecryptedMessageStore DecryptedMessageStore
+@inject IJSRuntime JS
 @inject NodeProjectionStore NodeProjectionStore
 
 @if (IsOpen)
 {
-    <div class="fixed inset-0 z-40 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
+    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-cinder-950/45 p-4 pb-[5.5rem] backdrop-blur-sm lg:pb-4"
          @onclick="CloseAsync">
-        <article class="shell-panel flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.8rem]"
+        <article class="shell-panel flex max-h-[calc(100dvh-8rem)] w-full max-w-6xl flex-col overflow-hidden rounded-[1.8rem] lg:max-h-[92vh]"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between gap-4 border-b border-sand-100/80 px-5 py-4">
                 <div>
@@ -24,7 +24,7 @@
                 </button>
             </header>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4">
                 @if (_node is null)
                 {
                     <div class="space-y-2">
@@ -139,13 +139,10 @@
                             <article class="shell-panel flex min-h-[20rem] flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
                                 <h3 class="font-display text-3xl text-cinder-950">Map</h3>
 
-                                @if (TryBuildMapEmbedUrl(_node, out var mapEmbedUrl))
+                                @if (_node.LastKnownLatitude.HasValue && _node.LastKnownLongitude.HasValue)
                                 {
-                                    <div class="mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-sand-200/80">
-                                        <iframe title="Node position map"
-                                                class="block h-full min-h-[16rem] w-full"
-                                                src="@mapEmbedUrl"></iframe>
-                                    </div>
+                                    <div id="@MiniMapElementId"
+                                         class="mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-sand-200/80"></div>
                                 }
                                 else
                                 {
@@ -180,8 +177,13 @@
     [Parameter]
     public EventCallback<string> OnOpenChannel { get; set; }
 
+    private const string MiniMapElementId = "meshboard-node-detail-mini-map";
     private NodeProjectionEnvelope? _node;
     private IReadOnlyList<DecryptedMessageEnvelope> _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
+    private bool _scrollLocked;
+    private bool _miniMapRendered;
+    private string? _lastMiniMapNodeId;
+    private Lazy<Task<IJSObjectReference>>? _moduleTask;
 
     protected override void OnInitialized()
     {
@@ -189,15 +191,110 @@
         DecryptedMessageStore.Changed += HandleStoreChanged;
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
+        if (!IsOpen && _miniMapRendered)
+        {
+            await DisposeMiniMapAsync();
+        }
+
         RefreshProjectionData();
+        await SyncScrollLockAsync();
     }
 
-    public void Dispose()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!IsOpen || _node?.LastKnownLatitude is null || _node?.LastKnownLongitude is null)
+        {
+            return;
+        }
+
+        if (_miniMapRendered && string.Equals(_lastMiniMapNodeId, NodeId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        try
+        {
+            var module = await GetMapModuleAsync();
+            await module.InvokeVoidAsync("renderMiniMap", MiniMapElementId, _node.LastKnownLatitude.Value, _node.LastKnownLongitude.Value);
+            _miniMapRendered = true;
+            _lastMiniMapNodeId = NodeId;
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
     {
         NodeProjectionStore.Changed -= HandleStoreChanged;
         DecryptedMessageStore.Changed -= HandleStoreChanged;
+
+        if (_scrollLocked)
+        {
+            _scrollLocked = false;
+            try { await JS.InvokeVoidAsync("meshboardUi.unlockScroll"); }
+            catch (JSDisconnectedException) { }
+        }
+
+        await DisposeMiniMapAsync();
+
+        if (_moduleTask?.IsValueCreated == true)
+        {
+            try
+            {
+                var module = await _moduleTask.Value;
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private Task<IJSObjectReference> GetMapModuleAsync()
+    {
+        _moduleTask ??= new Lazy<Task<IJSObjectReference>>(
+            () => JS.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=3").AsTask());
+        return _moduleTask.Value;
+    }
+
+    private async Task DisposeMiniMapAsync()
+    {
+        if (!_miniMapRendered)
+        {
+            return;
+        }
+
+        _miniMapRendered = false;
+        _lastMiniMapNodeId = null;
+
+        if (_moduleTask?.IsValueCreated == true)
+        {
+            try
+            {
+                var module = await _moduleTask.Value;
+                await module.InvokeVoidAsync("disposeMiniMap", MiniMapElementId);
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    private async Task SyncScrollLockAsync()
+    {
+        if (IsOpen && !_scrollLocked)
+        {
+            _scrollLocked = true;
+            await JS.InvokeVoidAsync("meshboardUi.lockScroll");
+        }
+        else if (!IsOpen && _scrollLocked)
+        {
+            _scrollLocked = false;
+            await JS.InvokeVoidAsync("meshboardUi.unlockScroll");
+        }
     }
 
     private void HandleStoreChanged()
@@ -362,28 +459,6 @@
         }
 
         return $"{uptime.Minutes}m";
-    }
-
-    private static bool TryBuildMapEmbedUrl(NodeProjectionEnvelope node, out string mapEmbedUrl)
-    {
-        if (!node.LastKnownLatitude.HasValue || !node.LastKnownLongitude.HasValue)
-        {
-            mapEmbedUrl = string.Empty;
-            return false;
-        }
-
-        var latitude = node.LastKnownLatitude.Value;
-        var longitude = node.LastKnownLongitude.Value;
-        const double delta = 0.02;
-
-        var left = longitude - delta;
-        var right = longitude + delta;
-        var top = latitude + delta;
-        var bottom = latitude - delta;
-
-        mapEmbedUrl =
-            $"https://www.openstreetmap.org/export/embed.html?bbox={left.ToString(CultureInfo.InvariantCulture)}%2C{bottom.ToString(CultureInfo.InvariantCulture)}%2C{right.ToString(CultureInfo.InvariantCulture)}%2C{top.ToString(CultureInfo.InvariantCulture)}&layer=mapnik&marker={latitude.ToString(CultureInfo.InvariantCulture)}%2C{longitude.ToString(CultureInfo.InvariantCulture)}";
-        return true;
     }
 
     private sealed record DetailItem(string Label, string Value);

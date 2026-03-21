@@ -1,20 +1,33 @@
 @using MeshBoard.Client.Channels
 @using MeshBoard.Client.Messages
 @using MeshBoard.Client.Nodes
+@using MeshBoard.Client.Vault
 @implements IDisposable
+@inject ChannelPreferencesStore ChannelPreferencesStore
 @inject ChannelProjectionStore ChannelProjectionStore
 @inject DecryptedMessageStore DecryptedMessageStore
+@inject IJSRuntime JS
+@inject LocalVaultService LocalVaultService
 @inject NodeProjectionStore NodeProjectionStore
 
 @if (IsOpen)
 {
-    <div class="fixed inset-0 z-40 flex items-center justify-center bg-cinder-950/45 p-4 backdrop-blur-sm"
+    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-cinder-950/45 p-4 pb-[5.5rem] backdrop-blur-sm lg:pb-4"
          @onclick="CloseAsync">
-        <article class="shell-panel flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[1.8rem]"
+        <article class="shell-panel flex max-h-[calc(100dvh-8rem)] w-full max-w-6xl flex-col overflow-hidden rounded-[1.8rem] lg:max-h-[92vh]"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between gap-4 border-b border-sand-100/80 px-5 py-4">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Channel details</p>
+                <div class="flex items-center gap-3">
+                    <button type="button"
+                            class="@GetTabClass(ChannelTab.Details)"
+                            @onclick="() => _activeTab = ChannelTab.Details">
+                        Details
+                    </button>
+                    <button type="button"
+                            class="@GetTabClass(ChannelTab.Settings)"
+                            @onclick="() => _activeTab = ChannelTab.Settings">
+                        Settings
+                    </button>
                 </div>
 
                 <button type="button"
@@ -24,7 +37,7 @@
                 </button>
             </header>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4">
                 @if (!HasChannelIdentity)
                 {
                     <div class="space-y-2">
@@ -34,12 +47,104 @@
                         </p>
                     </div>
                 }
+                else if (_activeTab == ChannelTab.Settings)
+                {
+                    <div class="space-y-6">
+                        <header class="space-y-1">
+                            <h2 class="font-display text-3xl text-cinder-950">@EffectiveDisplayName</h2>
+                            <p class="text-sm text-cinder-800/68">Browser-local settings — never sent to the server.</p>
+                        </header>
+
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <div class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Display label</p>
+                                <p class="mt-1 text-xs text-cinder-800/60">Override the channel name shown in the feed.</p>
+                                <div class="mt-3 flex gap-2">
+                                    <input class="shell-input min-w-0 flex-1 rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                           @bind="_labelDraft"
+                                           placeholder="@_channelName" />
+                                    <button type="button"
+                                            class="shell-button shell-button-accent shrink-0 rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                            @onclick="SaveLabelAsync"
+                                            disabled="@_isSavingLabel">
+                                        Save
+                                    </button>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(_labelSavedMessage))
+                                {
+                                    <p class="mt-2 text-xs text-emerald-700">@_labelSavedMessage</p>
+                                }
+                            </div>
+
+                            <div class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Favorite</p>
+                                <p class="mt-1 text-xs text-cinder-800/60">Mark this channel as a favorite to filter the feed.</p>
+                                <div class="mt-3">
+                                    <button type="button"
+                                            class="@(_preference.IsFavorite ? "shell-button shell-button-accent rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]" : "shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]")"
+                                            @onclick="ToggleFavoriteAsync">
+                                        @(_preference.IsFavorite ? "Favorited" : "Add to favorites")
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="shell-subpanel rounded-[1.4rem] p-5">
+                            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Encryption key</p>
+                            <p class="mt-1 text-xs text-cinder-800/60">
+                                Stored locally in the Vault — never sent to the server. Topic pattern:
+                                <code class="rounded bg-sand-100 px-1.5 py-0.5 text-cinder-900">@TopicFilter</code>
+                            </p>
+
+                            @if (!string.IsNullOrWhiteSpace(_keyError))
+                            {
+                                <p class="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_keyError</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_keySavedMessage))
+                            {
+                                <p class="mt-3 text-xs text-emerald-700">@_keySavedMessage</p>
+                            }
+
+                            @if (!LocalVaultService.Current.IsReady)
+                            {
+                                <p class="mt-3 text-sm text-cinder-800/78">Vault is initializing...</p>
+                            }
+                            else if (!LocalVaultService.Current.HasVault)
+                            {
+                                <p class="mt-3 text-sm text-cinder-800/78">
+                                    No local vault found. Create one in Settings to store encryption keys.
+                                </p>
+                            }
+                            else if (!LocalVaultService.Current.IsUnlocked)
+                            {
+                                <p class="mt-3 text-sm text-cinder-800/78">
+                                    Vault is locked. Unlock it in Settings to add or update keys.
+                                </p>
+                            }
+                            else
+                            {
+                                <div class="mt-3 flex gap-2">
+                                    <input class="shell-input min-w-0 flex-1 rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                           type="password"
+                                           @bind="_keyDraft"
+                                           placeholder="Base64 or hex key" />
+                                    <button type="button"
+                                            class="shell-button shell-button-accent shrink-0 rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                            @onclick="SaveKeyAsync"
+                                            disabled="@_isSavingKey">
+                                        Save key
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
                 else
                 {
                     <div class="flex h-full min-h-0 flex-col gap-6">
                         <header class="space-y-3">
                             <div>
-                                <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@_channelName</h2>
+                                <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@EffectiveDisplayName</h2>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
@@ -48,6 +153,10 @@
                                 @if (_channel is not null)
                                 {
                                     <span class="rounded-full bg-white/75 px-3 py-1 text-xs text-cinder-800/78">@_channel.ObservedPacketCount observed packets</span>
+                                }
+                                @if (_preference.IsFavorite)
+                                {
+                                    <span class="rounded-full border border-signal-200 bg-signal-50 px-3 py-1 text-xs font-semibold text-signal-700">Favorite</span>
                                 }
                             </div>
                         </header>
@@ -171,6 +280,8 @@
 }
 
 @code {
+    private enum ChannelTab { Details, Settings }
+
     [Parameter]
     public bool IsOpen { get; set; }
 
@@ -183,11 +294,21 @@
     [Parameter]
     public EventCallback<string> OnOpenNode { get; set; }
 
+    private ChannelTab _activeTab = ChannelTab.Details;
+    private bool _scrollLocked;
     private ChannelProjectionEnvelope? _channel;
     private IReadOnlyList<DecryptedMessageEnvelope> _channelMessages = Array.Empty<DecryptedMessageEnvelope>();
     private IReadOnlyList<TopNodeEntry> _topNodes = Array.Empty<TopNodeEntry>();
     private string _channelName = string.Empty;
     private string _region = string.Empty;
+    private ChannelPreference _preference = new();
+    private string _labelDraft = string.Empty;
+    private string _keyDraft = string.Empty;
+    private bool _isSavingLabel;
+    private bool _isSavingKey;
+    private string? _labelSavedMessage;
+    private string? _keyError;
+    private string? _keySavedMessage;
 
     private bool HasChannelIdentity =>
         !string.IsNullOrWhiteSpace(_region) &&
@@ -198,6 +319,11 @@
             ? ProjectionDetailsSupport.BuildTopicFilter(_region, _channelName, _channel?.LatestSourceTopic)
             : string.Empty;
 
+    private string EffectiveDisplayName =>
+        string.IsNullOrWhiteSpace(_preference.Label)
+            ? ChannelKey
+            : _preference.Label;
+
     protected override void OnInitialized()
     {
         ChannelProjectionStore.Changed += HandleStoreChanged;
@@ -205,9 +331,16 @@
         NodeProjectionStore.Changed += HandleStoreChanged;
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         RefreshProjectionData();
+        await SyncScrollLockAsync();
+
+        if (IsOpen && !string.IsNullOrWhiteSpace(ChannelKey))
+        {
+            _preference = await ChannelPreferencesStore.GetAsync(ChannelKey);
+            _labelDraft = _preference.Label;
+        }
     }
 
     public void Dispose()
@@ -215,6 +348,25 @@
         ChannelProjectionStore.Changed -= HandleStoreChanged;
         DecryptedMessageStore.Changed -= HandleStoreChanged;
         NodeProjectionStore.Changed -= HandleStoreChanged;
+        if (_scrollLocked)
+        {
+            _ = JS.InvokeVoidAsync("meshboardUi.unlockScroll");
+            _scrollLocked = false;
+        }
+    }
+
+    private async Task SyncScrollLockAsync()
+    {
+        if (IsOpen && !_scrollLocked)
+        {
+            _scrollLocked = true;
+            await JS.InvokeVoidAsync("meshboardUi.lockScroll");
+        }
+        else if (!IsOpen && _scrollLocked)
+        {
+            _scrollLocked = false;
+            await JS.InvokeVoidAsync("meshboardUi.unlockScroll");
+        }
     }
 
     private void HandleStoreChanged()
@@ -258,6 +410,65 @@
             .ToArray();
     }
 
+    private async Task SaveLabelAsync()
+    {
+        _isSavingLabel = true;
+        _labelSavedMessage = null;
+
+        try
+        {
+            await ChannelPreferencesStore.SetLabelAsync(ChannelKey, _labelDraft);
+            _preference = await ChannelPreferencesStore.GetAsync(ChannelKey);
+            _labelSavedMessage = "Label saved.";
+        }
+        finally
+        {
+            _isSavingLabel = false;
+        }
+    }
+
+    private async Task ToggleFavoriteAsync()
+    {
+        var next = !_preference.IsFavorite;
+        await ChannelPreferencesStore.SetFavoriteAsync(ChannelKey, next);
+        _preference = await ChannelPreferencesStore.GetAsync(ChannelKey);
+    }
+
+    private async Task SaveKeyAsync()
+    {
+        _keyError = null;
+        _keySavedMessage = null;
+        _isSavingKey = true;
+
+        try
+        {
+            await LocalVaultService.SaveKeyRecordAsync(new SaveLocalVaultKeyRecordRequest
+            {
+                Name = EffectiveDisplayName,
+                TopicPattern = TopicFilter,
+                KeyValue = _keyDraft
+            });
+
+            _keyDraft = string.Empty;
+            _keySavedMessage = "Key saved to vault.";
+        }
+        catch (InvalidOperationException exception)
+        {
+            _keyError = exception.Message;
+        }
+        finally
+        {
+            _isSavingKey = false;
+        }
+    }
+
+    private string GetTabClass(ChannelTab tab)
+    {
+        return tab == _activeTab
+            ? "shell-button shell-button-accent rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+            : "shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]";
+    }
+
     private int ComputeDecodedRatio()
     {
         var observedPacketCount = _channel?.ObservedPacketCount ?? 0;
@@ -273,6 +484,11 @@
 
     private async Task CloseAsync()
     {
+        _activeTab = ChannelTab.Details;
+        _labelSavedMessage = null;
+        _keyError = null;
+        _keySavedMessage = null;
+        _keyDraft = string.Empty;
         await OnClose.InvokeAsync();
     }
 

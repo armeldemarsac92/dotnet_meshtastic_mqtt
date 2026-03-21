@@ -27,9 +27,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
         services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
         services.AddScoped<IProductBrokerPreferenceService, ProductBrokerPreferenceService>();
-        services.AddScoped<IProductTopicPresetPreferenceService, ProductTopicPresetPreferenceService>();
-        services.AddScoped<ISavedChannelPreferenceService, SavedChannelPreferenceService>();
-        services.AddScoped<ITopicPresetService, TopicPresetService>();
         services.AddScoped<IUserAccountService, UserAccountService>();
         services.AddScoped<IWorkspaceProvisioningService, WorkspaceProvisioningService>();
 
@@ -61,10 +58,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<INodeService, NodeService>();
-        services.AddScoped<ISavedChannelPreferenceService, SavedChannelPreferenceService>();
         services.AddScoped<ITopicExplorerService, TopicExplorerService>();
         services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
-        services.AddScoped<ITopicPresetService, TopicPresetService>();
         services.AddScoped<IUserAccountService, UserAccountService>();
         services.AddScoped<IWorkspaceProvisioningService, WorkspaceProvisioningService>();
 

@@ -16,8 +16,6 @@ public sealed class BrokerServerProfileMappingExtensionsTests
             UseTls = true,
             Username = "mesh-user",
             Password = "secret",
-            DefaultTopicPattern = "msh/EU/2/e/#",
-            DefaultEncryptionKeyBase64 = "AQ==",
             DownlinkTopic = "msh/EU/2/json/mqtt/",
             EnableSend = true,
             IsActive = true,
@@ -28,7 +26,6 @@ public sealed class BrokerServerProfileMappingExtensionsTests
 
         Assert.True(saved.HasPasswordConfigured);
         Assert.Equal(profile.ServerAddress, saved.ServerAddress);
-        Assert.Equal(profile.DefaultTopicPattern, saved.DefaultTopicPattern);
         Assert.Equal(profile.DownlinkTopic, saved.DownlinkTopic);
     }
 

@@ -8,7 +8,6 @@ using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Favorites;
 using MeshBoard.Contracts.Realtime;
-using MeshBoard.Contracts.Topics;
 
 namespace MeshBoard.IntegrationTests;
 
@@ -453,42 +452,6 @@ public sealed class ApiEndpointIntegrationTests
     }
 
     [Fact]
-    public async Task Preferences_WhenAuthenticated_ShouldReturnProvisionedBrokerAndTopicPresetData()
-    {
-        await using var host = new ApiIntegrationTestHost();
-        using var client = host.CreateApiClient();
-
-        await RegisterAsync(client, host);
-
-        var brokersResponse = await client.GetAsync("/api/preferences/brokers");
-        var activeBrokerResponse = await client.GetAsync("/api/preferences/brokers/active");
-        var presetsResponse = await client.GetAsync("/api/preferences/topic-presets");
-
-        Assert.Equal(HttpStatusCode.OK, brokersResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, activeBrokerResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, presetsResponse.StatusCode);
-
-        var brokers = await brokersResponse.Content.ReadFromJsonAsync<List<SavedBrokerServerProfile>>();
-        var activeBroker = await activeBrokerResponse.Content.ReadFromJsonAsync<SavedBrokerServerProfile>();
-        var presets = await presetsResponse.Content.ReadFromJsonAsync<List<SavedTopicPreset>>();
-
-        Assert.NotNull(brokers);
-        Assert.NotEmpty(brokers!);
-        Assert.NotNull(activeBroker);
-        Assert.True(activeBroker!.IsActive);
-        Assert.NotNull(presets);
-        Assert.NotEmpty(presets!);
-        Assert.All(
-            presets,
-            preset =>
-            {
-                Assert.NotEqual(Guid.Empty, preset.ServerProfileId);
-                Assert.False(string.IsNullOrWhiteSpace(preset.ServerProfileName));
-                Assert.False(string.IsNullOrWhiteSpace(preset.ServerAddress));
-            });
-    }
-
-    [Fact]
     public async Task BrokerPreferences_PostShouldCreateBrokerProfileWithSafeDto()
     {
         await using var host = new ApiIntegrationTestHost();
@@ -500,7 +463,6 @@ public sealed class ApiEndpointIntegrationTests
             name: "Portable gateway",
             host: "portable-gateway.example.com",
             password: "secret-pass",
-            defaultTopicPattern: "msh/EU/2/e/Portable/#",
             downlinkTopic: "msh/EU/2/json/mqtt/portable/");
 
         var createResponse = await PostJsonAsync(client, host, "/api/preferences/brokers", request);
@@ -511,7 +473,6 @@ public sealed class ApiEndpointIntegrationTests
         Assert.NotNull(createdProfile);
         Assert.Equal(request.Name, createdProfile!.Name);
         Assert.Equal(request.Host, createdProfile.Host);
-        Assert.Equal(request.DefaultTopicPattern, createdProfile.DefaultTopicPattern);
         Assert.Equal(request.DownlinkTopic, createdProfile.DownlinkTopic);
         Assert.True(createdProfile.HasPasswordConfigured);
 
@@ -536,7 +497,6 @@ public sealed class ApiEndpointIntegrationTests
                 name: "Field gateway",
                 host: "field-gateway.example.com",
                 password: "initial-secret",
-                defaultTopicPattern: "msh/US/2/e/Field/#",
                 downlinkTopic: "msh/US/2/json/mqtt/field/"));
 
         var createdProfile = await createResponse.Content.ReadFromJsonAsync<SavedBrokerServerProfile>();
@@ -550,7 +510,6 @@ public sealed class ApiEndpointIntegrationTests
                 name: "Field gateway updated",
                 host: "field-gateway-updated.example.com",
                 password: null,
-                defaultTopicPattern: "msh/US/2/e/FieldUpdated/#",
                 downlinkTopic: "msh/US/2/json/mqtt/field-updated/",
                 clearPassword: true,
                 enableSend: true));
@@ -562,7 +521,6 @@ public sealed class ApiEndpointIntegrationTests
         Assert.Equal(createdProfile.Id, updatedProfile!.Id);
         Assert.Equal("Field gateway updated", updatedProfile.Name);
         Assert.Equal("field-gateway-updated.example.com", updatedProfile.Host);
-        Assert.Equal("msh/US/2/e/FieldUpdated/#", updatedProfile.DefaultTopicPattern);
         Assert.Equal("msh/US/2/json/mqtt/field-updated/", updatedProfile.DownlinkTopic);
         Assert.True(updatedProfile.EnableSend);
         Assert.False(updatedProfile.HasPasswordConfigured);
@@ -587,7 +545,6 @@ public sealed class ApiEndpointIntegrationTests
                 name: "Backpack relay",
                 host: "backpack-relay.example.com",
                 password: null,
-                defaultTopicPattern: "msh/EU/2/e/Backpack/#",
                 downlinkTopic: "msh/EU/2/json/mqtt/backpack/"));
 
         var createdProfile = await createResponse.Content.ReadFromJsonAsync<SavedBrokerServerProfile>();
@@ -610,204 +567,6 @@ public sealed class ApiEndpointIntegrationTests
         Assert.NotNull(persistedActive);
         Assert.Equal(createdProfile.Id, persistedActive!.Id);
         Assert.NotEqual(seededActive!.Id, persistedActive.Id);
-    }
-
-    [Fact]
-    public async Task TopicPresetPreferences_PostShouldCreateAndUpdatePresetByPattern()
-    {
-        await using var host = new ApiIntegrationTestHost();
-        using var client = host.CreateApiClient();
-
-        await RegisterAsync(client, host);
-        var activeProfile = await client.GetFromJsonAsync<SavedBrokerServerProfile>("/api/preferences/brokers/active");
-        Assert.NotNull(activeProfile);
-
-        var topicPattern = $"msh/US/2/e/{Guid.NewGuid():N}/#";
-
-        var createResponse = await PostJsonAsync(
-            client,
-            host,
-            "/api/preferences/topic-presets",
-            new SaveTopicPresetPreferenceRequest
-            {
-                ServerProfileId = activeProfile!.Id,
-                Name = "Portable preset",
-                TopicPattern = topicPattern,
-                IsDefault = false
-            });
-
-        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
-
-        var createdPreset = await createResponse.Content.ReadFromJsonAsync<SavedTopicPreset>();
-        Assert.NotNull(createdPreset);
-        Assert.Equal("Portable preset", createdPreset!.Name);
-        Assert.Equal(activeProfile.Id, createdPreset.ServerProfileId);
-        Assert.Equal(activeProfile.Name, createdPreset.ServerProfileName);
-        Assert.Equal(activeProfile.ServerAddress, createdPreset.ServerAddress);
-        Assert.Equal(topicPattern, createdPreset.TopicPattern);
-        Assert.False(createdPreset.IsDefault);
-
-        var updateResponse = await PostJsonAsync(
-            client,
-            host,
-            "/api/preferences/topic-presets",
-            new SaveTopicPresetPreferenceRequest
-            {
-                ServerProfileId = activeProfile.Id,
-                Name = "Portable preset updated",
-                TopicPattern = topicPattern,
-                IsDefault = true
-            });
-
-        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
-
-        var updatedPreset = await updateResponse.Content.ReadFromJsonAsync<SavedTopicPreset>();
-        Assert.NotNull(updatedPreset);
-        Assert.Equal(createdPreset.Id, updatedPreset!.Id);
-        Assert.Equal("Portable preset updated", updatedPreset.Name);
-        Assert.True(updatedPreset.IsDefault);
-
-        var presets = await client.GetFromJsonAsync<List<SavedTopicPreset>>("/api/preferences/topic-presets");
-        Assert.NotNull(presets);
-
-        var matchingPresets = presets!.Where(preset => preset.TopicPattern == topicPattern).ToList();
-        var persistedPreset = Assert.Single(matchingPresets);
-
-        Assert.Equal(updatedPreset.Id, persistedPreset.Id);
-        Assert.Equal(activeProfile.Id, persistedPreset.ServerProfileId);
-        Assert.Equal("Portable preset updated", persistedPreset.Name);
-        Assert.True(persistedPreset.IsDefault);
-    }
-
-    [Fact]
-    public async Task TopicPresetPreferences_ShouldAllowSamePatternAcrossServersWithSameAddress()
-    {
-        await using var host = new ApiIntegrationTestHost();
-        using var client = host.CreateApiClient();
-
-        await RegisterAsync(client, host);
-        var activeProfile = await client.GetFromJsonAsync<SavedBrokerServerProfile>("/api/preferences/brokers/active");
-        Assert.NotNull(activeProfile);
-
-        var createServerResponse = await PostJsonAsync(
-            client,
-            host,
-            "/api/preferences/brokers",
-            CreateBrokerRequest(
-                name: "Duplicate address profile",
-                host: activeProfile!.Host,
-                password: null,
-                defaultTopicPattern: activeProfile.DefaultTopicPattern,
-                downlinkTopic: activeProfile.DownlinkTopic));
-
-        Assert.Equal(HttpStatusCode.Created, createServerResponse.StatusCode);
-
-        var secondProfile = await createServerResponse.Content.ReadFromJsonAsync<SavedBrokerServerProfile>();
-        Assert.NotNull(secondProfile);
-        Assert.NotEqual(activeProfile.Id, secondProfile!.Id);
-        Assert.Equal(activeProfile.ServerAddress, secondProfile.ServerAddress);
-
-        var sharedTopicPattern = $"msh/US/2/e/{Guid.NewGuid():N}/#";
-
-        var firstPresetResponse = await PostJsonAsync(
-            client,
-            host,
-            "/api/preferences/topic-presets",
-            new SaveTopicPresetPreferenceRequest
-            {
-                ServerProfileId = activeProfile.Id,
-                Name = "Primary same-address preset",
-                TopicPattern = sharedTopicPattern,
-                IsDefault = false
-            });
-
-        Assert.Equal(HttpStatusCode.OK, firstPresetResponse.StatusCode);
-
-        var secondPresetResponse = await PostJsonAsync(
-            client,
-            host,
-            "/api/preferences/topic-presets",
-            new SaveTopicPresetPreferenceRequest
-            {
-                ServerProfileId = secondProfile.Id,
-                Name = "Secondary same-address preset",
-                TopicPattern = sharedTopicPattern,
-                IsDefault = false
-            });
-
-        Assert.Equal(HttpStatusCode.OK, secondPresetResponse.StatusCode);
-
-        var presets = await client.GetFromJsonAsync<List<SavedTopicPreset>>("/api/preferences/topic-presets");
-        Assert.NotNull(presets);
-
-        var matchingPresets = presets!
-            .Where(preset => preset.TopicPattern == sharedTopicPattern)
-            .OrderBy(preset => preset.ServerProfileName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        Assert.Equal(2, matchingPresets.Count);
-        Assert.Contains(matchingPresets, preset => preset.ServerProfileId == activeProfile.Id && preset.Name == "Primary same-address preset");
-        Assert.Contains(matchingPresets, preset => preset.ServerProfileId == secondProfile.Id && preset.Name == "Secondary same-address preset");
-    }
-
-    [Fact]
-    public async Task ChannelPreferences_ShouldRoundTripSavedChannelFilters()
-    {
-        await using var host = new ApiIntegrationTestHost();
-        using var client = host.CreateApiClient();
-
-        await RegisterAsync(client, host);
-
-        var topicFilter = $"msh/US/2/e/{Guid.NewGuid():N}/#";
-
-        var createResponse = await PostJsonAsync(
-            client,
-            host,
-            "/api/preferences/channels",
-            new SaveChannelFilterRequest
-            {
-                TopicFilter = topicFilter,
-                Label = "Portable feed"
-            });
-
-        Assert.True(
-            createResponse.IsSuccessStatusCode,
-            $"Expected channel create to succeed but received {(int)createResponse.StatusCode} ({createResponse.StatusCode}).");
-
-        var getResponse = await client.GetAsync("/api/preferences/channels");
-        Assert.Equal(HttpStatusCode.OK, getResponse.StatusCode);
-
-        var savedChannels = await getResponse.Content.ReadFromJsonAsync<List<SavedChannelFilter>>();
-        Assert.NotNull(savedChannels);
-
-        var persistedChannel = Assert.Single(savedChannels!, channel => channel.TopicFilter == topicFilter);
-        Assert.NotEqual(Guid.Empty, persistedChannel.Id);
-        Assert.NotEqual(Guid.Empty, persistedChannel.BrokerServerProfileId);
-        Assert.Equal("Portable feed", persistedChannel.Label);
-        Assert.True(persistedChannel.CreatedAtUtc > DateTimeOffset.MinValue);
-        Assert.True(persistedChannel.UpdatedAtUtc > DateTimeOffset.MinValue);
-
-        var encodedTopicFilter = string.Join(
-            '/',
-            topicFilter
-                .Split('/', StringSplitOptions.RemoveEmptyEntries)
-                .Select(Uri.EscapeDataString));
-
-        var deleteResponse = await DeleteAsync(
-            client,
-            host,
-            $"/api/preferences/channels/{encodedTopicFilter}");
-
-        Assert.True(
-            deleteResponse.IsSuccessStatusCode,
-            $"Expected channel delete to succeed but received {(int)deleteResponse.StatusCode} ({deleteResponse.StatusCode}).");
-
-        var getAfterDeleteResponse = await client.GetAsync("/api/preferences/channels");
-        Assert.Equal(HttpStatusCode.OK, getAfterDeleteResponse.StatusCode);
-
-        var channelsAfterDelete = await getAfterDeleteResponse.Content.ReadFromJsonAsync<List<SavedChannelFilter>>();
-        Assert.NotNull(channelsAfterDelete);
-        Assert.DoesNotContain(channelsAfterDelete!, channel => channel.TopicFilter == topicFilter);
     }
 
     [Fact]
@@ -872,7 +631,6 @@ public sealed class ApiEndpointIntegrationTests
         string name,
         string host,
         string? password,
-        string defaultTopicPattern,
         string downlinkTopic,
         bool clearPassword = false,
         bool enableSend = false)
@@ -886,7 +644,6 @@ public sealed class ApiEndpointIntegrationTests
             Username = "mesh-user",
             Password = password,
             ClearPassword = clearPassword,
-            DefaultTopicPattern = defaultTopicPattern,
             DownlinkTopic = downlinkTopic,
             EnableSend = enableSend
         };

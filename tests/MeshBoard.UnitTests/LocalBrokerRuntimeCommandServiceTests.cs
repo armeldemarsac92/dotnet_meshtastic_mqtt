@@ -2,7 +2,6 @@ using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Meshtastic;
-using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Meshtastic.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,80 +11,23 @@ namespace MeshBoard.UnitTests;
 public sealed class LocalBrokerRuntimeCommandServiceTests
 {
     [Fact]
-    public async Task ReconcileActiveProfileAsync_ShouldUseSavedPresetsAndChannels_BeforeFallbackTopic()
+    public async Task ReconcileActiveProfileAsync_ShouldAlwaysSubscribeToMshRoot()
     {
         const string workspaceId = "workspace-a";
         var activeProfile = CreateProfile(
             id: Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            host: "mqtt.meshtastic.org",
-            defaultTopicPattern: "msh/US/2/e/#");
-        var sessionManager = new FakeWorkspaceBrokerSessionManager();
-        var runtimeRegistry = new FakeBrokerRuntimeRegistry();
-        var service = new LocalBrokerRuntimeCommandService(
-            CreateScopeFactory(
-                new FakeBrokerServerProfileRepository(workspaceId, activeProfile),
-                new FakeTopicPresetRepository(
-                    new TopicPreset
-                    {
-                        Id = Guid.NewGuid(),
-                        Name = "EU Public",
-                        TopicPattern = "msh/EU_433/2/e/#",
-                        IsDefault = true,
-                        CreatedAtUtc = DateTimeOffset.UtcNow
-                    }),
-                new FakeSavedChannelFilterRepository(
-                    new SavedChannelFilter
-                    {
-                        Id = Guid.NewGuid(),
-                        BrokerServerProfileId = activeProfile.Id,
-                        TopicFilter = "msh/US/2/e/LongFast/#",
-                        CreatedAtUtc = DateTimeOffset.UtcNow,
-                        UpdatedAtUtc = DateTimeOffset.UtcNow
-                    })),
-            sessionManager,
-            runtimeRegistry,
-            NullLogger<LocalBrokerRuntimeCommandService>.Instance);
-
-        await service.ReconcileActiveProfileAsync(workspaceId);
-
-        Assert.Equal(1, sessionManager.ConnectCallCount);
-        Assert.Equal(
-            [
-                "msh/EU_433/2/e/#",
-                "msh/EU_433/2/json/#",
-                "msh/US/2/e/LongFast/#",
-                "msh/US/2/json/LongFast/#"
-            ],
-            sessionManager.GetTopicFilters(workspaceId).OrderBy(filter => filter, StringComparer.Ordinal).ToArray());
-        Assert.DoesNotContain("msh/US/2/e/#", sessionManager.GetTopicFilters(workspaceId));
-    }
-
-    [Fact]
-    public async Task ReconcileActiveProfileAsync_ShouldFallbackToServerTopic_WhenNoExplicitPreferencesExist()
-    {
-        const string workspaceId = "workspace-a";
-        var activeProfile = CreateProfile(
-            id: Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            host: "mqtt.meshtastic.org",
-            defaultTopicPattern: "msh/US/2/e/#");
+            host: "mqtt.meshtastic.org");
         var sessionManager = new FakeWorkspaceBrokerSessionManager();
         var service = new LocalBrokerRuntimeCommandService(
-            CreateScopeFactory(
-                new FakeBrokerServerProfileRepository(workspaceId, activeProfile),
-                new FakeTopicPresetRepository(),
-                new FakeSavedChannelFilterRepository()),
+            CreateScopeFactory(new FakeBrokerServerProfileRepository(workspaceId, activeProfile)),
             sessionManager,
             new FakeBrokerRuntimeRegistry(),
             NullLogger<LocalBrokerRuntimeCommandService>.Instance);
 
         await service.ReconcileActiveProfileAsync(workspaceId);
 
-        Assert.Equal(
-            [
-                "msh/US/2/e/#",
-                "msh/US/2/json/#"
-            ],
-            sessionManager.GetTopicFilters(workspaceId).OrderBy(filter => filter, StringComparer.Ordinal).ToArray());
+        Assert.Equal(1, sessionManager.ConnectCallCount);
+        Assert.Contains("msh/#", sessionManager.GetTopicFilters(workspaceId));
     }
 
     [Fact]
@@ -94,16 +36,14 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
         const string workspaceId = "workspace-a";
         var previousProfile = CreateProfile(
             id: Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            host: "mqtt-old.example.org",
-            defaultTopicPattern: "msh/US/2/e/#");
+            host: "mqtt-old.example.org");
         var nextProfile = CreateProfile(
             id: Guid.Parse("44444444-4444-4444-4444-444444444444"),
-            host: "mqtt-new.example.org",
-            defaultTopicPattern: "msh/EU_433/2/e/#");
+            host: "mqtt-new.example.org");
         var profileRepository = new FakeBrokerServerProfileRepository(workspaceId, nextProfile);
         var sessionManager = new FakeWorkspaceBrokerSessionManager();
         sessionManager.SetConnected(workspaceId, true);
-        sessionManager.SetTopicFilters(workspaceId, ["msh/US/2/e/#", "msh/US/2/json/#"]);
+        sessionManager.SetTopicFilters(workspaceId, ["msh/#", "msh/+/2/json/#"]);
         var runtimeRegistry = new FakeBrokerRuntimeRegistry();
         runtimeRegistry.UpdateSnapshot(
             workspaceId,
@@ -113,13 +53,10 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
                 ActiveServerName = previousProfile.Name,
                 ActiveServerAddress = previousProfile.ServerAddress,
                 IsConnected = true,
-                TopicFilters = ["msh/US/2/e/#", "msh/US/2/json/#"]
+                TopicFilters = ["msh/#", "msh/+/2/json/#"]
             });
         var service = new LocalBrokerRuntimeCommandService(
-            CreateScopeFactory(
-                profileRepository,
-                new FakeTopicPresetRepository(),
-                new FakeSavedChannelFilterRepository()),
+            CreateScopeFactory(profileRepository),
             sessionManager,
             runtimeRegistry,
             NullLogger<LocalBrokerRuntimeCommandService>.Instance);
@@ -128,17 +65,12 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
 
         Assert.Equal(1, sessionManager.ResetRuntimeCallCount);
         Assert.Equal(1, sessionManager.ConnectCallCount);
-        Assert.Equal(
-            [
-                "msh/EU_433/2/e/#",
-                "msh/EU_433/2/json/#"
-            ],
-            sessionManager.GetTopicFilters(workspaceId).OrderBy(filter => filter, StringComparer.Ordinal).ToArray());
+        Assert.Contains("msh/#", sessionManager.GetTopicFilters(workspaceId));
         Assert.Equal(nextProfile.Id, runtimeRegistry.GetSnapshot(workspaceId).ActiveServerProfileId);
         Assert.Equal(nextProfile.ServerAddress, runtimeRegistry.GetSnapshot(workspaceId).ActiveServerAddress);
     }
 
-    private static BrokerServerProfile CreateProfile(Guid id, string host, string defaultTopicPattern)
+    private static BrokerServerProfile CreateProfile(Guid id, string host)
     {
         return new BrokerServerProfile
         {
@@ -149,7 +81,6 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
             UseTls = false,
             Username = string.Empty,
             Password = string.Empty,
-            DefaultTopicPattern = defaultTopicPattern,
             DownlinkTopic = "msh/US/2/json/mqtt/",
             EnableSend = true,
             IsActive = true
@@ -157,14 +88,10 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
     }
 
     private static IServiceScopeFactory CreateScopeFactory(
-        FakeBrokerServerProfileRepository brokerServerProfileRepository,
-        FakeTopicPresetRepository topicPresetRepository,
-        FakeSavedChannelFilterRepository savedChannelFilterRepository)
+        FakeBrokerServerProfileRepository brokerServerProfileRepository)
     {
         var services = new ServiceCollection();
         services.AddScoped<IBrokerServerProfileRepository>(_ => brokerServerProfileRepository);
-        services.AddScoped<ITopicPresetRepository>(_ => topicPresetRepository);
-        services.AddScoped<ISavedChannelFilterRepository>(_ => savedChannelFilterRepository);
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
@@ -230,60 +157,6 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
         }
 
         public Task<BrokerServerProfile> UpsertAsync(string workspaceId, SaveBrokerServerProfileRequest request, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-    }
-
-    private sealed class FakeTopicPresetRepository : ITopicPresetRepository
-    {
-        private readonly IReadOnlyCollection<TopicPreset> _presets;
-
-        public FakeTopicPresetRepository(params TopicPreset[] presets)
-        {
-            _presets = presets;
-        }
-
-        public Task<IReadOnlyCollection<TopicPreset>> GetAllAsync(string workspaceId, Guid brokerServerProfileId, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(_presets);
-        }
-
-        public Task<TopicPreset?> GetByTopicPatternAsync(string workspaceId, Guid brokerServerProfileId, string topicPattern, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(_presets.FirstOrDefault(item => string.Equals(item.TopicPattern, topicPattern, StringComparison.Ordinal)));
-        }
-
-        public Task<TopicPreset> UpsertAsync(string workspaceId, Guid brokerServerProfileId, string brokerServer, SaveTopicPresetRequest request, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-    }
-
-    private sealed class FakeSavedChannelFilterRepository : ISavedChannelFilterRepository
-    {
-        private readonly IReadOnlyCollection<SavedChannelFilter> _filters;
-
-        public FakeSavedChannelFilterRepository(params SavedChannelFilter[] filters)
-        {
-            _filters = filters;
-        }
-
-        public Task<IReadOnlyCollection<SavedChannelFilter>> GetAllAsync(string workspaceId, Guid brokerServerProfileId, CancellationToken cancellationToken = default)
-        {
-            IReadOnlyCollection<SavedChannelFilter> filters = _filters
-                .Where(item => item.BrokerServerProfileId == brokerServerProfileId)
-                .ToList();
-
-            return Task.FromResult(filters);
-        }
-
-        public Task<bool> UpsertAsync(string workspaceId, Guid brokerServerProfileId, string topicFilter, string? label, CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<bool> DeleteAsync(string workspaceId, Guid brokerServerProfileId, string topicFilter, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
         }

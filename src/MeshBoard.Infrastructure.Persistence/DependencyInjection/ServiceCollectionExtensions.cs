@@ -102,8 +102,6 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IBrokerServerProfileRepository, ProductBrokerServerProfileRepository>();
         services.AddScoped<IFavoriteNodeRepository, FavoriteNodeRepository>();
-        services.AddScoped<ISavedChannelFilterRepository, SavedChannelFilterRepository>();
-        services.AddScoped<ITopicPresetRepository, ProductTopicPresetRepository>();
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
     }
 
@@ -111,8 +109,6 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<IBrokerServerProfileRepository, BrokerServerProfileRepository>();
         services.AddScoped<IFavoriteNodeRepository, FavoriteNodeRepository>();
-        services.AddScoped<ISavedChannelFilterRepository, SavedChannelFilterRepository>();
-        services.AddScoped<ITopicPresetRepository, TopicPresetRepository>();
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
         services.AddScoped<IDiscoveredTopicRepository, DiscoveredTopicRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();

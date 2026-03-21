@@ -10,10 +10,6 @@ public sealed record ClientDashboardPreferenceSummary
 
     public int SavedBrokerCount { get; init; }
 
-    public int SavedChannelCount { get; init; }
-
-    public int TopicPresetCount { get; init; }
-
     public int FavoriteCount { get; init; }
 
     public bool IsLoaded { get; init; }

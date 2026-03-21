@@ -15,8 +15,6 @@ public static class BrokerPreferenceRequestMappingExtensions
             UseTls = request.UseTls,
             Username = request.Username,
             Password = ResolvePassword(request, existingProfile),
-            DefaultTopicPattern = request.DefaultTopicPattern,
-            DefaultEncryptionKeyBase64 = null,
             DownlinkTopic = request.DownlinkTopic,
             EnableSend = request.EnableSend,
             IsActive = existingProfile?.IsActive ?? false

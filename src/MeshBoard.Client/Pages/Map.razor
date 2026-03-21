@@ -1,4 +1,3 @@
-@page "/map"
 @using MeshBoard.Client.Components.Details
 @using MeshBoard.Client.Maps
 @attribute [Authorize]
@@ -15,8 +14,8 @@
             <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Node map</h1>
         </div>
         <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
-            Browse all locally projected nodes on a 3D globe. Click a node to pin focus, click the globe again to release it,
-            hover to reveal its shared-channel cohort, and open node or channel details in the restored popup flow.
+            Browse all locally projected nodes on the map. Click a node to pin focus, click the map again to release it,
+            hover to reveal its shared-channel cohort, and open node or channel details in the popup flow.
         </p>
     </header>
 
@@ -25,7 +24,7 @@
             <div class="space-y-1">
                 <p>@GetMapSummaryText()</p>
                 <p class="text-[0.72rem] text-cinder-800/62">
-                    Hover links show shared-channel cohorts, not proven radio paths.
+                    Hover links show shared-channel cohorts, not proven radio paths. 3D buildings visible at close zoom.
                 </p>
             </div>
 
@@ -67,7 +66,7 @@
         <div class="space-y-2 text-sm text-cinder-800/82">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Channel cohorts</p>
-                <p class="text-[0.72rem] text-cinder-800/66">Click a chip to isolate that cohort on the globe.</p>
+                <p class="text-[0.72rem] text-cinder-800/66">Click a chip to isolate that cohort on the map.</p>
             </div>
 
             @if (_channelLegendEntries.Count == 0)
@@ -150,7 +149,7 @@
                     @if (FocusedNode is null)
                     {
                         <p class="text-xs leading-6 text-cinder-800/72">
-                            Hover a node on the globe to inspect its active channel cohort, or click one to pin this panel.
+                            Hover a node on the map to inspect its active channel cohort, or click one to pin this panel.
                         </p>
                     }
                     else
@@ -223,7 +222,7 @@
         else if (_visiblePositionCount < _visibleNodes.Count)
         {
             <div class="pointer-events-none absolute bottom-6 left-6 max-w-md rounded-[1.3rem] border border-white/70 bg-white/90 px-4 py-3 text-sm leading-6 text-cinder-800/82 shadow-lg shadow-cinder-950/10">
-                @_visibleNodes.Count nodes match the current filters, but @_visiblePositionCount unique positions are represented on the globe.
+                @_visibleNodes.Count nodes match the current filters, but @_visiblePositionCount unique positions are represented on the map.
                 Overlapping coordinates are spread slightly so you can still select them.
             </div>
         }
@@ -524,7 +523,7 @@
     private Task<IJSObjectReference> GetMapModuleAsync()
     {
         _moduleTask ??= new Lazy<Task<IJSObjectReference>>(
-            () => JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js").AsTask());
+            () => JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=3").AsTask());
         return _moduleTask.Value;
     }
 
@@ -564,7 +563,7 @@
             .Distinct(StringComparer.Ordinal)
             .Count();
 
-        return $"{_searchMatchedNodes.Count} matching nodes across {cohortCount} channel cohorts. Some may be hidden on the far side of the globe.";
+        return $"{_searchMatchedNodes.Count} matching nodes across {cohortCount} channel cohorts.";
     }
 
     private static IReadOnlyList<MapNodeActivity> MergeActivityPulses(

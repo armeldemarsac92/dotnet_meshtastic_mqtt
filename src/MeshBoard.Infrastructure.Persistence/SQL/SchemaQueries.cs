@@ -31,18 +31,6 @@ internal static class SchemaQueries
         CREATE UNIQUE INDEX IF NOT EXISTS ux_favorite_nodes_workspace_node_id
             ON favorite_nodes(workspace_id, node_id);
 
-        CREATE TABLE IF NOT EXISTS topic_presets (
-            id TEXT NOT NULL PRIMARY KEY,
-            workspace_id TEXT NOT NULL,
-            broker_server_profile_id TEXT NOT NULL,
-            broker_server TEXT NOT NULL,
-            name TEXT NOT NULL,
-            topic_pattern TEXT NOT NULL,
-            encryption_key_base64 TEXT NULL,
-            is_default INTEGER NOT NULL,
-            created_at_utc TEXT NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS broker_server_profiles (
             id TEXT NOT NULL PRIMARY KEY,
             workspace_id TEXT NOT NULL,
@@ -52,8 +40,6 @@ internal static class SchemaQueries
             use_tls INTEGER NOT NULL,
             username TEXT NULL,
             password TEXT NULL,
-            default_topic_pattern TEXT NOT NULL,
-            default_encryption_key_base64 TEXT NULL,
             downlink_topic TEXT NOT NULL,
             enable_send INTEGER NOT NULL,
             subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
@@ -63,9 +49,6 @@ internal static class SchemaQueries
 
         CREATE UNIQUE INDEX IF NOT EXISTS ux_broker_server_profiles_workspace_name
             ON broker_server_profiles(workspace_id, name);
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_profile_topic_pattern
-            ON topic_presets(workspace_id, broker_server_profile_id, topic_pattern);
 
         CREATE TABLE IF NOT EXISTS users (
             id TEXT NOT NULL PRIMARY KEY,
@@ -85,19 +68,6 @@ internal static class SchemaQueries
             created_at_utc TEXT NOT NULL,
             PRIMARY KEY (workspace_id, broker_server_profile_id, topic_filter)
         );
-
-        CREATE TABLE IF NOT EXISTS saved_channel_filters (
-            id TEXT NOT NULL PRIMARY KEY,
-            workspace_id TEXT NOT NULL,
-            broker_server_profile_id TEXT NOT NULL,
-            topic_filter TEXT NOT NULL,
-            label TEXT NULL,
-            created_at_utc TEXT NOT NULL,
-            updated_at_utc TEXT NOT NULL
-        );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_saved_channel_filters_workspace_profile_topic_filter
-            ON saved_channel_filters(workspace_id, broker_server_profile_id, topic_filter);
 
         CREATE TABLE IF NOT EXISTS workspace_runtime_status (
             workspace_id TEXT NOT NULL PRIMARY KEY,
@@ -446,8 +416,6 @@ internal static class SchemaQueries
             use_tls INTEGER NOT NULL,
             username TEXT NULL,
             password TEXT NULL,
-            default_topic_pattern TEXT NOT NULL,
-            default_encryption_key_base64 TEXT NULL,
             downlink_topic TEXT NOT NULL,
             enable_send INTEGER NOT NULL,
             subscription_intents_initialized INTEGER NOT NULL DEFAULT 0,
@@ -467,8 +435,6 @@ internal static class SchemaQueries
             use_tls,
             username,
             password,
-            default_topic_pattern,
-            default_encryption_key_base64,
             downlink_topic,
             enable_send,
             subscription_intents_initialized,
@@ -483,8 +449,6 @@ internal static class SchemaQueries
             use_tls,
             username,
             password,
-            default_topic_pattern,
-            default_encryption_key_base64,
             downlink_topic,
             enable_send,
             COALESCE(subscription_intents_initialized, 0),
@@ -573,99 +537,6 @@ internal static class SchemaQueries
             first_observed_at_utc,
             last_observed_at_utc
         FROM discovered_topics_legacy;
-        """;
-
-    public static string GetTopicPresetColumns =>
-        """
-        PRAGMA table_info(topic_presets);
-        """;
-
-    public static string AddTopicPresetsEncryptionKeyBase64Column =>
-        """
-        ALTER TABLE topic_presets
-        ADD COLUMN encryption_key_base64 TEXT NULL;
-        """;
-
-    public static string AddTopicPresetsBrokerServerColumn =>
-        """
-        ALTER TABLE topic_presets
-        ADD COLUMN broker_server TEXT NULL;
-        """;
-
-    public static string AddTopicPresetsBrokerServerProfileIdColumn =>
-        """
-        ALTER TABLE topic_presets
-        ADD COLUMN broker_server_profile_id TEXT NULL;
-        """;
-
-    public static string AddTopicPresetsWorkspaceIdColumn =>
-        """
-        ALTER TABLE topic_presets
-        ADD COLUMN workspace_id TEXT NULL;
-        """;
-
-    public static string BackfillTopicPresetsBrokerServer =>
-        """
-        UPDATE topic_presets
-        SET broker_server = COALESCE(NULLIF(broker_server, ''), @BrokerServer)
-        WHERE broker_server IS NULL OR broker_server = '';
-        """;
-
-    public static string BackfillTopicPresetsBrokerServerProfileIdFromBrokerServer =>
-        """
-        UPDATE topic_presets
-        SET broker_server_profile_id = (
-            SELECT broker_server_profiles.id
-            FROM broker_server_profiles
-            WHERE broker_server_profiles.workspace_id = topic_presets.workspace_id
-              AND (broker_server_profiles.host || ':' || broker_server_profiles.port) = topic_presets.broker_server
-            ORDER BY broker_server_profiles.is_active DESC,
-                     broker_server_profiles.created_at_utc DESC,
-                     broker_server_profiles.id ASC
-            LIMIT 1)
-        WHERE broker_server_profile_id IS NULL OR broker_server_profile_id = '';
-        """;
-
-    public static string BackfillTopicPresetsBrokerServerProfileIdFromActiveProfile =>
-        """
-        UPDATE topic_presets
-        SET broker_server_profile_id = (
-            SELECT broker_server_profiles.id
-            FROM broker_server_profiles
-            WHERE broker_server_profiles.workspace_id = topic_presets.workspace_id
-            ORDER BY broker_server_profiles.is_active DESC,
-                     broker_server_profiles.created_at_utc DESC,
-                     broker_server_profiles.id ASC
-            LIMIT 1)
-        WHERE broker_server_profile_id IS NULL OR broker_server_profile_id = '';
-        """;
-
-    public static string BackfillTopicPresetsWorkspaceId =>
-        """
-        UPDATE topic_presets
-        SET workspace_id = @WorkspaceId
-        WHERE workspace_id IS NULL OR workspace_id = '';
-        """;
-
-    public static string DropTopicPresetsLegacyTopicPatternIndex =>
-        """
-        DROP INDEX IF EXISTS ux_topic_presets_topic_pattern;
-        """;
-
-    public static string DropTopicPresetsLegacyBrokerServerTopicPatternIndex =>
-        """
-        DROP INDEX IF EXISTS ux_topic_presets_broker_server_topic_pattern;
-        """;
-
-    public static string DropTopicPresetsWorkspaceBrokerServerTopicPatternIndex =>
-        """
-        DROP INDEX IF EXISTS ux_topic_presets_workspace_broker_server_topic_pattern;
-        """;
-
-    public static string CreateTopicPresetsWorkspaceBrokerServerProfileTopicPatternIndex =>
-        """
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_topic_presets_workspace_profile_topic_pattern
-            ON topic_presets(workspace_id, broker_server_profile_id, topic_pattern);
         """;
 
     public static string AddNodesBatteryLevelPercentColumn =>

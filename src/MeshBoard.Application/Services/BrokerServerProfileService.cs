@@ -89,11 +89,6 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             throw new BadRequestException("Server port must be between 1 and 65535.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.DefaultTopicPattern))
-        {
-            throw new BadRequestException("A default topic pattern is required.");
-        }
-
         if (string.IsNullOrWhiteSpace(request.DownlinkTopic))
         {
             throw new BadRequestException("A downlink topic is required.");
@@ -108,8 +103,6 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             UseTls = request.UseTls,
             Username = request.Username.Trim(),
             Password = request.Password,
-            DefaultTopicPattern = request.DefaultTopicPattern.Trim(),
-            DefaultEncryptionKeyBase64 = NormalizeDefaultEncryptionKey(request.DefaultEncryptionKeyBase64),
             DownlinkTopic = request.DownlinkTopic.Trim(),
             EnableSend = request.EnableSend,
             IsActive = request.IsActive
@@ -183,27 +176,10 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             UseTls = request.UseTls,
             Username = request.Username,
             Password = request.Password,
-            DefaultTopicPattern = request.DefaultTopicPattern,
-            DefaultEncryptionKeyBase64 = request.DefaultEncryptionKeyBase64,
             DownlinkTopic = request.DownlinkTopic,
             EnableSend = request.EnableSend,
             IsActive = request.IsActive
         };
-    }
-
-    private static string? NormalizeDefaultEncryptionKey(string? defaultEncryptionKeyBase64)
-    {
-        if (string.IsNullOrWhiteSpace(defaultEncryptionKeyBase64))
-        {
-            return null;
-        }
-
-        if (!MeshBoard.Contracts.Topics.TopicEncryptionKey.TryParse(defaultEncryptionKeyBase64, out _))
-        {
-            throw new BadRequestException("Default encryption key must be valid base64 or hexadecimal AES key.");
-        }
-
-        return MeshBoard.Contracts.Topics.TopicEncryptionKey.NormalizeToBase64OrNull(defaultEncryptionKeyBase64);
     }
 
     private string GetWorkspaceId()
