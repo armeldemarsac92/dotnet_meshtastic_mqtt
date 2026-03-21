@@ -1,5 +1,6 @@
 using MeshBoard.Api.Authentication;
 using MeshBoard.Api.Preferences;
+using MeshBoard.Api.Public;
 using MeshBoard.Api.Realtime;
 using MeshBoard.Application.Abstractions.Authentication;
 using MeshBoard.Application.Abstractions.Workspaces;
@@ -17,7 +18,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddApiApplicationServices();
+builder.Services.AddCollectorReadApplicationServices();
 builder.Services.AddProductPersistenceInfrastructure(builder.Configuration);
+builder.Services.AddCollectorReadPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddOptions<RealtimeSessionOptions>()
     .Bind(builder.Configuration.GetSection(RealtimeSessionOptions.SectionName));
 builder.Services.AddOptions<RealtimeDownstreamBrokerOptions>()
@@ -91,6 +94,7 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
 app.MapApiAuthEndpoints();
 app.MapBrokerPreferenceEndpoints();
 app.MapFavoritePreferenceEndpoints();
+app.MapPublicCollectorEndpoints();
 app.MapRealtimeSessionEndpoints();
 app.MapVernemqWebhookEndpoints();
 

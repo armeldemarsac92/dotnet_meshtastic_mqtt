@@ -8,7 +8,8 @@
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development",
         "MeshtasticRuntime__EnableHostedService": "true",
-        "Persistence__ConnectionString": "Data Source=/tmp/meshboard-realtime-bridge.db"
+        "Persistence__Provider": "PostgreSQL",
+        "Persistence__ConnectionString": "Host=localhost;Port=15432;Database=meshboard;Username=meshboard;Password=meshboard"
       }
     }
   }

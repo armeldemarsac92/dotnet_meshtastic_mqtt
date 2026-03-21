@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
@@ -24,6 +25,7 @@
     <ProjectReference Include="..\..\src\MeshBoard.Application\MeshBoard.Application.csproj" />
     <ProjectReference Include="..\..\src\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
     <ProjectReference Include="..\..\src\MeshBoard.Infrastructure.Persistence\MeshBoard.Infrastructure.Persistence.csproj" />
+    <ProjectReference Include="..\..\src\MeshBoard.ProductMigrationTool\MeshBoard.ProductMigrationTool.csproj" />
   </ItemGroup>
 
 </Project>

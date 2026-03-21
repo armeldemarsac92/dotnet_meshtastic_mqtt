@@ -192,22 +192,6 @@ public sealed class BrokerServerProfileServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> AreSubscriptionIntentsInitializedAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task MarkSubscriptionIntentsInitializedAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
         public Task<BrokerServerProfile> UpsertAsync(
             string workspaceId,
             SaveBrokerServerProfileRequest request,

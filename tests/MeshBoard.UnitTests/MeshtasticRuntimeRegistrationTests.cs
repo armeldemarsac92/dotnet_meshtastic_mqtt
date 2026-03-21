@@ -29,35 +29,35 @@ public sealed class MeshtasticRuntimeRegistrationTests
             services,
             descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeCommandService) &&
                 descriptor.ImplementationFactory is not null);
-        Assert.DoesNotContain(
-            services,
-            descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeCommandService) &&
-                descriptor.ImplementationType == typeof(QueuedBrokerRuntimeCommandService));
-        Assert.DoesNotContain(
+        Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == typeof(IHostedService) &&
-                descriptor.ImplementationType == typeof(BrokerRuntimeCommandProcessorHostedService));
+                descriptor.ImplementationType == typeof(ActiveWorkspaceRuntimeReconcileHostedService));
     }
 
     [Fact]
-    public void AddMeshtasticInfrastructure_ShouldKeepQueuedRuntimeCommandService()
+    public void AddMeshtasticCollectorInfrastructure_ShouldUseDirectRuntimeAndIngestion()
     {
         var services = new ServiceCollection();
 
-        services.AddMeshtasticInfrastructure(CreateHostedRuntimeConfiguration());
+        services.AddMeshtasticCollectorInfrastructure(CreateHostedRuntimeConfiguration());
 
         Assert.Contains(
             services,
-            descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeCommandExecutor) &&
+            descriptor => descriptor.ServiceType == typeof(LocalBrokerRuntimeCommandService) &&
                 descriptor.ImplementationType == typeof(LocalBrokerRuntimeCommandService));
         Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeCommandService) &&
-                descriptor.ImplementationType == typeof(QueuedBrokerRuntimeCommandService));
+                descriptor.ImplementationFactory is not null);
         Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == typeof(IHostedService) &&
-                descriptor.ImplementationType == typeof(BrokerRuntimeCommandProcessorHostedService));
+                descriptor.ImplementationType == typeof(ActiveWorkspaceRuntimeReconcileHostedService));
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IHostedService) &&
+                descriptor.ImplementationType == typeof(MeshtasticInboundProcessingHostedService));
     }
 
     private static IConfiguration CreateHostedRuntimeConfiguration()

@@ -1,5 +1,11 @@
 # Architecture Refactor Roadmap
 
+Historical note:
+
+- `MeshBoard.Web` was removed from the active repository surface on 2026-03-21.
+- The current cleanup/removal work now continues in `docs/CLIENT_FIRST_CLEANUP_PLAN.md`.
+- Remaining references to `MeshBoard.Web` in this document describe the migration sequence that led to the current client/API/bridge architecture.
+
 - Status: Proposed
 - Date: 2026-03-12
 - Scope: Full migration from Blazor Server to `Blazor WebAssembly + ASP.NET Core API + dedicated realtime tier`
@@ -291,7 +297,7 @@ tests/
 Notes:
 
 - `MeshBoard.Web` is transitional and will be deleted after cutover.
-- `MeshBoard.Worker.Ingestion` is the best starting point for `MeshBoard.RealtimeBridge`.
+- `MeshBoard.Collector` is the explicit starting point for future collector and traffic-history work.
 - `MeshBoard.Infrastructure.Meshtastic` should be split into reusable upstream transport pieces and deprecated server-side decode/ingest pieces.
 - `MeshBoard.Api.SDK` owns Refit endpoint contracts under `API/` and registration under `DI/`.
 

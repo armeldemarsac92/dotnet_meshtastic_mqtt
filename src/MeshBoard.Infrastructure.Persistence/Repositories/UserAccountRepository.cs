@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Authentication;
 using MeshBoard.Contracts.Authentication;
@@ -67,13 +66,9 @@ internal sealed class UserAccountRepository : IUserAccountRepository
                     request.Username,
                     request.NormalizedUsername,
                     request.PasswordHash,
-                    CreatedAtUtc = request.CreatedAtUtc.ToString("O")
+                    request.CreatedAtUtc
                 },
                 cancellationToken);
-        }
-        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
-        {
-            throw new ConflictException($"Username '{request.Username}' is already taken.");
         }
         catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         {

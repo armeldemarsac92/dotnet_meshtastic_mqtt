@@ -114,23 +114,6 @@ internal sealed class ProductBrokerServerProfileRepository : IBrokerServerProfil
             cancellationToken);
     }
 
-    public async Task<bool> AreSubscriptionIntentsInitializedAsync(
-        string workspaceId,
-        Guid id,
-        CancellationToken cancellationToken = default)
-    {
-        await Task.CompletedTask;
-        return true;
-    }
-
-    public Task MarkSubscriptionIntentsInitializedAsync(
-        string workspaceId,
-        Guid id,
-        CancellationToken cancellationToken = default)
-    {
-        return Task.CompletedTask;
-    }
-
     public async Task<BrokerServerProfile> UpsertAsync(
         string workspaceId,
         SaveBrokerServerProfileRequest request,

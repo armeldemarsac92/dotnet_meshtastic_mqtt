@@ -6,6 +6,8 @@ public interface INeighborLinkRepository
 {
     Task UpsertAsync(
         string workspaceId,
+        string brokerServer,
+        string? channelKey,
         IReadOnlyList<NeighborLinkRecord> links,
         CancellationToken cancellationToken = default);
 

@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace MeshBoard.IntegrationTests;
 
@@ -54,11 +55,14 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
         """;
 
     private readonly bool _useRequestOriginBrokerUrl;
-    private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"meshboard-api-tests-{Guid.NewGuid():N}.db");
+    private readonly string _databaseName;
+    private readonly string _connectionString;
 
     public ApiIntegrationTestHost(bool useRequestOriginBrokerUrl = false)
     {
         _useRequestOriginBrokerUrl = useRequestOriginBrokerUrl;
+        _databaseName = $"meshboard_api_tests_{Guid.NewGuid():N}";
+        _connectionString = SharedPostgresTestContainer.CreateDatabaseAsync(_databaseName).GetAwaiter().GetResult();
     }
 
     public HttpClient CreateApiClient(Uri? baseAddress = null)
@@ -71,6 +75,8 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
                 BaseAddress = baseAddress ?? new Uri("http://localhost")
             });
     }
+
+    internal string PersistenceConnectionString => _connectionString;
 
     public async Task<string> GetAntiforgeryTokenAsync(HttpClient client, CancellationToken cancellationToken = default)
     {
@@ -92,9 +98,8 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
                 configurationBuilder.Sources.Clear();
                 configurationBuilder.AddInMemoryCollection(
                 [
-                    new KeyValuePair<string, string?>("Persistence:Provider", "SQLite"),
-                    new KeyValuePair<string, string?>("Persistence:ConnectionString", $"Data Source={_databasePath}"),
-                    new KeyValuePair<string, string?>("Persistence:SeedLegacyDefaultWorkspace", "false"),
+                    new KeyValuePair<string, string?>("Persistence:Provider", "PostgreSQL"),
+                    new KeyValuePair<string, string?>("Persistence:ConnectionString", _connectionString),
                     new KeyValuePair<string, string?>("Persistence:MessageRetentionDays", "30"),
                     new KeyValuePair<string, string?>("RealtimeSession:BrokerUrl", RealtimeBrokerUrl),
                     new KeyValuePair<string, string?>("RealtimeSession:UseRequestOriginBrokerUrl", _useRequestOriginBrokerUrl.ToString()),
@@ -121,23 +126,7 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
-
-        await Task.Yield();
-        TryDeleteDatabase();
-    }
-
-    private void TryDeleteDatabase()
-    {
-        try
-        {
-            if (File.Exists(_databasePath))
-            {
-                File.Delete(_databasePath);
-            }
-        }
-        catch
-        {
-        }
+        await SharedPostgresTestContainer.DropDatabaseAsync(_databaseName);
     }
 
     private sealed class NoOpBrokerRuntimeCommandService : IBrokerRuntimeCommandService
@@ -213,4 +202,177 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
             );
         }
     }
+}
+
+internal static class SharedPostgresTestContainer
+{
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static ContainerState? _state;
+
+    public static async Task<string> CreateDatabaseAsync(string databaseName, CancellationToken cancellationToken = default)
+    {
+        var state = await EnsureStartedAsync(cancellationToken);
+
+        await using var connection = new NpgsqlConnection(state.AdminConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}" """, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+
+        return BuildConnectionString(state.Port, databaseName);
+    }
+
+    public static async Task DropDatabaseAsync(string databaseName, CancellationToken cancellationToken = default)
+    {
+        var state = await EnsureStartedAsync(cancellationToken);
+
+        await using var connection = new NpgsqlConnection(state.AdminConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        var terminateSql =
+            """
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = @DatabaseName
+              AND pid <> pg_backend_pid();
+            """;
+        await using (var terminate = new NpgsqlCommand(terminateSql, connection))
+        {
+            terminate.Parameters.AddWithValue("DatabaseName", databaseName);
+            await terminate.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}" """, connection);
+        await drop.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<ContainerState> EnsureStartedAsync(CancellationToken cancellationToken)
+    {
+        if (_state is not null)
+        {
+            return _state;
+        }
+
+        await Gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            if (_state is not null)
+            {
+                return _state;
+            }
+
+            var port = AllocatePort();
+            var containerName = $"meshboard-test-postgres-{Guid.NewGuid():N}";
+            await RunDockerCommandAsync(
+                $"run -d --rm --name {containerName} -e POSTGRES_DB=postgres -e POSTGRES_USER=meshboard -e POSTGRES_PASSWORD=meshboard -p {port}:5432 postgres:17-alpine",
+                cancellationToken);
+
+            var adminConnectionString = BuildConnectionString(port, "postgres");
+            await WaitForDatabaseAsync(adminConnectionString, cancellationToken);
+
+            _state = new ContainerState(containerName, port, adminConnectionString);
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => TryStopContainer(_state);
+            return _state;
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    private static int AllocatePort()
+    {
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+
+        try
+        {
+            return ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    private static string BuildConnectionString(int port, string databaseName)
+    {
+        return $"Host=127.0.0.1;Port={port};Database={databaseName};Username=meshboard;Password=meshboard;Pooling=false";
+    }
+
+    private static async Task WaitForDatabaseAsync(string connectionString, CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(cancellationToken);
+                return;
+            }
+            catch
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException("postgres test container did not become ready within 30 seconds.");
+    }
+
+    private static async Task RunDockerCommandAsync(string arguments, CancellationToken cancellationToken)
+    {
+        using var process = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "docker",
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            }
+        };
+
+        process.Start();
+        var standardOutput = await process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var standardError = await process.StandardError.ReadToEndAsync(cancellationToken);
+        await process.WaitForExitAsync(cancellationToken);
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"docker command failed with exit code {process.ExitCode}: {standardError}{standardOutput}");
+        }
+    }
+
+    private static void TryStopContainer(ContainerState? state)
+    {
+        if (state is null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "docker",
+                    Arguments = $"rm -f {state.ContainerName}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                }
+            };
+            process.Start();
+            process.WaitForExit(10000);
+        }
+        catch
+        {
+        }
+    }
+
+    private sealed record ContainerState(string ContainerName, int Port, string AdminConnectionString);
 }

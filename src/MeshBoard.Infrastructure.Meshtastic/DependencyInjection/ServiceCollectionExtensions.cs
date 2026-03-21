@@ -12,17 +12,17 @@ namespace MeshBoard.Infrastructure.Meshtastic.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddMeshtasticInfrastructure(
+    public static IServiceCollection AddMeshtasticCollectorInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration)
     {
         AddMeshtasticOptions(services, configuration);
-        AddMeshtasticQueuedRuntimeCoreServices(services);
+        AddMeshtasticDirectRuntimeCoreServices(services);
         AddMeshtasticIngestionCoreServices(services);
 
         if (AreHostedServicesEnabled(configuration))
         {
-            AddMeshtasticQueuedRuntimeHostedServices(services);
+            AddMeshtasticDirectRuntimeHostedServices(services);
             AddMeshtasticIngestionHostedServices(services);
         }
 
@@ -82,15 +82,6 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(MeshtasticRuntimeOptions.SectionName));
     }
 
-    private static void AddMeshtasticQueuedRuntimeCoreServices(IServiceCollection services)
-    {
-        services.TryAddSingleton<IMqttSessionFactory, MqttSessionFactory>();
-        services.TryAddSingleton<IWorkspaceBrokerSessionManager, WorkspaceBrokerSessionManager>();
-        services.TryAddSingleton<IBrokerRuntimeCommandExecutor, LocalBrokerRuntimeCommandService>();
-        services.TryAddSingleton<IBrokerRuntimeCommandService, QueuedBrokerRuntimeCommandService>();
-        services.TryAddSingleton<IBrokerRuntimeBootstrapService, BrokerRuntimeBootstrapService>();
-    }
-
     private static void AddMeshtasticDirectRuntimeCoreServices(IServiceCollection services)
     {
         services.TryAddSingleton<IMqttSessionFactory, MqttSessionFactory>();
@@ -101,13 +92,6 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IBrokerRuntimeCommandService>(
             serviceProvider => serviceProvider.GetRequiredService<LocalBrokerRuntimeCommandService>());
         services.TryAddSingleton<IBrokerRuntimeBootstrapService, BrokerRuntimeBootstrapService>();
-    }
-
-    private static void AddMeshtasticQueuedRuntimeHostedServices(IServiceCollection services)
-    {
-        services.AddHostedService<MeshtasticMqttHostedService>();
-        services.AddHostedService<MqttInboundDispatchHostedService>();
-        services.AddHostedService<BrokerRuntimeCommandProcessorHostedService>();
     }
 
     private static void AddMeshtasticDirectRuntimeHostedServices(IServiceCollection services)

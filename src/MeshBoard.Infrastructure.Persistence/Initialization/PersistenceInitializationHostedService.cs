@@ -5,21 +5,25 @@ namespace MeshBoard.Infrastructure.Persistence.Initialization;
 
 internal sealed class PersistenceInitializationHostedService : IHostedService
 {
-    private readonly IPersistenceInitializer _databaseInitializer;
+    private readonly IReadOnlyCollection<IPersistenceInitializer> _databaseInitializers;
     private readonly ILogger<PersistenceInitializationHostedService> _logger;
 
     public PersistenceInitializationHostedService(
-        IPersistenceInitializer databaseInitializer,
+        IEnumerable<IPersistenceInitializer> databaseInitializers,
         ILogger<PersistenceInitializationHostedService> logger)
     {
-        _databaseInitializer = databaseInitializer;
+        _databaseInitializers = databaseInitializers.ToArray();
         _logger = logger;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Attempting to run persistence initialization hosted service");
-        await _databaseInitializer.InitializeAsync(cancellationToken);
+
+        foreach (var databaseInitializer in _databaseInitializers)
+        {
+            await databaseInitializer.InitializeAsync(cancellationToken);
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

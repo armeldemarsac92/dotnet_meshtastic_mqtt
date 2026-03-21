@@ -10,8 +10,7 @@
     <Project Path="src/MeshBoard.ProductMigrationTool/MeshBoard.ProductMigrationTool.csproj" />
     <Project Path="src/MeshBoard.RealtimeBridge/MeshBoard.RealtimeBridge.csproj" />
     <Project Path="src/MeshBoard.RealtimeLoadTests/MeshBoard.RealtimeLoadTests.csproj" />
-    <Project Path="src/MeshBoard.Web/MeshBoard.Web.csproj" />
-    <Project Path="src/MeshBoard.Worker.Ingestion/MeshBoard.Worker.Ingestion.csproj" />
+    <Project Path="src/MeshBoard.Collector/MeshBoard.Collector.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/MeshBoard.IntegrationTests/MeshBoard.IntegrationTests.csproj" />

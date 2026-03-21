@@ -119,6 +119,8 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 {
                     await _neighborLinkRepository.UpsertAsync(
                         workspaceId,
+                        envelope.BrokerServer,
+                        envelope.LastHeardChannel,
                         neighborLinks,
                         cancellationToken);
                 }

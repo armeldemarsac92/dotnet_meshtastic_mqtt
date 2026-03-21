@@ -1,6 +1,6 @@
 # Local Compose Stack
 
-This stack launches the server-side Phase 5 runtime locally:
+This stack launches the active browser-first runtime locally:
 
 - `meshboard-client`
 - `postgres`

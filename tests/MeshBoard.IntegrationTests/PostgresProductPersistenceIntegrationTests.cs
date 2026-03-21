@@ -33,8 +33,7 @@ public sealed class PostgresProductPersistenceIntegrationTests
                 {
                     [$"{PersistenceOptions.SectionName}:Provider"] = "PostgreSQL",
                     [$"{PersistenceOptions.SectionName}:ConnectionString"] = connectionString,
-                    [$"{PersistenceOptions.SectionName}:MessageRetentionDays"] = "30",
-                    [$"{PersistenceOptions.SectionName}:SeedLegacyDefaultWorkspace"] = "false"
+                    [$"{PersistenceOptions.SectionName}:MessageRetentionDays"] = "30"
                 })
             .Build();
 

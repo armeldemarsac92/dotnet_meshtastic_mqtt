@@ -61,6 +61,8 @@ public sealed class MeshtasticIngestionServiceTests
         Assert.Equal(1, nodeRepository.UpsertCalls);
         Assert.Equal(1, topicDiscoveryService.RecordCalls);
         Assert.Equal(1, neighborLinkRepository.UpsertCalls);
+        Assert.Equal("broker.meshboard.test", neighborLinkRepository.LastBrokerServer);
+        Assert.Equal("US/LongFast", neighborLinkRepository.LastChannelKey);
 
         var persistedLink = Assert.Single(neighborLinkRepository.LastLinks);
         Assert.Equal("!00001234", persistedLink.SourceNodeId);
@@ -187,11 +189,22 @@ public sealed class MeshtasticIngestionServiceTests
     {
         public int UpsertCalls { get; private set; }
 
+        public string LastBrokerServer { get; private set; } = string.Empty;
+
+        public string? LastChannelKey { get; private set; }
+
         public IReadOnlyList<NeighborLinkRecord> LastLinks { get; private set; } = [];
 
-        public Task UpsertAsync(string workspaceId, IReadOnlyList<NeighborLinkRecord> links, CancellationToken cancellationToken = default)
+        public Task UpsertAsync(
+            string workspaceId,
+            string brokerServer,
+            string? channelKey,
+            IReadOnlyList<NeighborLinkRecord> links,
+            CancellationToken cancellationToken = default)
         {
             UpsertCalls++;
+            LastBrokerServer = brokerServer;
+            LastChannelKey = channelKey;
             LastLinks = links.ToArray();
             return Task.CompletedTask;
         }

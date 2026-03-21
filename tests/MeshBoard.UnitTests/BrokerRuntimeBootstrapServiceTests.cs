@@ -71,7 +71,6 @@ public sealed class BrokerRuntimeBootstrapServiceTests
     {
         private readonly Dictionary<string, WorkspaceBrokerServerProfile> _activeProfilesByWorkspace;
         private readonly Dictionary<string, WorkspaceBrokerServerProfile> _userOwnedActiveProfilesByWorkspace;
-        private readonly HashSet<string> _initializedProfiles = new(StringComparer.Ordinal);
 
         public FakeBrokerServerProfileRepository(
             IReadOnlyCollection<WorkspaceBrokerServerProfile> activeProfiles,
@@ -118,30 +117,9 @@ public sealed class BrokerRuntimeBootstrapServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> AreSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(_initializedProfiles.Contains(BuildKey(workspaceId, id)));
-        }
-
-        public Task MarkSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            _initializedProfiles.Add(BuildKey(workspaceId, id));
-            return Task.CompletedTask;
-        }
-
         public Task<BrokerServerProfile> UpsertAsync(string workspaceId, SaveBrokerServerProfileRequest request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
-        }
-
-        public void MarkInitialized(string workspaceId, Guid profileId)
-        {
-            _initializedProfiles.Add(BuildKey(workspaceId, profileId));
-        }
-
-        private static string BuildKey(string workspaceId, Guid profileId)
-        {
-            return $"{workspaceId}:{profileId}";
         }
     }
     private static IServiceScopeFactory CreateScopeFactory(FakeBrokerServerProfileRepository repository)

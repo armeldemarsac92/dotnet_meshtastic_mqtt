@@ -9,7 +9,7 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddOptions<RealtimeDownstreamBrokerOptions>()
     .Bind(builder.Configuration.GetSection(RealtimeDownstreamBrokerOptions.SectionName));
-builder.Services.AddApplicationServices();
+builder.Services.AddBridgeApplicationServices();
 builder.Services.AddMeshtasticRuntimeInfrastructure(builder.Configuration);
 builder.Services.AddProductPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddSingleton<IRealtimePacketPublisher, MqttNetRealtimePacketPublisher>();

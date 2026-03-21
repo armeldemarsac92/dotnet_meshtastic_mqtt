@@ -27,7 +27,8 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
         await service.ReconcileActiveProfileAsync(workspaceId);
 
         Assert.Equal(1, sessionManager.ConnectCallCount);
-        Assert.Contains("msh/#", sessionManager.GetTopicFilters(workspaceId));
+        Assert.Contains("msh/+/2/e/#", sessionManager.GetTopicFilters(workspaceId));
+        Assert.Contains("msh/+/2/json/#", sessionManager.GetTopicFilters(workspaceId));
     }
 
     [Fact]
@@ -43,7 +44,7 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
         var profileRepository = new FakeBrokerServerProfileRepository(workspaceId, nextProfile);
         var sessionManager = new FakeWorkspaceBrokerSessionManager();
         sessionManager.SetConnected(workspaceId, true);
-        sessionManager.SetTopicFilters(workspaceId, ["msh/#", "msh/+/2/json/#"]);
+        sessionManager.SetTopicFilters(workspaceId, ["msh/+/2/e/#", "msh/+/2/json/#"]);
         var runtimeRegistry = new FakeBrokerRuntimeRegistry();
         runtimeRegistry.UpdateSnapshot(
             workspaceId,
@@ -53,7 +54,7 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
                 ActiveServerName = previousProfile.Name,
                 ActiveServerAddress = previousProfile.ServerAddress,
                 IsConnected = true,
-                TopicFilters = ["msh/#", "msh/+/2/json/#"]
+                TopicFilters = ["msh/+/2/e/#", "msh/+/2/json/#"]
             });
         var service = new LocalBrokerRuntimeCommandService(
             CreateScopeFactory(profileRepository),
@@ -65,7 +66,8 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
 
         Assert.Equal(1, sessionManager.ResetRuntimeCallCount);
         Assert.Equal(1, sessionManager.ConnectCallCount);
-        Assert.Contains("msh/#", sessionManager.GetTopicFilters(workspaceId));
+        Assert.Contains("msh/+/2/e/#", sessionManager.GetTopicFilters(workspaceId));
+        Assert.Contains("msh/+/2/json/#", sessionManager.GetTopicFilters(workspaceId));
         Assert.Equal(nextProfile.Id, runtimeRegistry.GetSnapshot(workspaceId).ActiveServerProfileId);
         Assert.Equal(nextProfile.ServerAddress, runtimeRegistry.GetSnapshot(workspaceId).ActiveServerAddress);
     }
@@ -142,16 +144,6 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
         }
 
         public Task SetExclusiveActiveAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> AreSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task MarkSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }

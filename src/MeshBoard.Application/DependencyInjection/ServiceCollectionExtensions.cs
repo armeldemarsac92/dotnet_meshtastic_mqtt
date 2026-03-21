@@ -14,6 +14,30 @@ namespace MeshBoard.Application.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
+    public static IServiceCollection AddBridgeApplicationServices(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
+        services.TryAddSingleton<IRealtimePacketEnvelopeFactory, RealtimePacketEnvelopeFactory>();
+        services.TryAddSingleton<IRealtimePacketPublicationFactory, RealtimePacketPublicationFactory>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddCollectorApplicationServices(this IServiceCollection services)
+    {
+        services.AddMemoryCache(options => options.SizeLimit = 1_024);
+        services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
+        services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
+        services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
+        services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
+        services.AddScoped<ITopicExplorerService, TopicExplorerService>();
+        services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
+
+        return services;
+    }
+
     public static IServiceCollection AddApiApplicationServices(this IServiceCollection services)
     {
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
@@ -33,36 +57,12 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static IServiceCollection AddCollectorReadApplicationServices(this IServiceCollection services)
     {
-        services.AddMemoryCache(options => options.SizeLimit = 1_024);
-        services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
-        services.TryAddSingleton<IRealtimePacketEnvelopeFactory, RealtimePacketEnvelopeFactory>();
-        services.TryAddSingleton<IRealtimePacketPublicationFactory, RealtimePacketPublicationFactory>();
-        services.TryAddSingleton<IRealtimeJwksService, RealtimeJwksService>();
-        services.TryAddSingleton<IRealtimeTopicAccessPolicyService, RealtimeTopicAccessPolicyService>();
-        services.TryAddSingleton<IRealtimeTopicFilterAuthorizationService, RealtimeTopicFilterAuthorizationService>();
-        services.TryAddSingleton<IVernemqWebhookAuthorizationService, VernemqWebhookAuthorizationService>();
-        services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
-        services.TryAddSingleton<IActiveCircuitMetricsService, InMemoryActiveCircuitMetricsService>();
-        services.TryAddSingleton<IPasswordHashingService, PasswordHashingService>();
-        services.TryAddSingleton<IReadModelCacheInvalidator, InMemoryReadModelCacheInvalidator>();
-        services.TryAddSingleton<IReadModelMetricsService, InMemoryReadModelMetricsService>();
-        services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
-        services.AddSingleton(TimeProvider.System);
-        services.AddScoped<IBrokerRuntimeCommandQueryService, BrokerRuntimeCommandQueryService>();
-        services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
-        services.AddScoped<IChannelReadService, ChannelReadService>();
-        services.AddScoped<IFavoriteNodeService, FavoriteNodeService>();
-        services.AddScoped<IMessageRetentionService, MessageRetentionService>();
-        services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
-        services.AddScoped<IMessageService, MessageService>();
-        services.AddScoped<INodeService, NodeService>();
-        services.AddScoped<ITopicExplorerService, TopicExplorerService>();
-        services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
-        services.AddScoped<IUserAccountService, UserAccountService>();
-        services.AddScoped<IWorkspaceProvisioningService, WorkspaceProvisioningService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ICollectorReadService, CollectorReadService>();
 
         return services;
     }
+
 }

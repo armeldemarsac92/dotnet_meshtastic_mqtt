@@ -45,7 +45,6 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Persistence__Provider: PostgreSQL
       Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
-      Persistence__SeedLegacyDefaultWorkspace: "false"
       RealtimeSession__BrokerUrl: ${MESHBOARD_PUBLIC_BROKER_URL:-ws://localhost:8082/mqtt}
       RealtimeSession__UseRequestOriginBrokerUrl: ${MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL:-true}
       RealtimeSession__BrokerPath: ${MESHBOARD_BROKER_PATH:-/mqtt}
@@ -109,7 +108,6 @@ services:
       MeshtasticRuntime__EnableHostedService: "true"
       Persistence__Provider: PostgreSQL
       Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
-      Persistence__SeedLegacyDefaultWorkspace: "false"
       RealtimeDownstreamBroker__Host: vernemq
       RealtimeDownstreamBroker__Port: "1883"
       RealtimeDownstreamBroker__UseTls: "false"

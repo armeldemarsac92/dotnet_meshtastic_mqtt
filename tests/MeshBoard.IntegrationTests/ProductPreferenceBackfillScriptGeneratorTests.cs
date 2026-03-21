@@ -1,4 +1,4 @@
-using MeshBoard.Infrastructure.Persistence.Migrations.Postgres;
+using MeshBoard.ProductMigrationTool;
 using Microsoft.Data.Sqlite;
 
 namespace MeshBoard.IntegrationTests;

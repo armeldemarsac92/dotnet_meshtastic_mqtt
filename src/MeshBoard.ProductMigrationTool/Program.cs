@@ -1,4 +1,4 @@
-using MeshBoard.Infrastructure.Persistence.Migrations.Postgres;
+using MeshBoard.ProductMigrationTool;
 
 var arguments = ParseArguments(args);
 

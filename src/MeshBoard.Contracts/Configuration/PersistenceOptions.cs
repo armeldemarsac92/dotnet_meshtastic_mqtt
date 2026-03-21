@@ -4,11 +4,10 @@ public sealed class PersistenceOptions
 {
     public const string SectionName = "Persistence";
 
-    public string Provider { get; set; } = "SQLite";
+    public string Provider { get; set; } = "PostgreSQL";
 
-    public string ConnectionString { get; set; } = "Data Source=meshboard.db";
+    public string ConnectionString { get; set; } =
+        "Host=localhost;Port=15432;Database=meshboard;Username=meshboard;Password=meshboard";
 
     public int MessageRetentionDays { get; set; } = 30;
-
-    public bool SeedLegacyDefaultWorkspace { get; set; } = true;
 }
