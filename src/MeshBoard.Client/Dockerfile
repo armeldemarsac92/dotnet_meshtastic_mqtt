@@ -44,7 +44,7 @@ RUN set -eu; \
             *) dotnet_hashed_file="$file"; cp "$file" dotnet.js; break ;; \
         esac; \
     done; \
-    blazor_bootstrap_file="$(printf '%s\n' "$blazor_hashed_file" | sed 's/^blazor[.]webassembly[.]/blazor.webassembly.bootstrap./')"; \
+    blazor_bootstrap_file="$(printf '%s\n' "$dotnet_hashed_file" | sed 's/^dotnet[.]/blazor.webassembly.bootstrap./')"; \
     dotnet_bootstrap_file="$(printf '%s\n' "$dotnet_hashed_file" | sed 's/^dotnet[.]/dotnet.bootstrap./')"; \
     cp "$dotnet_hashed_file" "$dotnet_bootstrap_file"; \
     sed "s|\\./dotnet\\.js|./$dotnet_bootstrap_file|g" "$blazor_hashed_file" > "$blazor_bootstrap_file"; \
