@@ -1,0 +1,144 @@
+@inject AuthApiClient AuthApiClient
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.Components.Authorization
+
+<nav class="fixed bottom-0 left-0 right-0 z-50 lg:hidden shell-sidebar"
+     style="border-top: 1px solid rgb(255 255 255 / 0.14); padding-bottom: env(safe-area-inset-bottom, 0px);">
+    <div class="flex items-center justify-around px-1 py-2">
+        <NavLink href="/" Match="NavLinkMatch.All" class="bottom-nav-item" ActiveClass="active">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
+                <path fill-rule="evenodd" d="M9.293 2.293a1 1 0 0 1 1.414 0l7 7A1 1 0 0 1 17 11h-1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6H3a1 1 0 0 1-.707-1.707l7-7Z" clip-rule="evenodd" />
+            </svg>
+            <span>Home</span>
+        </NavLink>
+
+        <NavLink href="/messages" class="bottom-nav-item" ActiveClass="active">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
+                <path fill-rule="evenodd" d="M3.43 2.524A41.29 41.29 0 0 1 10 2c2.236 0 4.43.18 6.57.524 1.437.231 2.43 1.49 2.43 2.902v5.148c0 1.413-.993 2.67-2.43 2.902a41.202 41.202 0 0 1-5.183.501.78.78 0 0 0-.528.224l-3.579 3.58A.75.75 0 0 1 6 17.25v-3.443a41.033 41.033 0 0 1-2.57-.361C1.993 13.174 1 11.916 1 10.504V5.426c0-1.413.993-2.67 2.43-2.902Z" clip-rule="evenodd" />
+            </svg>
+            <span>Messages</span>
+        </NavLink>
+
+        <NavLink href="/nodes" class="bottom-nav-item" ActiveClass="active">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
+                <path d="M13 4.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0ZM14.5 10a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM2.5 6a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5ZM10 12.5a2.5 2.5 0 1 1 5 0 2.5 2.5 0 0 1-5 0Z" />
+                <path d="M5 7.5a1 1 0 0 1 1-1h8a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1ZM5 12.5a1 1 0 0 1 1-1h3a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z" />
+            </svg>
+            <span>Nodes</span>
+        </NavLink>
+
+        <NavLink href="/map" class="bottom-nav-item" ActiveClass="active">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
+                <path fill-rule="evenodd" d="m3.38 4.672.36-.115C5.828 4 7.49 3.998 9.25 4.485V15.5c-1.8-.463-3.46-.46-5.51.057l-.36.115V4.672ZM10.75 15.5c1.8-.463 3.46-.46 5.51.057l.36.115V4.672l-.36-.115C14.172 4 12.51 3.998 10.75 4.485V15.5Z" clip-rule="evenodd" />
+            </svg>
+            <span>Map</span>
+        </NavLink>
+
+        <button type="button" class="bottom-nav-item @(_showMore ? "active" : string.Empty)" @onclick="() => _showMore = !_showMore">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-5">
+                <path fill-rule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clip-rule="evenodd" />
+            </svg>
+            <span>More</span>
+        </button>
+    </div>
+</nav>
+
+@if (_showMore)
+{
+    <div class="lg:hidden">
+        <div class="more-sheet-backdrop" @onclick="() => _showMore = false"></div>
+        <div class="more-sheet-content">
+            <div class="mb-5 flex items-center justify-between">
+                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-sand-200/72">Navigation</p>
+                <button type="button"
+                        class="shell-button rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="() => _showMore = false">
+                    Close
+                </button>
+            </div>
+
+            <nav class="grid gap-2">
+                <NavLink class="shell-nav-link rounded-full px-4 py-3 text-sm font-medium text-sand-50"
+                         href="/channels"
+                         @onclick="CloseMore">
+                    Channels
+                </NavLink>
+                <NavLink class="shell-nav-link rounded-full px-4 py-3 text-sm font-medium text-sand-50"
+                         href="/favorites"
+                         @onclick="CloseMore">
+                    Favorites
+                </NavLink>
+                <NavLink class="shell-nav-link rounded-full px-4 py-3 text-sm font-medium text-sand-50"
+                         href="/settings"
+                         @onclick="CloseMore">
+                    Settings
+                </NavLink>
+            </nav>
+
+            <AuthorizeView>
+                <Authorized>
+                    <div class="mt-5 rounded-[1.4rem] border border-white/14 bg-white/10 p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-sand-200/72">Signed in</p>
+                        <p class="mt-2 text-base font-semibold text-sand-50">@context.User.Identity?.Name</p>
+                        <button type="button"
+                                class="shell-button mt-3 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="LogoutAsync"
+                                disabled="@_isSigningOut">
+                            @(_isSigningOut ? "Signing out..." : "Logout")
+                        </button>
+                        @if (!string.IsNullOrWhiteSpace(_logoutError))
+                        {
+                            <p class="mt-3 text-xs text-rose-200">@_logoutError</p>
+                        }
+                    </div>
+                </Authorized>
+                <NotAuthorized>
+                    <div class="mt-5 grid gap-2">
+                        <NavLink class="shell-nav-link rounded-full px-4 py-3 text-sm font-medium text-sand-50"
+                                 href="/login"
+                                 @onclick="CloseMore">
+                            Sign in
+                        </NavLink>
+                        <NavLink class="shell-nav-link rounded-full px-4 py-3 text-sm font-medium text-sand-50"
+                                 href="/register"
+                                 @onclick="CloseMore">
+                            Create account
+                        </NavLink>
+                    </div>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isSigningOut;
+    private string? _logoutError;
+    private bool _showMore;
+
+    private void CloseMore()
+    {
+        _showMore = false;
+    }
+
+    private async Task LogoutAsync()
+    {
+        _logoutError = null;
+        _isSigningOut = true;
+
+        try
+        {
+            await AuthApiClient.LogoutAsync();
+            _showMore = false;
+            Navigation.NavigateTo("/login", forceLoad: false);
+        }
+        catch (Exception)
+        {
+            _logoutError = "Logout failed. Please try again.";
+        }
+        finally
+        {
+            _isSigningOut = false;
+        }
+    }
+}

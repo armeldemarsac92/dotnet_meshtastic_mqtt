@@ -174,17 +174,73 @@
         </label>
     </section>
 
-    <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
-        @if (FilteredMessages.Count == 0)
-        {
-            <div class="p-8 text-sm leading-7 text-cinder-800/78">
-                No locally decoded packets match the current view yet. Open the realtime connection and make sure the
-                active server has at least one saved topic preset or saved channel. The server fallback receive topic is
-                only used when no explicit receive filters exist.
-            </div>
-        }
-        else
-        {
+    @if (FilteredMessages.Count == 0)
+    {
+        <div class="shell-panel rounded-[2rem] p-8 text-center">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">No messages yet</p>
+            <p class="mt-3 text-sm leading-7 text-cinder-800/78">
+                Open the realtime connection and make sure the active server has at least one saved topic preset or saved channel.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="grid gap-3 lg:hidden">
+            @foreach (var message in FilteredMessages)
+            {
+                <article class="message-card shell-panel rounded-[1.6rem] p-5"
+                         @onclick="() => OpenMessagePreview(message)">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="@GetPacketTypeBadgeClass(message.PacketType)">@FormatPacketType(message.PacketType)</span>
+                            @if (TryGetChannelLabel(message.SourceTopic, out var channelLabel, out var channelKey))
+                            {
+                                <button type="button"
+                                        class="shell-button rounded-full px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick:stopPropagation="true"
+                                        @onclick="() => OpenChannelDetails(channelKey)">
+                                    @channelLabel
+                                </button>
+                            }
+                        </div>
+                        <span class="shrink-0 text-xs text-cinder-800/60" title="@FormatTimestamp(message.ReceivedAtUtc)">@FormatRelativeTime(message.ReceivedAtUtc)</span>
+                    </div>
+
+                    <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-cinder-800/72">
+                        @if (TryGetSenderNodeId(message, out var senderNodeId))
+                        {
+                            <button type="button"
+                                    class="font-medium text-cinder-950"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => OpenNodeDetails(senderNodeId)">
+                                @GetNodeDisplayName(senderNodeId)
+                            </button>
+                            <span>→</span>
+                        }
+                        @if (TryGetDestinationNodeId(message, out var destNodeId))
+                        {
+                            <button type="button"
+                                    class="font-medium text-cinder-950"
+                                    @onclick:stopPropagation="true"
+                                    @onclick="() => OpenNodeDetails(destNodeId)">
+                                @GetNodeDisplayName(destNodeId)
+                            </button>
+                        }
+                        else
+                        {
+                            <span>Broadcast</span>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(message.PayloadPreview))
+                    {
+                        <p class="mt-3 text-sm leading-6 text-cinder-900">@GetTruncatedPreview(message.PayloadPreview)</p>
+                    }
+                </article>
+            }
+        </div>
+
+        <section class="shell-panel hidden overflow-hidden rounded-[2rem] p-0 lg:block">
             <div class="overflow-x-auto">
                 <table class="min-w-full table-fixed border-collapse">
                     <colgroup>
@@ -277,8 +333,8 @@
                     </tbody>
                 </table>
             </div>
-        }
-    </section>
+        </section>
+    }
 </div>
 
 @if (_previewMessage is not null)
@@ -482,6 +538,17 @@
         return value.HasValue
             ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "No packets yet";
+    }
+
+    private static string FormatRelativeTime(DateTimeOffset? value)
+    {
+        if (!value.HasValue) return "Never";
+        var diff = DateTimeOffset.UtcNow - value.Value;
+        if (diff.TotalSeconds < 60) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return value.Value.ToLocalTime().ToString("MMM d");
     }
 
     private void HandleConnectionChanged()

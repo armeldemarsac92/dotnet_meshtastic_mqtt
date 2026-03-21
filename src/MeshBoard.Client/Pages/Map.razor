@@ -32,7 +32,7 @@
             <div class="space-y-1 text-right text-xs text-cinder-800/72">
                 <p>Projected nodes: @_snapshot.Nodes.Count</p>
                 <p>Unique map positions: @_visiblePositionCount</p>
-                <p>Last projection: @FormatTimestamp(_snapshot.LastProjectedAtUtc)</p>
+                <p title="@FormatTimestamp(_snapshot.LastProjectedAtUtc)">Last projection: @FormatRelativeTime(_snapshot.LastProjectedAtUtc)</p>
             </div>
         </div>
 
@@ -76,7 +76,7 @@
             }
             else
             {
-                <div class="flex flex-wrap gap-2">
+                <div class="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-x-visible sm:pb-0">
                     @foreach (var entry in _channelLegendEntries)
                     {
                         var isFocused = string.Equals(_focusedChannel, entry.Channel, StringComparison.Ordinal);
@@ -609,6 +609,17 @@
         return value.HasValue
             ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "No packets yet";
+    }
+
+    private static string FormatRelativeTime(DateTimeOffset? value)
+    {
+        if (!value.HasValue) return "No packets yet";
+        var diff = DateTimeOffset.UtcNow - value.Value;
+        if (diff.TotalSeconds < 60) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return value.Value.ToLocalTime().ToString("MMM d");
     }
 
     private static string? NormalizeNullableText(string? value)

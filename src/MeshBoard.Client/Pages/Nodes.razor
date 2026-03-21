@@ -9,15 +9,14 @@
 
 <PageTitle>Nodes</PageTitle>
 
-<div class="space-y-6">
-    <header class="shell-panel rounded-[2rem] p-8">
+<div class="space-y-5">
+    <header class="shell-panel rounded-[2rem] p-6 sm:p-8">
         <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Discovery</p>
-                <h1 class="mt-2 font-display text-4xl text-cinder-950">Observed nodes</h1>
+                <h1 class="mt-2 font-display text-3xl text-cinder-950 sm:text-4xl">Observed nodes</h1>
                 <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
-                    This view is driven entirely by local node projections built from the realtime stream. The browser
-                    merges node info, position, telemetry, and text traffic without server-owned decrypted node tables.
+                    Locally projected from the realtime stream. The browser merges node info, position, telemetry, and traffic without server-owned tables.
                 </p>
             </div>
 
@@ -31,7 +30,7 @@
                 <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
                         @onclick="ClearNodes"
                         disabled="@(_snapshot.Nodes.Count == 0)">
-                    Clear node cache
+                    Clear cache
                 </button>
             </div>
         </div>
@@ -46,77 +45,140 @@
             <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_favoriteStatusMessage</p>
         }
 
-        <div class="mt-6 grid gap-4 md:grid-cols-3">
+        <div class="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3">
             <article class="shell-subpanel rounded-[1.6rem] p-5">
                 <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Visible nodes</p>
                 <p class="mt-3 text-2xl font-semibold text-cinder-950">@FilteredNodes.Count</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Projected nodes in memory: @_snapshot.Nodes.Count</p>
+                <p class="mt-2 text-sm text-cinder-800/72">In memory: @_snapshot.Nodes.Count</p>
             </article>
 
             <article class="shell-subpanel rounded-[1.6rem] p-5">
                 <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Favorites</p>
                 <p class="mt-3 text-2xl font-semibold text-cinder-950">@_favoriteNodeIds.Count</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Favorites are still persisted through the API.</p>
+                <p class="mt-2 text-sm text-cinder-800/72">API-persisted</p>
             </article>
 
-            <article class="shell-subpanel rounded-[1.6rem] p-5">
+            <article class="shell-subpanel rounded-[1.6rem] p-5 col-span-2 md:col-span-1">
                 <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last projection</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_snapshot.LastProjectedAtUtc)</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Total projection events: @_snapshot.TotalProjected</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950" title="@FormatTimestamp(_snapshot.LastProjectedAtUtc)">@FormatRelativeTime(_snapshot.LastProjectedAtUtc)</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@_snapshot.TotalProjected total events</p>
             </article>
         </div>
     </header>
 
-    <section class="shell-panel grid gap-4 rounded-[2rem] p-6 lg:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_0.8fr]">
-        <label class="space-y-2">
-            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
-            <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
-                   @bind="_query.SearchText"
-                   @bind:event="oninput"
-                   placeholder="Node id, name, channel, last packet" />
-        </label>
+    <section class="shell-panel rounded-[2rem] p-5">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_0.8fr]">
+            <label class="space-y-2 sm:col-span-2 lg:col-span-1">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
+                <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                       @bind="_query.SearchText"
+                       @bind:event="oninput"
+                       placeholder="Node id, name, channel, last packet" />
+            </label>
 
-        <label class="space-y-2">
-            <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Sort</span>
-            <select class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
-                    @bind="_query.SortBy">
-                <option value="@NodeSortOption.LastHeardDesc">Last heard</option>
-                <option value="@NodeSortOption.NameAsc">Name</option>
-                <option value="@NodeSortOption.BatteryDesc">Battery</option>
-            </select>
-        </label>
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Sort</span>
+                <select class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                        @bind="_query.SortBy">
+                    <option value="@NodeSortOption.LastHeardDesc">Last heard</option>
+                    <option value="@NodeSortOption.NameAsc">Name</option>
+                    <option value="@NodeSortOption.BatteryDesc">Battery</option>
+                </select>
+            </label>
 
-        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
-            <input type="checkbox" @bind="_query.OnlyWithLocation" />
-            <span>Only with location</span>
-        </label>
+            <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
+                <input type="checkbox" @bind="_query.OnlyWithLocation" />
+                <span>Location only</span>
+            </label>
 
-        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
-            <input type="checkbox" @bind="_query.OnlyWithTelemetry" />
-            <span>Only with telemetry</span>
-        </label>
+            <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
+                <input type="checkbox" @bind="_query.OnlyWithTelemetry" />
+                <span>Telemetry only</span>
+            </label>
 
-        <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
-            <input type="checkbox" @bind="_query.OnlyFavorites" />
-            <span>Only favorites</span>
-        </label>
+            <label class="flex items-center gap-3 rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-900 shadow-sm">
+                <input type="checkbox" @bind="_query.OnlyFavorites" />
+                <span>Favorites only</span>
+            </label>
+        </div>
     </section>
 
-    <section class="shell-panel overflow-hidden rounded-[2rem] p-0">
-        @if (!string.IsNullOrWhiteSpace(_loadError))
-        {
-            <div class="border-b border-rose-200 bg-rose-50 px-8 py-4 text-sm text-rose-700">@_loadError</div>
-        }
+    @if (!string.IsNullOrWhiteSpace(_loadError))
+    {
+        <div class="shell-panel rounded-2xl px-6 py-4 text-sm text-rose-700">@_loadError</div>
+    }
 
-        @if (FilteredNodes.Count == 0)
-        {
-            <div class="p-8 text-sm leading-7 text-cinder-800/78">
-                No locally projected nodes match the current filters yet. Keep the realtime connection open and wait
-                for node info, position, telemetry, or text packets to arrive.
-            </div>
-        }
-        else
-        {
+    @if (FilteredNodes.Count == 0)
+    {
+        <div class="shell-panel rounded-[2rem] p-8 text-center">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">No nodes yet</p>
+            <p class="mt-3 text-sm leading-7 text-cinder-800/78">
+                Keep the realtime connection open and wait for node info, position, telemetry, or text packets to arrive.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="grid gap-4 sm:grid-cols-2 lg:hidden">
+            @foreach (var node in FilteredNodes)
+            {
+                <article class="node-card shell-panel rounded-[1.6rem] p-5"
+                         @onclick="() => OpenNodeDetails(node.NodeId)">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="truncate font-semibold text-cinder-950">@node.DisplayName</p>
+                            <p class="mt-1 truncate text-xs text-cinder-800/60">@node.NodeId</p>
+                        </div>
+
+                        <button type="button"
+                                class="shell-button @(IsFavorite(node.NodeId) ? "shell-button-accent" : string.Empty) shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => ToggleFavoriteAsync(node)"
+                                title="@(IsFavorite(node.NodeId) ? "Remove from favorites" : "Save as favorite")"
+                                disabled="@(_favoriteActionNodeId == node.NodeId)">
+                            @(IsFavorite(node.NodeId) ? "★" : "☆")
+                        </button>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                        @if (!string.IsNullOrWhiteSpace(node.LastHeardChannel))
+                        {
+                            <span class="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-cinder-900">
+                                @node.LastHeardChannel
+                            </span>
+                        }
+
+                        @if (node.BatteryLevelPercent.HasValue)
+                        {
+                            <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold @GetBatteryClass(node.BatteryLevelPercent)">
+                                @node.BatteryLevelPercent%
+                            </span>
+                        }
+
+                        @if (node.LastKnownLatitude.HasValue)
+                        {
+                            <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold text-signal-600">
+                                Located
+                            </span>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(node.LastPacketType))
+                        {
+                            <span class="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold text-cinder-800/70">
+                                @node.LastPacketType
+                            </span>
+                        }
+                    </div>
+
+                    <div class="mt-4 flex items-center justify-between text-xs text-cinder-800/60">
+                        <span>@node.ObservedPacketCount packets</span>
+                        <span title="@FormatTimestamp(node.LastHeardAtUtc)">@FormatRelativeTime(node.LastHeardAtUtc)</span>
+                    </div>
+                </article>
+            }
+        </div>
+
+        <section class="shell-panel hidden overflow-hidden rounded-[2rem] p-0 lg:block">
             <div class="overflow-x-auto">
                 <table class="min-w-full table-fixed border-collapse">
                     <colgroup>
@@ -182,7 +244,7 @@
                                 <td class="px-5 py-4 align-top text-cinder-800/82">@FormatDeviceTelemetry(node)</td>
                                 <td class="px-5 py-4 align-top text-cinder-800/82">@FormatEnvironmentTelemetry(node)</td>
                                 <td class="px-5 py-4 align-top">
-                                    <div>@FormatTimestamp(node.LastHeardAtUtc)</div>
+                                    <div title="@FormatTimestamp(node.LastHeardAtUtc)">@FormatRelativeTime(node.LastHeardAtUtc)</div>
                                     <div class="mt-2 text-xs text-cinder-800/62">@node.ObservedPacketCount packets</div>
                                 </td>
                             </tr>
@@ -190,8 +252,8 @@
                     </tbody>
                 </table>
             </div>
-        }
-    </section>
+        </section>
+    }
 </div>
 
 <NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
@@ -231,10 +293,7 @@
     private IReadOnlyList<NodeProjectionEnvelope> FilteredNodes =>
         NodeProjectionStore.ApplyQuery(_snapshot, _query, _favoriteNodeIds);
 
-    private bool IsFavorite(string nodeId)
-    {
-        return _favoriteNodeIds.Contains(nodeId);
-    }
+    private bool IsFavorite(string nodeId) => _favoriteNodeIds.Contains(nodeId);
 
     private async Task LoadFavoritesAsync()
     {
@@ -261,10 +320,7 @@
         }
     }
 
-    private async Task ReloadFavoritesAsync()
-    {
-        await LoadFavoritesAsync();
-    }
+    private async Task ReloadFavoritesAsync() => await LoadFavoritesAsync();
 
     private void ClearNodes()
     {
@@ -338,10 +394,7 @@
         return Task.CompletedTask;
     }
 
-    private void CloseNodeDetails()
-    {
-        _selectedNodeId = null;
-    }
+    private void CloseNodeDetails() => _selectedNodeId = null;
 
     private void OpenChannelDetails(string channelKey)
     {
@@ -355,9 +408,17 @@
         return Task.CompletedTask;
     }
 
-    private void CloseChannelDetails()
+    private void CloseChannelDetails() => _selectedChannelKey = null;
+
+    private static string FormatRelativeTime(DateTimeOffset? value)
     {
-        _selectedChannelKey = null;
+        if (!value.HasValue) return "Never";
+        var diff = DateTimeOffset.UtcNow - value.Value;
+        if (diff.TotalSeconds < 60) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return value.Value.ToLocalTime().ToString("MMM d");
     }
 
     private static string FormatTimestamp(DateTimeOffset? value)
@@ -365,6 +426,14 @@
         return value.HasValue
             ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "Unknown";
+    }
+
+    private static string GetBatteryClass(int? battery)
+    {
+        if (!battery.HasValue) return "text-cinder-800/50";
+        if (battery >= 50) return "battery-high";
+        if (battery >= 20) return "battery-medium";
+        return "battery-low";
     }
 
     private static string FormatPosition(NodeProjectionEnvelope node)
@@ -435,16 +504,8 @@
     {
         var uptime = TimeSpan.FromSeconds(uptimeSeconds);
 
-        if (uptime.TotalDays >= 1)
-        {
-            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
-        }
-
-        if (uptime.TotalHours >= 1)
-        {
-            return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
-        }
-
+        if (uptime.TotalDays >= 1) return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        if (uptime.TotalHours >= 1) return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
         return $"{uptime.Minutes}m";
     }
 }
