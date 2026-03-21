@@ -47,6 +47,26 @@ public sealed class MessageRetentionServiceTests
         Assert.Equal(cancellationTokenSource.Token, repository.LastCancellationToken);
     }
 
+    [Fact]
+    public async Task PruneExpiredMessages_ShouldSkipDeletion_WhenRetentionIsDisabled()
+    {
+        var repository = new FakeMessageRepository(rowsDeleted: 12);
+        var service = new MessageRetentionService(
+            repository,
+            new FixedTimeProvider(new DateTimeOffset(2026, 3, 4, 12, 0, 0, TimeSpan.Zero)),
+            Options.Create(
+                new PersistenceOptions
+                {
+                    MessageRetentionDays = 0
+                }),
+            NullLogger<MessageRetentionService>.Instance);
+
+        var deletedCount = await service.PruneExpiredMessages();
+
+        Assert.Equal(0, deletedCount);
+        Assert.Null(repository.LastCutoffUtc);
+    }
+
     private sealed class FakeMessageRepository : IMessageRepository
     {
         private readonly int _rowsDeleted;

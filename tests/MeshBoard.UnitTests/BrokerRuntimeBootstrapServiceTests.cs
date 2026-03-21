@@ -27,10 +27,10 @@ public sealed class BrokerRuntimeBootstrapServiceTests
         var profileRepository = new FakeBrokerServerProfileRepository(
             [defaultWorkspaceProfile, workspaceAProfile, workspaceBProfile],
             [workspaceAProfile, workspaceBProfile]);
-        var runtimeCommandExecutor = new FakeBrokerRuntimeCommandExecutor();
+        var runtimeService = new FakeBrokerRuntimeService();
         var service = new BrokerRuntimeBootstrapService(
             CreateScopeFactory(profileRepository),
-            runtimeCommandExecutor,
+            runtimeService,
             NullLogger<BrokerRuntimeBootstrapService>.Instance);
 
         await service.InitializeActiveWorkspacesAsync();
@@ -40,7 +40,7 @@ public sealed class BrokerRuntimeBootstrapServiceTests
                 "workspace-a",
                 "workspace-b"
             ],
-            runtimeCommandExecutor.ReconcileActiveProfileCalls.OrderBy(workspaceId => workspaceId, StringComparer.Ordinal).ToArray());
+            runtimeService.ReconcileActiveProfileCalls.OrderBy(workspaceId => workspaceId, StringComparer.Ordinal).ToArray());
     }
 
     private static WorkspaceBrokerServerProfile CreateProfile(
@@ -129,7 +129,7 @@ public sealed class BrokerRuntimeBootstrapServiceTests
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
-    private sealed class FakeBrokerRuntimeCommandExecutor : IBrokerRuntimeCommandExecutor
+    private sealed class FakeBrokerRuntimeService : IBrokerRuntimeService
     {
         public List<string> EnsureConnectedCalls { get; } = [];
 

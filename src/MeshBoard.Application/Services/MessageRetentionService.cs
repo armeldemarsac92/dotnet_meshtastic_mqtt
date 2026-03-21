@@ -31,6 +31,12 @@ public sealed class MessageRetentionService : IMessageRetentionService
 
     public async Task<int> PruneExpiredMessages(CancellationToken cancellationToken = default)
     {
+        if (_persistenceOptions.MessageRetentionDays <= 0)
+        {
+            _logger.LogInformation("Message retention is disabled. Skipping prune.");
+            return 0;
+        }
+
         var cutoffUtc = _timeProvider.GetUtcNow().AddDays(-_persistenceOptions.MessageRetentionDays);
 
         _logger.LogInformation(

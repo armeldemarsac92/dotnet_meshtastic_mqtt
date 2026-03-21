@@ -11,7 +11,7 @@ namespace MeshBoard.UnitTests;
 public sealed class MeshtasticRuntimeRegistrationTests
 {
     [Fact]
-    public void AddMeshtasticRuntimeInfrastructure_ShouldUseDirectRuntimeCommandService()
+    public void AddMeshtasticRuntimeInfrastructure_ShouldUseDirectRuntimeService()
     {
         var services = new ServiceCollection();
 
@@ -19,15 +19,11 @@ public sealed class MeshtasticRuntimeRegistrationTests
 
         Assert.Contains(
             services,
-            descriptor => descriptor.ServiceType == typeof(LocalBrokerRuntimeCommandService) &&
-                descriptor.ImplementationType == typeof(LocalBrokerRuntimeCommandService));
+            descriptor => descriptor.ServiceType == typeof(LocalBrokerRuntimeService) &&
+                descriptor.ImplementationType == typeof(LocalBrokerRuntimeService));
         Assert.Contains(
             services,
-            descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeCommandExecutor) &&
-                descriptor.ImplementationFactory is not null);
-        Assert.Contains(
-            services,
-            descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeCommandService) &&
+            descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeService) &&
                 descriptor.ImplementationFactory is not null);
         Assert.Contains(
             services,
@@ -44,11 +40,11 @@ public sealed class MeshtasticRuntimeRegistrationTests
 
         Assert.Contains(
             services,
-            descriptor => descriptor.ServiceType == typeof(LocalBrokerRuntimeCommandService) &&
-                descriptor.ImplementationType == typeof(LocalBrokerRuntimeCommandService));
+            descriptor => descriptor.ServiceType == typeof(LocalBrokerRuntimeService) &&
+                descriptor.ImplementationType == typeof(LocalBrokerRuntimeService));
         Assert.Contains(
             services,
-            descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeCommandService) &&
+            descriptor => descriptor.ServiceType == typeof(IBrokerRuntimeService) &&
                 descriptor.ImplementationFactory is not null);
         Assert.Contains(
             services,

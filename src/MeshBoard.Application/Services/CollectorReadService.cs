@@ -33,6 +33,10 @@ public interface ICollectorReadService
     Task<CollectorTopologySnapshot> GetTopologySnapshot(
         CollectorTopologyQuery? query = null,
         CancellationToken cancellationToken = default);
+
+    Task<CollectorOverviewSnapshot> GetOverviewSnapshot(
+        CollectorOverviewQuery? query = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class CollectorReadService : ICollectorReadService
@@ -50,6 +54,10 @@ public sealed class CollectorReadService : ICollectorReadService
     private const int DefaultTopologyTopCount = 10;
     private const int MaxTopologyTopCount = 100;
     private const int MaxTopologyRollupRows = 20_000;
+    private const int DefaultOverviewMaxChannels = 20;
+    private const int MaxOverviewMaxChannels = 100;
+    private const int DefaultOverviewTopPacketTypes = 3;
+    private const int MaxOverviewTopPacketTypes = 20;
 
     private readonly ICollectorReadRepository _collectorReadRepository;
     private readonly ILogger<CollectorReadService> _logger;
@@ -301,20 +309,7 @@ public sealed class CollectorReadService : ICollectorReadService
         var nodes = await topologyNodesTask;
         var links = await topologyLinksTask;
         var rollups = await rollupsTask;
-
-        var nodeById = nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
-        var adjacency = BuildAdjacency(nodes.Select(node => node.NodeId), links);
-        var components = BuildComponents(adjacency, sanitizedQuery.TopCount);
-        var componentSizes = components
-            .SelectMany(component => component.NodeIds.Select(nodeId => new KeyValuePair<string, int>(nodeId, component.NodeCount)))
-            .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
-        var degrees = adjacency.ToDictionary(entry => entry.Key, entry => entry.Value.Count, StringComparer.Ordinal);
-        var articulationNodeIds = FindArticulationPoints(adjacency);
-        var strongestLinks = BuildStrongestLinks(
-            links,
-            rollups,
-            nodeById,
-            sanitizedQuery.TopCount);
+        var analysis = AnalyzeTopology(nodes, links, rollups, sanitizedQuery.TopCount);
 
         return new CollectorTopologySnapshot
         {
@@ -326,11 +321,11 @@ public sealed class CollectorReadService : ICollectorReadService
             ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
             NodeCount = nodes.Count,
             LinkCount = links.Count,
-            ConnectedComponentCount = components.Count,
-            LargestConnectedComponentSize = components.Count == 0 ? 0 : components.Max(component => component.NodeCount),
-            IsolatedNodeCount = degrees.Count(entry => entry.Value == 0),
-            BridgeNodeCount = articulationNodeIds.Count,
-            Components = components
+            ConnectedComponentCount = analysis.ConnectedComponentCount,
+            LargestConnectedComponentSize = analysis.LargestConnectedComponentSize,
+            IsolatedNodeCount = analysis.IsolatedNodeCount,
+            BridgeNodeCount = analysis.BridgeNodeCount,
+            Components = analysis.Components
                 .Take(sanitizedQuery.TopCount)
                 .Select((component, index) => new CollectorTopologyComponentSummary
                 {
@@ -341,24 +336,243 @@ public sealed class CollectorReadService : ICollectorReadService
                 })
                 .ToArray(),
             TopDegreeNodes = nodes
-                .OrderByDescending(node => degrees.GetValueOrDefault(node.NodeId))
+                .OrderByDescending(node => analysis.Degrees.GetValueOrDefault(node.NodeId))
                 .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(node => node.NodeId, StringComparer.Ordinal)
                 .Take(sanitizedQuery.TopCount)
-                .Select(node => MapTopologyNode(node, degrees.GetValueOrDefault(node.NodeId), componentSizes.GetValueOrDefault(node.NodeId)))
+                .Select(node => MapTopologyNode(
+                    node,
+                    analysis.Degrees.GetValueOrDefault(node.NodeId),
+                    analysis.ComponentSizes.GetValueOrDefault(node.NodeId)))
                 .ToArray(),
-            BridgeNodes = articulationNodeIds
-                .Select(nodeId => nodeById.GetValueOrDefault(nodeId))
+            BridgeNodes = analysis.ArticulationNodeIds
+                .Select(nodeId => analysis.NodeById.GetValueOrDefault(nodeId))
                 .Where(node => node is not null)
                 .Select(node => node!)
-                .OrderByDescending(node => degrees.GetValueOrDefault(node.NodeId))
+                .OrderByDescending(node => analysis.Degrees.GetValueOrDefault(node.NodeId))
                 .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(node => node.NodeId, StringComparer.Ordinal)
                 .Take(sanitizedQuery.TopCount)
-                .Select(node => MapTopologyNode(node, degrees.GetValueOrDefault(node.NodeId), componentSizes.GetValueOrDefault(node.NodeId)))
+                .Select(node => MapTopologyNode(
+                    node,
+                    analysis.Degrees.GetValueOrDefault(node.NodeId),
+                    analysis.ComponentSizes.GetValueOrDefault(node.NodeId)))
                 .ToArray(),
-            StrongestLinks = strongestLinks
+            StrongestLinks = analysis.StrongestLinks
         };
+    }
+
+    public async Task<CollectorOverviewSnapshot> GetOverviewSnapshot(
+        CollectorOverviewQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sanitizedQuery = SanitizeOverviewQuery(query);
+        var generatedAtUtc = _timeProvider.GetUtcNow();
+        var activeNotBeforeUtc = generatedAtUtc.AddHours(-sanitizedQuery.ActiveWithinHours);
+        var lookbackNotBeforeUtc = generatedAtUtc.AddHours(-sanitizedQuery.LookbackHours);
+
+        _logger.LogDebug(
+            "Attempting to fetch collector overview for server {ServerAddress}, region {Region}, channel {ChannelName}, active within {ActiveWithinHours} hours, lookback {LookbackHours} hours",
+            sanitizedQuery.ServerAddress,
+            sanitizedQuery.Region,
+            sanitizedQuery.ChannelName,
+            sanitizedQuery.ActiveWithinHours,
+            sanitizedQuery.LookbackHours);
+
+        var channelFilter = new CollectorMapQuery
+        {
+            ServerAddress = sanitizedQuery.ServerAddress,
+            Region = sanitizedQuery.Region,
+            ChannelName = sanitizedQuery.ChannelName,
+            ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
+            MaxNodes = MaxNodes,
+            MaxLinks = MaxLinks
+        };
+
+        var channels = await _collectorReadRepository.GetChannelsAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            channelFilter,
+            cancellationToken);
+
+        var selectedChannels = channels
+            .OrderByDescending(channel => channel.LastObservedAtUtc)
+            .ThenBy(channel => channel.ServerAddress, StringComparer.Ordinal)
+            .ThenBy(channel => channel.Region, StringComparer.Ordinal)
+            .ThenBy(channel => channel.ChannelName, StringComparer.Ordinal)
+            .Take(sanitizedQuery.MaxChannels)
+            .ToArray();
+
+        if (selectedChannels.Length == 0)
+        {
+            return new CollectorOverviewSnapshot
+            {
+                GeneratedAtUtc = generatedAtUtc,
+                WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
+                ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
+                Region = NullIfEmpty(sanitizedQuery.Region),
+                ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
+                ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
+                LookbackHours = sanitizedQuery.LookbackHours,
+                ServerCount = 0,
+                ChannelCount = 0,
+                ActiveNodeCount = 0,
+                ActiveLinkCount = 0,
+                PacketCountInLookback = 0,
+                NeighborObservationCountInLookback = 0
+            };
+        }
+
+        var channelTasks = selectedChannels
+            .Select(channel => BuildOverviewChannelAsync(channel, sanitizedQuery, activeNotBeforeUtc, lookbackNotBeforeUtc, cancellationToken))
+            .ToArray();
+
+        await Task.WhenAll(channelTasks);
+
+        var channelContexts = channelTasks
+            .Select(task => task.Result)
+            .ToArray();
+
+        var serverSummaries = channelContexts
+            .GroupBy(context => context.Channel.ServerAddress, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var groupedChannels = group
+                    .OrderByDescending(context => context.Channel.LastObservedAtUtc)
+                    .ThenBy(context => context.Channel.Region, StringComparer.Ordinal)
+                    .ThenBy(context => context.Channel.ChannelName, StringComparer.Ordinal)
+                    .ToArray();
+
+                return new CollectorOverviewServerSummary
+                {
+                    ServerAddress = group.Key,
+                    FirstObservedAtUtc = groupedChannels.Min(context => context.Channel.FirstObservedAtUtc),
+                    LastObservedAtUtc = groupedChannels.Max(context => context.Channel.LastObservedAtUtc),
+                    ChannelCount = groupedChannels.Length,
+                    ActiveNodeCount = groupedChannels
+                        .SelectMany(context => context.Nodes.Select(node => node.NodeId))
+                        .Distinct(StringComparer.Ordinal)
+                        .Count(),
+                    ActiveLinkCount = groupedChannels.Sum(context => context.Summary.ActiveLinkCount),
+                    PacketCountInLookback = groupedChannels.Sum(context => context.Summary.PacketCountInLookback),
+                    NeighborObservationCountInLookback = groupedChannels.Sum(context => context.Summary.NeighborObservationCountInLookback),
+                    Channels = groupedChannels
+                        .Select(context => context.Summary)
+                        .ToArray()
+                };
+            })
+            .ToArray();
+
+        return new CollectorOverviewSnapshot
+        {
+            GeneratedAtUtc = generatedAtUtc,
+            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
+            ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
+            Region = NullIfEmpty(sanitizedQuery.Region),
+            ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
+            ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
+            LookbackHours = sanitizedQuery.LookbackHours,
+            ServerCount = serverSummaries.Length,
+            ChannelCount = channelContexts.Length,
+            ActiveNodeCount = serverSummaries.Sum(summary => summary.ActiveNodeCount),
+            ActiveLinkCount = serverSummaries.Sum(summary => summary.ActiveLinkCount),
+            PacketCountInLookback = serverSummaries.Sum(summary => summary.PacketCountInLookback),
+            NeighborObservationCountInLookback = serverSummaries.Sum(summary => summary.NeighborObservationCountInLookback),
+            Servers = serverSummaries
+        };
+    }
+
+    private async Task<OverviewChannelContext> BuildOverviewChannelAsync(
+        CollectorChannelSummary channel,
+        CollectorOverviewQuery query,
+        DateTimeOffset activeNotBeforeUtc,
+        DateTimeOffset lookbackNotBeforeUtc,
+        CancellationToken cancellationToken)
+    {
+        var topologyQuery = new CollectorTopologyQuery
+        {
+            ServerAddress = channel.ServerAddress,
+            Region = channel.Region,
+            ChannelName = channel.ChannelName,
+            ActiveWithinHours = query.ActiveWithinHours,
+            MaxNodes = MaxNodes,
+            MaxLinks = MaxLinks,
+            TopCount = DefaultTopologyTopCount
+        };
+
+        var packetStatsQuery = new CollectorPacketStatsQuery
+        {
+            ServerAddress = channel.ServerAddress,
+            Region = channel.Region,
+            ChannelName = channel.ChannelName,
+            LookbackHours = query.LookbackHours,
+            MaxRows = MaxStatsRows
+        };
+
+        var neighborLinkQuery = new CollectorNeighborLinkStatsQuery
+        {
+            ServerAddress = channel.ServerAddress,
+            Region = channel.Region,
+            ChannelName = channel.ChannelName,
+            LookbackHours = query.LookbackHours,
+            MaxRows = MaxStatsRows
+        };
+
+        var nodesTask = _collectorReadRepository.GetTopologyNodesAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            topologyQuery,
+            activeNotBeforeUtc,
+            cancellationToken);
+        var linksTask = _collectorReadRepository.GetTopologyLinksAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            topologyQuery,
+            activeNotBeforeUtc,
+            cancellationToken);
+        var packetTypeTotalsTask = _collectorReadRepository.GetChannelPacketTypeTotalsAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            packetStatsQuery,
+            lookbackNotBeforeUtc,
+            cancellationToken);
+        var neighborObservationCountTask = _collectorReadRepository.GetNeighborObservationCountAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            neighborLinkQuery,
+            lookbackNotBeforeUtc,
+            cancellationToken);
+
+        await Task.WhenAll(nodesTask, linksTask, packetTypeTotalsTask, neighborObservationCountTask);
+
+        var nodes = await nodesTask;
+        var links = await linksTask;
+        var analysis = AnalyzeTopology(nodes, links, Array.Empty<CollectorNeighborLinkHourlyRollup>(), 0);
+        var packetTypeTotals = await packetTypeTotalsTask;
+        var neighborObservationCount = await neighborObservationCountTask;
+
+        return new OverviewChannelContext(
+            channel,
+            nodes,
+            new CollectorOverviewChannelSummary
+            {
+                Region = channel.Region,
+                MeshVersion = channel.MeshVersion,
+                ChannelName = channel.ChannelName,
+                TopicPattern = channel.TopicPattern,
+                FirstObservedAtUtc = channel.FirstObservedAtUtc,
+                LastObservedAtUtc = channel.LastObservedAtUtc,
+                ActiveNodeCount = nodes.Count,
+                ActivePositionedNodeCount = nodes.Count(node => node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue),
+                ActiveLinkCount = links.Count,
+                ConnectedComponentCount = analysis.ConnectedComponentCount,
+                LargestConnectedComponentSize = analysis.LargestConnectedComponentSize,
+                IsolatedNodeCount = analysis.IsolatedNodeCount,
+                BridgeNodeCount = analysis.BridgeNodeCount,
+                PacketCountInLookback = packetTypeTotals.Sum(total => total.PacketCount),
+                NeighborObservationCountInLookback = neighborObservationCount,
+                TopPacketTypes = packetTypeTotals
+                    .OrderByDescending(total => total.PacketCount)
+                    .ThenBy(total => total.PacketType, StringComparer.Ordinal)
+                    .Take(query.TopPacketTypes)
+                    .ToArray()
+            });
     }
 
     private static CollectorMapQuery SanitizeQuery(CollectorMapQuery? query)
@@ -385,6 +599,20 @@ public sealed class CollectorReadService : ICollectorReadService
             PacketType = Normalize(query?.PacketType),
             LookbackHours = Clamp(query?.LookbackHours ?? DefaultStatsLookbackHours, 1, MaxStatsLookbackHours),
             MaxRows = Clamp(query?.MaxRows ?? DefaultStatsMaxRows, 1, MaxStatsRows)
+        };
+    }
+
+    private static CollectorOverviewQuery SanitizeOverviewQuery(CollectorOverviewQuery? query)
+    {
+        return new CollectorOverviewQuery
+        {
+            ServerAddress = Normalize(query?.ServerAddress),
+            Region = Normalize(query?.Region),
+            ChannelName = Normalize(query?.ChannelName),
+            ActiveWithinHours = Clamp(query?.ActiveWithinHours ?? DefaultActiveWithinHours, 1, MaxActiveWithinHours),
+            LookbackHours = Clamp(query?.LookbackHours ?? DefaultStatsLookbackHours, 1, MaxStatsLookbackHours),
+            MaxChannels = Clamp(query?.MaxChannels ?? DefaultOverviewMaxChannels, 1, MaxOverviewMaxChannels),
+            TopPacketTypes = Clamp(query?.TopPacketTypes ?? DefaultOverviewTopPacketTypes, 1, MaxOverviewTopPacketTypes)
         };
     }
 
@@ -438,6 +666,36 @@ public sealed class CollectorReadService : ICollectorReadService
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
+    private static TopologyAnalysis AnalyzeTopology(
+        IReadOnlyCollection<MeshBoard.Contracts.Nodes.NodeSummary> nodes,
+        IReadOnlyCollection<CollectorMapLinkSummary> links,
+        IReadOnlyCollection<CollectorNeighborLinkHourlyRollup> rollups,
+        int strongestLinkCount)
+    {
+        var nodeById = nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+        var adjacency = BuildAdjacency(nodes.Select(node => node.NodeId), links);
+        var components = BuildComponents(adjacency);
+        var componentSizes = components
+            .SelectMany(component => component.NodeIds.Select(nodeId => new KeyValuePair<string, int>(nodeId, component.NodeCount)))
+            .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
+        var degrees = adjacency.ToDictionary(entry => entry.Key, entry => entry.Value.Count, StringComparer.Ordinal);
+        var articulationNodeIds = FindArticulationPoints(adjacency);
+
+        return new TopologyAnalysis(
+            nodeById,
+            components,
+            componentSizes,
+            degrees,
+            articulationNodeIds,
+            components.Count,
+            components.Count == 0 ? 0 : components.Max(component => component.NodeCount),
+            degrees.Count(entry => entry.Value == 0),
+            articulationNodeIds.Count,
+            strongestLinkCount > 0
+                ? BuildStrongestLinks(links, rollups, nodeById, strongestLinkCount)
+                : Array.Empty<CollectorTopologyLinkSummary>());
+    }
+
     private static Dictionary<string, HashSet<string>> BuildAdjacency(
         IEnumerable<string> nodeIds,
         IReadOnlyCollection<CollectorMapLinkSummary> links)
@@ -474,8 +732,7 @@ public sealed class CollectorReadService : ICollectorReadService
     }
 
     private static IReadOnlyCollection<GraphComponent> BuildComponents(
-        IReadOnlyDictionary<string, HashSet<string>> adjacency,
-        int topCount)
+        IReadOnlyDictionary<string, HashSet<string>> adjacency)
     {
         var visited = new HashSet<string>(StringComparer.Ordinal);
         var components = new List<GraphComponent>();
@@ -521,7 +778,6 @@ public sealed class CollectorReadService : ICollectorReadService
             .OrderByDescending(component => component.NodeCount)
             .ThenByDescending(component => component.LinkCount)
             .ThenBy(component => component.NodeIds[0], StringComparer.Ordinal)
-            .Take(Math.Max(topCount, components.Count))
             .ToArray();
     }
 
@@ -689,4 +945,21 @@ public sealed class CollectorReadService : ICollectorReadService
     {
         public int NodeCount => NodeIds.Count;
     }
+
+    private sealed record TopologyAnalysis(
+        IReadOnlyDictionary<string, MeshBoard.Contracts.Nodes.NodeSummary> NodeById,
+        IReadOnlyCollection<GraphComponent> Components,
+        IReadOnlyDictionary<string, int> ComponentSizes,
+        IReadOnlyDictionary<string, int> Degrees,
+        IReadOnlyCollection<string> ArticulationNodeIds,
+        int ConnectedComponentCount,
+        int LargestConnectedComponentSize,
+        int IsolatedNodeCount,
+        int BridgeNodeCount,
+        IReadOnlyCollection<CollectorTopologyLinkSummary> StrongestLinks);
+
+    private sealed record OverviewChannelContext(
+        CollectorChannelSummary Channel,
+        IReadOnlyCollection<MeshBoard.Contracts.Nodes.NodeSummary> Nodes,
+        CollectorOverviewChannelSummary Summary);
 }

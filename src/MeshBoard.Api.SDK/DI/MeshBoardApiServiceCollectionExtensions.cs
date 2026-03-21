@@ -21,6 +21,7 @@ public static class MeshBoardApiServiceCollectionExtensions
         RegisterRefitClient<IFavoritePreferenceApi>(services, baseAddress, includeAntiforgery: true, configurePrimaryHandler);
         RegisterRefitClient<IBrokerPreferenceApi>(services, baseAddress, includeAntiforgery: true, configurePrimaryHandler);
         RegisterRefitClient<IRealtimeSessionApi>(services, baseAddress, includeAntiforgery: true, configurePrimaryHandler);
+        RegisterRefitClient<IPublicCollectorApi>(services, baseAddress, includeAntiforgery: false, configurePrimaryHandler);
 
         return services;
     }

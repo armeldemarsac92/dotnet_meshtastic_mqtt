@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeshBoard.UnitTests;
 
-public sealed class LocalBrokerRuntimeCommandServiceTests
+public sealed class LocalBrokerRuntimeServiceTests
 {
     [Fact]
     public async Task ReconcileActiveProfileAsync_ShouldAlwaysSubscribeToMshRoot()
@@ -18,11 +18,11 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
             id: Guid.Parse("11111111-1111-1111-1111-111111111111"),
             host: "mqtt.meshtastic.org");
         var sessionManager = new FakeWorkspaceBrokerSessionManager();
-        var service = new LocalBrokerRuntimeCommandService(
+        var service = new LocalBrokerRuntimeService(
             CreateScopeFactory(new FakeBrokerServerProfileRepository(workspaceId, activeProfile)),
             sessionManager,
             new FakeBrokerRuntimeRegistry(),
-            NullLogger<LocalBrokerRuntimeCommandService>.Instance);
+            NullLogger<LocalBrokerRuntimeService>.Instance);
 
         await service.ReconcileActiveProfileAsync(workspaceId);
 
@@ -56,11 +56,11 @@ public sealed class LocalBrokerRuntimeCommandServiceTests
                 IsConnected = true,
                 TopicFilters = ["msh/+/2/e/#", "msh/+/2/json/#"]
             });
-        var service = new LocalBrokerRuntimeCommandService(
+        var service = new LocalBrokerRuntimeService(
             CreateScopeFactory(profileRepository),
             sessionManager,
             runtimeRegistry,
-            NullLogger<LocalBrokerRuntimeCommandService>.Instance);
+            NullLogger<LocalBrokerRuntimeService>.Instance);
 
         await service.EnsureConnectedAsync(workspaceId);
 

@@ -117,7 +117,7 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
         builder.ConfigureServices(
             services =>
             {
-                services.AddSingleton<IBrokerRuntimeCommandService, NoOpBrokerRuntimeCommandService>();
+                services.AddSingleton<IBrokerRuntimeService, NoOpBrokerRuntimeService>();
                 services.AddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
                 services.AddSingleton<ITopicEncryptionKeyResolver, NoOpTopicEncryptionKeyResolver>();
             });
@@ -129,7 +129,7 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
         await SharedPostgresTestContainer.DropDatabaseAsync(_databaseName);
     }
 
-    private sealed class NoOpBrokerRuntimeCommandService : IBrokerRuntimeCommandService
+    private sealed class NoOpBrokerRuntimeService : IBrokerRuntimeService
     {
         public Task EnsureConnectedAsync(string workspaceId, CancellationToken cancellationToken = default)
         {

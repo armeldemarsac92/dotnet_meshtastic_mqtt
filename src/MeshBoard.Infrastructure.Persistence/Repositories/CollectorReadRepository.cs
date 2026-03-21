@@ -454,6 +454,37 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         return responses.Select(MapNodePacketRollup).ToArray();
     }
 
+    public async Task<IReadOnlyCollection<CollectorOverviewPacketTypeSummary>> GetChannelPacketTypeTotalsAsync(
+        string workspaceId,
+        CollectorPacketStatsQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = CreatePacketStatsParameters(workspaceId, query);
+        parameters.Add("NotBeforeUtc", notBeforeUtc);
+
+        var responses = await _dbContext.QueryAsync<CollectorPacketTypeCountSqlResponse>(
+            FilteredChannelsCte +
+            """
+            SELECT
+                r.packet_type AS PacketType,
+                SUM(r.packet_count) AS PacketCount
+            FROM collector_channel_packet_hourly_rollups r
+            INNER JOIN filtered_channels fc
+                ON fc.ChannelId = r.channel_id
+            WHERE r.workspace_id = @WorkspaceId
+              AND r.bucket_start_utc >= @NotBeforeUtc
+              AND (@PacketType = '' OR r.packet_type = @PacketType)
+            GROUP BY r.packet_type
+            ORDER BY SUM(r.packet_count) DESC,
+                     r.packet_type ASC;
+            """,
+            parameters,
+            cancellationToken);
+
+        return responses.Select(MapPacketTypeCount).ToArray();
+    }
+
     public async Task<IReadOnlyCollection<CollectorNeighborLinkHourlyRollup>> GetNeighborLinkRollupsAsync(
         string workspaceId,
         CollectorNeighborLinkStatsQuery query,
@@ -513,6 +544,33 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             cancellationToken);
 
         return responses.Select(MapNeighborLinkRollup).ToArray();
+    }
+
+    public async Task<int> GetNeighborObservationCountAsync(
+        string workspaceId,
+        CollectorNeighborLinkStatsQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = CreateNeighborLinkStatsParameters(workspaceId, query);
+        parameters.Add("NotBeforeUtc", notBeforeUtc);
+
+        var result = await _dbContext.QueryFirstOrDefaultAsync<int?>(
+            FilteredChannelsCte +
+            """
+            SELECT COALESCE(SUM(r.observation_count), 0)
+            FROM collector_neighbor_link_hourly_rollups r
+            INNER JOIN filtered_channels fc
+                ON fc.ChannelId = r.channel_id
+            WHERE r.workspace_id = @WorkspaceId
+              AND r.bucket_start_utc >= @NotBeforeUtc
+              AND (@SourceNodeId = '' OR r.source_node_id = @SourceNodeId)
+              AND (@TargetNodeId = '' OR r.target_node_id = @TargetNodeId);
+            """,
+            parameters,
+            cancellationToken);
+
+        return result.GetValueOrDefault();
     }
 
     private static DynamicParameters CreateFilterParameters(string workspaceId, CollectorMapQuery query)
@@ -662,6 +720,15 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             LastSnrDb = response.LastSnrDb,
             FirstSeenAtUtc = ParseTimestamp(response.FirstSeenAtUtc),
             LastSeenAtUtc = ParseTimestamp(response.LastSeenAtUtc)
+        };
+    }
+
+    private static CollectorOverviewPacketTypeSummary MapPacketTypeCount(CollectorPacketTypeCountSqlResponse response)
+    {
+        return new CollectorOverviewPacketTypeSummary
+        {
+            PacketType = response.PacketType,
+            PacketCount = response.PacketCount
         };
     }
 

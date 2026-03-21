@@ -93,6 +93,10 @@ public sealed class ProductPersistenceRegistrationTests
                 descriptor.ImplementationType?.Name == "PersistenceInitializationHostedService");
         Assert.Contains(
             services,
+            descriptor => descriptor.ServiceType == typeof(IHostedService) &&
+                descriptor.ImplementationType?.Name == "CollectorMessageRetentionHostedService");
+        Assert.Contains(
+            services,
             descriptor => descriptor.ServiceType == typeof(IBrokerServerProfileRepository) &&
                 descriptor.ImplementationType?.Name == "ProductBrokerServerProfileRepository");
         Assert.Contains(

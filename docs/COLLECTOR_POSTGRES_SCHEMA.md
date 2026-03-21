@@ -15,6 +15,12 @@ Its goals are:
 - keep radio links attached to the channel that reported them
 - add bounded hourly rollups for packet-type analytics without forcing raw-history retention decisions
 
+Current policy:
+
+- `collector_messages` are retained for 12 months by the collector host
+- `collector_nodes` and `collector_neighbor_links` are current-state tables and are not expired automatically
+- hourly rollup tables are the long-run aggregate layer and are not expired automatically
+
 ## Core Tables
 
 ### `collector_servers`
@@ -140,6 +146,16 @@ Notes:
 - this is currently the simplified canonical edge table
 - if directional asymmetry becomes important, extend this table with directional columns instead of adding a raw observation log immediately
 
+## Retention
+
+Collector retention is intentionally split by data shape:
+
+- raw `collector_messages` history is pruned by the collector host using `Persistence:MessageRetentionDays`
+- the current-state node and link tables are not pruned automatically
+- hourly rollups are retained as the durable analytical history
+
+The current collector default is 365 days for raw message history.
+
 ### `collector_channel_packet_hourly_rollups`
 
 Hourly packet-type counts per channel.
@@ -231,15 +247,24 @@ The first read-only public collector endpoints now exist in the API:
 - `GET /api/public/collector/stats/channel-packets`
 - `GET /api/public/collector/stats/node-packets`
 - `GET /api/public/collector/stats/neighbor-links`
+- `GET /api/public/collector/overview`
 - `GET /api/public/collector/topology`
 
 Those endpoints are intentionally limited to current-state map reads and bounded hourly analytics over the normalized collector tables.
+
+The public collector surface is also mirrored in `MeshBoard.Api.SDK` through a single Refit client so browser and tooling consumers do not need to hand-roll HTTP wrappers for the collector read side.
 
 The topology endpoint is intentionally broader than the map snapshot:
 
 - it resolves active nodes even when they do not have coordinates
 - it computes connected components, isolated nodes, articulation-point bridge nodes, and strongest active links
 - it uses the current `collector_neighbor_links` graph plus hourly link rollups for strength/stability ranking
+
+The overview endpoint is intentionally lighter than topology:
+
+- it groups the read model as `server -> channels`
+- it summarizes active nodes, active links, packet mix, and neighbor-observation counts for a bounded channel set
+- it is meant to be the default public-map landing query when a client needs high-signal health/shape data without fetching raw node/link payloads
 
 ## Not Included Yet
 
@@ -249,4 +274,4 @@ Deliberately still out of scope for the first Postgres collector pass:
 - exact historical location trails
 - analytics-oriented aggregate APIs
 
-Those should be added only after retention/privacy policy is explicit.
+Those should be added only when the longer-term collector privacy and storage policy is revisited.

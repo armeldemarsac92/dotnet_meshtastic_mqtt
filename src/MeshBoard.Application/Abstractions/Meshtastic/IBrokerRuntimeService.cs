@@ -1,6 +1,6 @@
 namespace MeshBoard.Application.Abstractions.Meshtastic;
 
-public interface IBrokerRuntimeCommandService
+public interface IBrokerRuntimeService
 {
     Task EnsureConnectedAsync(string workspaceId, CancellationToken cancellationToken = default);
 

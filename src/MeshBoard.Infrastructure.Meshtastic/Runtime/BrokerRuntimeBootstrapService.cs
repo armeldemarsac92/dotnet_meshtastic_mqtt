@@ -8,17 +8,17 @@ namespace MeshBoard.Infrastructure.Meshtastic.Runtime;
 
 internal sealed class BrokerRuntimeBootstrapService : IBrokerRuntimeBootstrapService
 {
-    private readonly IBrokerRuntimeCommandExecutor _brokerRuntimeCommandExecutor;
+    private readonly IBrokerRuntimeService _brokerRuntimeService;
     private readonly ILogger<BrokerRuntimeBootstrapService> _logger;
     private readonly IServiceScopeFactory _serviceScopeFactory;
 
     public BrokerRuntimeBootstrapService(
         IServiceScopeFactory serviceScopeFactory,
-        IBrokerRuntimeCommandExecutor brokerRuntimeCommandExecutor,
+        IBrokerRuntimeService brokerRuntimeService,
         ILogger<BrokerRuntimeBootstrapService> logger)
     {
         _serviceScopeFactory = serviceScopeFactory;
-        _brokerRuntimeCommandExecutor = brokerRuntimeCommandExecutor;
+        _brokerRuntimeService = brokerRuntimeService;
         _logger = logger;
     }
 
@@ -44,7 +44,7 @@ internal sealed class BrokerRuntimeBootstrapService : IBrokerRuntimeBootstrapSer
             registration.Profile.Id,
             registration.Profile.ServerAddress);
 
-        await _brokerRuntimeCommandExecutor.ReconcileActiveProfileAsync(
+        await _brokerRuntimeService.ReconcileActiveProfileAsync(
             registration.WorkspaceId,
             cancellationToken);
     }

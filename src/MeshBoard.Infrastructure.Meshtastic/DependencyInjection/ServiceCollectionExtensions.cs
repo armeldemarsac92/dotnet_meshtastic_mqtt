@@ -86,11 +86,9 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddSingleton<IMqttSessionFactory, MqttSessionFactory>();
         services.TryAddSingleton<IWorkspaceBrokerSessionManager, WorkspaceBrokerSessionManager>();
-        services.TryAddSingleton<LocalBrokerRuntimeCommandService>();
-        services.TryAddSingleton<IBrokerRuntimeCommandExecutor>(
-            serviceProvider => serviceProvider.GetRequiredService<LocalBrokerRuntimeCommandService>());
-        services.TryAddSingleton<IBrokerRuntimeCommandService>(
-            serviceProvider => serviceProvider.GetRequiredService<LocalBrokerRuntimeCommandService>());
+        services.TryAddSingleton<LocalBrokerRuntimeService>();
+        services.TryAddSingleton<IBrokerRuntimeService>(
+            serviceProvider => serviceProvider.GetRequiredService<LocalBrokerRuntimeService>());
         services.TryAddSingleton<IBrokerRuntimeBootstrapService, BrokerRuntimeBootstrapService>();
     }
 

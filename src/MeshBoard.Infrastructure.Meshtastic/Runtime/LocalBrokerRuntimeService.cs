@@ -8,18 +8,18 @@ using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Infrastructure.Meshtastic.Runtime;
 
-internal sealed class LocalBrokerRuntimeCommandService : IBrokerRuntimeCommandExecutor, IBrokerRuntimeCommandService
+internal sealed class LocalBrokerRuntimeService : IBrokerRuntimeService
 {
-    private readonly ILogger<LocalBrokerRuntimeCommandService> _logger;
+    private readonly ILogger<LocalBrokerRuntimeService> _logger;
     private readonly IBrokerRuntimeRegistry _brokerRuntimeRegistry;
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly IWorkspaceBrokerSessionManager _workspaceBrokerSessionManager;
 
-    public LocalBrokerRuntimeCommandService(
+    public LocalBrokerRuntimeService(
         IServiceScopeFactory serviceScopeFactory,
         IWorkspaceBrokerSessionManager workspaceBrokerSessionManager,
         IBrokerRuntimeRegistry brokerRuntimeRegistry,
-        ILogger<LocalBrokerRuntimeCommandService> logger)
+        ILogger<LocalBrokerRuntimeService> logger)
     {
         _serviceScopeFactory = serviceScopeFactory;
         _workspaceBrokerSessionManager = workspaceBrokerSessionManager;

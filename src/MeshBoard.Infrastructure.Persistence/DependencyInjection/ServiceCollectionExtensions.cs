@@ -2,6 +2,7 @@ using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Persistence.Context;
+using MeshBoard.Infrastructure.Persistence.Hosted;
 using MeshBoard.Infrastructure.Persistence.Initialization;
 using MeshBoard.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.Configuration;
@@ -41,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPersistenceInitializer, PostgresCollectorSchemaInitializer>());
         RegisterCollectorPersistenceRepositories(services);
         EnsurePersistenceInitializationHostedService(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, CollectorMessageRetentionHostedService>());
 
         return services;
     }

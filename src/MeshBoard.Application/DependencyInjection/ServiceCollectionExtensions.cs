@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IBrokerServerProfileService, BrokerServerProfileService>();
+        services.AddScoped<IMessageRetentionService, MessageRetentionService>();
         services.AddScoped<IMeshtasticIngestionService, MeshtasticIngestionService>();
         services.AddScoped<ITopicExplorerService, TopicExplorerService>();
         services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();

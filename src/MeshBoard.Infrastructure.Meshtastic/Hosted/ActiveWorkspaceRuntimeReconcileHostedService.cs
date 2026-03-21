@@ -10,19 +10,19 @@ namespace MeshBoard.Infrastructure.Meshtastic.Hosted;
 
 internal sealed class ActiveWorkspaceRuntimeReconcileHostedService : BackgroundService
 {
-    private readonly IBrokerRuntimeCommandExecutor _brokerRuntimeCommandExecutor;
+    private readonly IBrokerRuntimeService _brokerRuntimeService;
     private readonly ILogger<ActiveWorkspaceRuntimeReconcileHostedService> _logger;
     private readonly MeshtasticRuntimeOptions _runtimeOptions;
     private readonly IServiceScopeFactory _serviceScopeFactory;
 
     public ActiveWorkspaceRuntimeReconcileHostedService(
         IServiceScopeFactory serviceScopeFactory,
-        IBrokerRuntimeCommandExecutor brokerRuntimeCommandExecutor,
+        IBrokerRuntimeService brokerRuntimeService,
         IOptions<MeshtasticRuntimeOptions> runtimeOptions,
         ILogger<ActiveWorkspaceRuntimeReconcileHostedService> logger)
     {
         _serviceScopeFactory = serviceScopeFactory;
-        _brokerRuntimeCommandExecutor = brokerRuntimeCommandExecutor;
+        _brokerRuntimeService = brokerRuntimeService;
         _runtimeOptions = runtimeOptions.Value;
         _logger = logger;
     }
@@ -64,7 +64,7 @@ internal sealed class ActiveWorkspaceRuntimeReconcileHostedService : BackgroundS
         {
             try
             {
-                await _brokerRuntimeCommandExecutor.ReconcileActiveProfileAsync(
+                await _brokerRuntimeService.ReconcileActiveProfileAsync(
                     activeProfile.WorkspaceId,
                     cancellationToken);
             }

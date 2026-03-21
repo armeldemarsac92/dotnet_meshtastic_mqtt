@@ -113,6 +113,25 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
+            "/overview",
+            async Task<IResult> (
+                [FromQuery(Name = "serverAddress")] string? serverAddress,
+                [FromQuery] string? region,
+                [FromQuery] string? channelName,
+                [FromQuery] int? activeWithinHours,
+                [FromQuery] int? lookbackHours,
+                [FromQuery] int? maxChannels,
+                [FromQuery] int? topPacketTypes,
+                ICollectorReadService collectorReadService,
+                CancellationToken cancellationToken) =>
+            {
+                var snapshot = await collectorReadService.GetOverviewSnapshot(
+                    CreateOverviewQuery(serverAddress, region, channelName, activeWithinHours, lookbackHours, maxChannels, topPacketTypes),
+                    cancellationToken);
+                return Results.Ok(snapshot);
+            });
+
+        group.MapGet(
             "/topology",
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
@@ -192,6 +211,27 @@ internal static class PublicCollectorEndpointMappings
             TargetNodeId = targetNodeId,
             LookbackHours = lookbackHours ?? 24 * 7,
             MaxRows = maxRows ?? 500
+        };
+    }
+
+    private static CollectorOverviewQuery CreateOverviewQuery(
+        string? serverAddress,
+        string? region,
+        string? channelName,
+        int? activeWithinHours,
+        int? lookbackHours,
+        int? maxChannels,
+        int? topPacketTypes)
+    {
+        return new CollectorOverviewQuery
+        {
+            ServerAddress = serverAddress,
+            Region = region,
+            ChannelName = channelName,
+            ActiveWithinHours = activeWithinHours ?? 24,
+            LookbackHours = lookbackHours ?? 24 * 7,
+            MaxChannels = maxChannels ?? 20,
+            TopPacketTypes = topPacketTypes ?? 3
         };
     }
 

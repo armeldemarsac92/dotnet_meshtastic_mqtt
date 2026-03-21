@@ -50,7 +50,19 @@ public interface ICollectorReadRepository
         DateTimeOffset notBeforeUtc,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<CollectorOverviewPacketTypeSummary>> GetChannelPacketTypeTotalsAsync(
+        string workspaceId,
+        CollectorPacketStatsQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<CollectorNeighborLinkHourlyRollup>> GetNeighborLinkRollupsAsync(
+        string workspaceId,
+        CollectorNeighborLinkStatsQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<int> GetNeighborObservationCountAsync(
         string workspaceId,
         CollectorNeighborLinkStatsQuery query,
         DateTimeOffset notBeforeUtc,
