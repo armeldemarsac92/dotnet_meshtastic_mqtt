@@ -1,4 +1,5 @@
 const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
 const decryptResultClassifications = Object.freeze({
   decrypted: "Decrypted",
   encryptedButNotDecrypted: "EncryptedButNotDecrypted",
@@ -19,6 +20,7 @@ const portNums = Object.freeze({
   textMessageCompressedApp: 7,
   waypointApp: 8,
   telemetryApp: 67,
+  neighborinfoApp: 71,
   mapReportApp: 73
 });
 const packetTypesByPortNum = Object.freeze({
@@ -50,10 +52,34 @@ const packetTypesByPortNum = Object.freeze({
     name: "TELEMETRY_APP",
     packetType: "Telemetry"
   },
+  [portNums.neighborinfoApp]: {
+    name: "NEIGHBORINFO_APP",
+    packetType: "Neighbor Info"
+  },
   [portNums.mapReportApp]: {
     name: "MAP_REPORT_APP",
     packetType: "Map Report"
   }
+});
+const routingErrorNamesByCode = Object.freeze({
+  0: "NONE",
+  1: "NO_ROUTE",
+  2: "GOT_NAK",
+  3: "TIMEOUT",
+  4: "NO_INTERFACE",
+  5: "MAX_RETRANSMIT",
+  6: "NO_CHANNEL",
+  7: "TOO_LARGE",
+  8: "NO_RESPONSE",
+  9: "DUTY_CYCLE_LIMIT",
+  32: "BAD_REQUEST",
+  33: "NOT_AUTHORIZED",
+  34: "PKI_FAILED",
+  35: "PKI_UNKNOWN_PUBKEY",
+  36: "ADMIN_BAD_SESSION_KEY",
+  37: "ADMIN_PUBLIC_KEY_UNAUTHORIZED",
+  38: "RATE_LIMIT_EXCEEDED",
+  39: "PKI_SEND_FAIL_PUBLIC_KEY"
 });
 
 export function getRealtimePacketWorkerConstants() {
@@ -136,9 +162,28 @@ export async function processPacketRequest(request, currentKeyRecords) {
 
   const packetMetadata = tryParseMeshtasticPacket(sourcePayloadBytes);
   if (!packetMetadata) {
+    const jsonPacketOutcome = tryCreateJsonDecodedPacketEvent(rawPacket, sourcePayloadBytes);
+    if (!jsonPacketOutcome) {
+      return createSuccess(
+        decryptResultClassifications.notAttempted,
+        rawPacket);
+    }
+
+    if (jsonPacketOutcome.kind === "unsupported-port") {
+      rawPacket.failureClassification = failureKinds.unsupportedPortNum;
+      return createSuccess(
+        decryptResultClassifications.notAttempted,
+        rawPacket,
+        failureKinds.unsupportedPortNum,
+        `The Meshtastic portnum ${jsonPacketOutcome.portNumValue} is not supported yet.`);
+    }
+
     return createSuccess(
       decryptResultClassifications.notAttempted,
-      rawPacket);
+      rawPacket,
+      null,
+      null,
+      jsonPacketOutcome.decodedPacket);
   }
 
   rawPacket.packetId = packetMetadata.packetId;
@@ -665,7 +710,11 @@ function tryCreateDecodedPacketEvent(rawPacket, decodedBytes) {
   }
 
   const nodeProjectionOutcome = tryCreateNodeProjectionEvent(rawPacket, dataMessage, portMetadata);
-  const payloadPreview = nodeProjectionOutcome?.payloadPreview ??
+  const neighborInfoOutcome = tryCreateNeighborInfoEvent(rawPacket, dataMessage);
+  const routingInfoOutcome = tryCreateRoutingInfoEvent(dataMessage);
+  const payloadPreview = neighborInfoOutcome?.payloadPreview ??
+    routingInfoOutcome?.payloadPreview ??
+    nodeProjectionOutcome?.payloadPreview ??
     buildPayloadPreview(portMetadata, dataMessage.payloadBytes);
 
   return {
@@ -679,9 +728,1003 @@ function tryCreateDecodedPacketEvent(rawPacket, decodedBytes) {
       payloadPreview,
       sourceNodeNumber: dataMessage.sourceNodeNumber,
       destinationNodeNumber: dataMessage.destinationNodeNumber,
-      nodeProjection: nodeProjectionOutcome?.nodeProjection ?? null
+      nodeProjection: nodeProjectionOutcome?.nodeProjection ?? null,
+      neighborInfo: neighborInfoOutcome?.neighborInfo ?? null,
+      routingInfo: routingInfoOutcome?.routingInfo ?? null
     }
   };
+}
+
+function tryCreateJsonDecodedPacketEvent(rawPacket, payloadBytes) {
+  const root = tryParseJsonSourcePayload(payloadBytes);
+  if (!root) {
+    return null;
+  }
+
+  const portNumValue = resolveJsonPortNumValue(root);
+  if (portNumValue === null) {
+    return null;
+  }
+
+  const portMetadata = getPortMetadata(portNumValue);
+  if (!portMetadata) {
+    return {
+      kind: "unsupported-port",
+      portNumValue
+    };
+  }
+
+  const payloadContext = resolveJsonPayloadContext(root, portNumValue);
+  const payloadValue = payloadContext.payloadValue;
+  const payloadBytesForEvent = payloadContext.bytes;
+  const sourceNodeNumber = resolveJsonNodeNumber(root, "source", "from");
+  const destinationNodeNumber = resolveJsonNodeNumber(root, "dest", "to");
+  const nodeProjectionOutcome = tryCreateJsonNodeProjectionEvent(
+    rawPacket,
+    portNumValue,
+    payloadBytesForEvent,
+    payloadContext.isBinaryPayload,
+    payloadValue,
+    sourceNodeNumber,
+    portMetadata);
+  const neighborInfoOutcome = tryCreateJsonNeighborInfoEvent(
+    rawPacket,
+    portNumValue,
+    payloadBytesForEvent,
+    payloadContext.isBinaryPayload,
+    payloadValue,
+    sourceNodeNumber);
+  const routingInfoOutcome = tryCreateJsonRoutingInfoEvent(
+    portNumValue,
+    payloadBytesForEvent,
+    payloadContext.isBinaryPayload,
+    payloadValue);
+  const payloadPreview = neighborInfoOutcome?.payloadPreview ??
+    routingInfoOutcome?.payloadPreview ??
+    nodeProjectionOutcome?.payloadPreview ??
+    buildJsonDecodedPayloadPreview(
+      portNumValue,
+      payloadValue,
+      payloadBytesForEvent,
+      payloadContext.isBinaryPayload,
+      root);
+
+  return {
+    kind: "supported",
+    decodedPacket: {
+      portNumValue,
+      portNumName: portMetadata.portNumName,
+      packetType: portMetadata.packetType,
+      payloadBase64: bytesToBase64(payloadBytesForEvent),
+      payloadSizeBytes: payloadBytesForEvent.length,
+      payloadPreview,
+      sourceNodeNumber,
+      destinationNodeNumber,
+      nodeProjection: nodeProjectionOutcome?.nodeProjection ?? null,
+      neighborInfo: neighborInfoOutcome?.neighborInfo ?? null,
+      routingInfo: routingInfoOutcome?.routingInfo ?? null
+    }
+  };
+}
+
+function tryCreateJsonNodeProjectionEvent(
+  rawPacket,
+  portNumValue,
+  payloadBytes,
+  isBinaryPayload,
+  payloadValue,
+  sourceNodeNumber,
+  portMetadata) {
+  if (!rawPacket || typeof rawPacket !== "object") {
+    return null;
+  }
+
+  const nodeId = normalizeNodeIdFromNumber(sourceNodeNumber) ??
+    resolveJsonNodeId(
+      payloadValue,
+      "nodeId",
+      "node_id",
+      "id") ??
+    resolveJsonNodeId(
+      rawPacket,
+      "sourceNodeId",
+      "fromNodeId") ??
+    resolveJsonNodeIdFromRoot(payloadValue) ??
+    resolveJsonNodeIdFromTopic(rawPacket.sourceTopic);
+
+  if (!nodeId) {
+    return null;
+  }
+
+  const lastHeardAtUtc = normalizeText(rawPacket.receivedAtUtc) ?? new Date().toISOString();
+  const projection = {
+    nodeId,
+    nodeNumber: sourceNodeNumber,
+    lastHeardAtUtc,
+    lastHeardChannel: tryResolveChannelKeyFromTopic(rawPacket.sourceTopic),
+    lastTextMessageAtUtc: portNumValue === portNums.textMessageApp
+      ? lastHeardAtUtc
+      : null,
+    packetType: portMetadata.packetType,
+    payloadPreview: null,
+    shortName: null,
+    longName: null,
+    lastKnownLatitude: null,
+    lastKnownLongitude: null,
+    batteryLevelPercent: null,
+    voltage: null,
+    channelUtilization: null,
+    airUtilTx: null,
+    uptimeSeconds: null,
+    temperatureCelsius: null,
+    relativeHumidity: null,
+    barometricPressure: null
+  };
+
+  let payloadPreview = buildJsonDecodedPayloadPreview(portNumValue, payloadValue, payloadBytes, isBinaryPayload, {
+    payload: payloadValue
+  });
+
+  switch (portNumValue) {
+    case portNums.textMessageApp:
+      payloadPreview = decodeJsonTextPayload(payloadValue, payloadBytes);
+      break;
+    case portNums.nodeinfoApp:
+      {
+        const nodeInfo = isBinaryPayload && payloadBytes.length > 0
+          ? parseNodeInfoPayload(payloadBytes)
+          : normalizeJsonNodeInfoPayload(payloadValue, sourceNodeNumber);
+        if (nodeInfo) {
+          projection.nodeId = nodeInfo.nodeId ?? projection.nodeId;
+          projection.shortName = nodeInfo.shortName;
+          projection.longName = nodeInfo.longName;
+          payloadPreview = buildNodeInfoPreview(nodeInfo);
+        }
+      }
+      break;
+    case portNums.positionApp:
+      {
+        const position = isBinaryPayload && payloadBytes.length > 0
+          ? parsePositionPayload(payloadBytes)
+          : normalizeJsonPositionPayload(payloadValue);
+        if (position) {
+          projection.lastKnownLatitude = position.latitude;
+          projection.lastKnownLongitude = position.longitude;
+          payloadPreview = buildPositionPreview(position);
+        }
+      }
+      break;
+    case portNums.telemetryApp:
+      {
+        const telemetry = isBinaryPayload && payloadBytes.length > 0
+          ? parseTelemetryPayload(payloadBytes)
+          : normalizeJsonTelemetryPayload(payloadValue);
+        if (telemetry) {
+          projection.batteryLevelPercent = telemetry.batteryLevelPercent;
+          projection.voltage = telemetry.voltage;
+          projection.channelUtilization = telemetry.channelUtilization;
+          projection.airUtilTx = telemetry.airUtilTx;
+          projection.uptimeSeconds = telemetry.uptimeSeconds;
+          projection.temperatureCelsius = telemetry.temperatureCelsius;
+          projection.relativeHumidity = telemetry.relativeHumidity;
+          projection.barometricPressure = telemetry.barometricPressure;
+          payloadPreview = telemetry.payloadPreview;
+        }
+      }
+      break;
+    case portNums.neighborinfoApp:
+      {
+        const neighborInfo = isBinaryPayload && payloadBytes.length > 0
+          ? parseNeighborInfoPayload(payloadBytes, sourceNodeNumber)
+          : normalizeJsonNeighborInfoPayload(payloadValue, sourceNodeNumber);
+        if (neighborInfo) {
+          projection.nodeId = neighborInfo.reportingNodeId ?? projection.nodeId;
+          payloadPreview = buildNeighborInfoPreview(neighborInfo);
+        }
+      }
+      break;
+  }
+
+  projection.payloadPreview = payloadPreview;
+
+  return {
+    nodeProjection: projection,
+    payloadPreview
+  };
+}
+
+function tryCreateJsonNeighborInfoEvent(
+  rawPacket,
+  portNumValue,
+  payloadBytes,
+  isBinaryPayload,
+  payloadValue,
+  sourceNodeNumber) {
+  if (!rawPacket || typeof rawPacket !== "object" || portNumValue !== portNums.neighborinfoApp) {
+    return null;
+  }
+
+  const neighborInfo = isBinaryPayload && payloadBytes.length > 0
+    ? parseNeighborInfoPayload(payloadBytes, sourceNodeNumber)
+    : normalizeJsonNeighborInfoPayload(payloadValue, sourceNodeNumber);
+
+  if (!neighborInfo?.reportingNodeId) {
+    return null;
+  }
+
+  return {
+    neighborInfo: {
+      reportingNodeId: neighborInfo.reportingNodeId,
+      neighbors: neighborInfo.neighbors.map((neighbor) => ({
+        nodeId: neighbor.nodeId,
+        snrDb: neighbor.snrDb,
+        lastRxAtUtc: neighbor.lastRxAtUtc
+      }))
+    },
+    payloadPreview: buildNeighborInfoPreview(neighborInfo)
+  };
+}
+
+function tryCreateRoutingInfoEvent(dataMessage) {
+  if (!dataMessage || typeof dataMessage !== "object" || dataMessage.portNumValue !== portNums.routingApp) {
+    return null;
+  }
+
+  const routingInfo = parseRoutingPayload(dataMessage.payloadBytes);
+
+  if (!routingInfo) {
+    return null;
+  }
+
+  return {
+    routingInfo: {
+      kind: routingInfo.kind,
+      errorCode: routingInfo.errorCode,
+      errorName: routingInfo.errorName,
+      routeNodeIds: routingInfo.routeNodeIds,
+      snrTowards: routingInfo.snrTowards,
+      routeBackNodeIds: routingInfo.routeBackNodeIds,
+      snrBack: routingInfo.snrBack
+    },
+    payloadPreview: buildRoutingPreview(routingInfo)
+  };
+}
+
+function tryCreateJsonRoutingInfoEvent(portNumValue, payloadBytes, isBinaryPayload, payloadValue) {
+  if (portNumValue !== portNums.routingApp) {
+    return null;
+  }
+
+  const routingInfo = isBinaryPayload && payloadBytes.length > 0
+    ? parseRoutingPayload(payloadBytes)
+    : normalizeJsonRoutingPayload(payloadValue);
+
+  if (!routingInfo) {
+    return null;
+  }
+
+  return {
+    routingInfo: {
+      kind: routingInfo.kind,
+      errorCode: routingInfo.errorCode,
+      errorName: routingInfo.errorName,
+      routeNodeIds: routingInfo.routeNodeIds,
+      snrTowards: routingInfo.snrTowards,
+      routeBackNodeIds: routingInfo.routeBackNodeIds,
+      snrBack: routingInfo.snrBack
+    },
+    payloadPreview: buildRoutingPreview(routingInfo)
+  };
+}
+
+function tryParseJsonSourcePayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(textDecoder.decode(payloadBytes));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveJsonPortNumValue(root) {
+  const decoded = getJsonProperty(root, "decoded");
+  const explicitPortNum = parseJsonPortNumValue(decoded && typeof decoded === "object"
+    ? getJsonProperty(decoded, "portnum", "portNum")
+    : undefined);
+
+  if (explicitPortNum !== null) {
+    return explicitPortNum;
+  }
+
+  return mapJsonTypeToPortNum(getJsonString(root, "type", "packetType", "packet_type"));
+}
+
+function resolveJsonPayloadContext(root, portNumValue) {
+  const decoded = getJsonProperty(root, "decoded");
+  const decodedPayloadValue = decoded && typeof decoded === "object"
+    ? getJsonProperty(decoded, "payload")
+    : undefined;
+  const directPayloadValue = getJsonProperty(root, "payload");
+  const textValue = decodeJsonTextValue(decodedPayloadValue) ??
+    decodeJsonTextValue(directPayloadValue) ??
+    getJsonString(root, "text", "message");
+
+  if (typeof decodedPayloadValue === "string") {
+    const decodedPayloadBytes = tryDecodeBase64Strict(decodedPayloadValue);
+    if (decodedPayloadBytes) {
+      return {
+        payloadValue: directPayloadValue,
+        bytes: decodedPayloadBytes,
+        isBinaryPayload: true
+      };
+    }
+  }
+
+  if (portNumValue === portNums.textMessageApp && textValue) {
+    return {
+      payloadValue: directPayloadValue,
+      bytes: textEncoder.encode(textValue),
+      isBinaryPayload: false
+    };
+  }
+
+  if (directPayloadValue && typeof directPayloadValue === "object") {
+    return {
+      payloadValue: directPayloadValue,
+      bytes: textEncoder.encode(JSON.stringify(directPayloadValue)),
+      isBinaryPayload: false
+    };
+  }
+
+  if (typeof directPayloadValue === "string") {
+    const directPayloadBytes = tryDecodeBase64Strict(directPayloadValue);
+    if (directPayloadBytes) {
+      return {
+        payloadValue: directPayloadValue,
+        bytes: directPayloadBytes,
+        isBinaryPayload: true
+      };
+    }
+
+    return {
+      payloadValue: directPayloadValue,
+      bytes: textEncoder.encode(directPayloadValue),
+      isBinaryPayload: false
+    };
+  }
+
+  return {
+    payloadValue: directPayloadValue,
+    bytes: textEncoder.encode(JSON.stringify(root)),
+    isBinaryPayload: false
+  };
+}
+
+function buildJsonDecodedPayloadPreview(portNumValue, payloadValue, payloadBytes, isBinaryPayload, root) {
+  switch (portNumValue) {
+    case portNums.textMessageApp:
+      return decodeJsonTextPayload(payloadValue ?? getJsonProperty(root, "payload"), payloadBytes);
+    case portNums.nodeinfoApp:
+      {
+        const nodeInfo = isBinaryPayload && payloadBytes.length > 0
+          ? parseNodeInfoPayload(payloadBytes)
+          : normalizeJsonNodeInfoPayload(payloadValue, resolveJsonNodeNumber(root, "from", "source"));
+        return buildNodeInfoPreview(nodeInfo);
+      }
+    case portNums.positionApp:
+      {
+        const position = isBinaryPayload && payloadBytes.length > 0
+          ? parsePositionPayload(payloadBytes)
+          : normalizeJsonPositionPayload(payloadValue);
+        return buildPositionPreview(position);
+      }
+    case portNums.routingApp:
+      {
+        const routingInfo = isBinaryPayload && payloadBytes.length > 0
+          ? parseRoutingPayload(payloadBytes)
+          : normalizeJsonRoutingPayload(payloadValue);
+        return buildRoutingPreview(routingInfo);
+      }
+    case portNums.telemetryApp:
+      {
+        const telemetry = isBinaryPayload && payloadBytes.length > 0
+          ? parseTelemetryPayload(payloadBytes)
+          : normalizeJsonTelemetryPayload(payloadValue);
+        return telemetry?.payloadPreview ?? "Telemetry update";
+      }
+    case portNums.neighborinfoApp:
+      {
+        const neighborInfo = isBinaryPayload && payloadBytes.length > 0
+          ? parseNeighborInfoPayload(payloadBytes, resolveJsonNodeNumber(root, "from", "source"))
+          : normalizeJsonNeighborInfoPayload(payloadValue, resolveJsonNodeNumber(root, "from", "source"));
+        return buildNeighborInfoPreview(neighborInfo);
+      }
+    default:
+      return `${getPortMetadata(portNumValue)?.packetType ?? "Unknown Packet"} payload (json)`;
+  }
+}
+
+function normalizeJsonNodeInfoPayload(payloadValue, fallbackNodeNumber = null) {
+  if (!payloadValue || typeof payloadValue !== "object") {
+    return null;
+  }
+
+  return {
+    nodeId: resolveJsonNodeId(payloadValue, "id", "nodeId", "node_id") ??
+      normalizeNodeIdFromNumber(fallbackNodeNumber),
+    shortName: getJsonString(payloadValue, "shortName", "short_name", "shortname"),
+    longName: getJsonString(payloadValue, "longName", "long_name", "longname")
+  };
+}
+
+function normalizeJsonPositionPayload(payloadValue) {
+  if (!payloadValue || typeof payloadValue !== "object") {
+    return null;
+  }
+
+  const latitude = normalizeJsonCoordinate(
+    getJsonNumber(payloadValue, "latitude", "lat"),
+    getJsonNumber(payloadValue, "latitude_i", "latitudeI"));
+  const longitude = normalizeJsonCoordinate(
+    getJsonNumber(payloadValue, "longitude", "lon"),
+    getJsonNumber(payloadValue, "longitude_i", "longitudeI"));
+
+  if (latitude === null || longitude === null) {
+    return null;
+  }
+
+  return {
+    latitude,
+    longitude
+  };
+}
+
+function normalizeJsonTelemetryPayload(payloadValue) {
+  if (!payloadValue || typeof payloadValue !== "object") {
+    return null;
+  }
+
+  const deviceMetricsValue = getJsonProperty(payloadValue, "deviceMetrics", "device_metrics");
+  const environmentMetricsValue = getJsonProperty(payloadValue, "environmentMetrics", "environment_metrics");
+  const deviceSource = deviceMetricsValue && typeof deviceMetricsValue === "object"
+    ? deviceMetricsValue
+    : payloadValue;
+  const environmentSource = environmentMetricsValue && typeof environmentMetricsValue === "object"
+    ? environmentMetricsValue
+    : payloadValue;
+  const deviceMetrics = {
+    batteryLevelPercent: normalizeJsonMetricNumber(deviceSource, "batteryLevelPercent", "battery_level_percent", "batteryLevel", "battery_level"),
+    voltage: normalizeJsonMetricNumber(deviceSource, "voltage"),
+    channelUtilization: normalizeJsonMetricNumber(deviceSource, "channelUtilization", "channel_utilization"),
+    airUtilTx: normalizeJsonMetricNumber(deviceSource, "airUtilTx", "air_util_tx"),
+    uptimeSeconds: normalizeJsonMetricNumber(deviceSource, "uptimeSeconds", "uptime_seconds")
+  };
+  const environmentMetrics = {
+    temperatureCelsius: normalizeJsonMetricNumber(environmentSource, "temperatureCelsius", "temperature_celsius", "temperature"),
+    relativeHumidity: normalizeJsonMetricNumber(environmentSource, "relativeHumidity", "relative_humidity"),
+    barometricPressure: normalizeJsonMetricNumber(environmentSource, "barometricPressure", "barometric_pressure")
+  };
+
+  return {
+    ...deviceMetrics,
+    ...environmentMetrics,
+    payloadPreview: buildTelemetryPreview(deviceMetrics, environmentMetrics)
+  };
+}
+
+function normalizeJsonNeighborInfoPayload(payloadValue, fallbackReportingNodeNumber = null) {
+  if (!payloadValue || typeof payloadValue !== "object") {
+    return null;
+  }
+
+  const neighborsValue = getJsonProperty(payloadValue, "neighbors");
+  const neighbors = Array.isArray(neighborsValue)
+    ? neighborsValue
+      .map(normalizeJsonNeighborEntry)
+      .filter((entry) => entry?.nodeId)
+    : [];
+
+  return {
+    reportingNodeId: resolveJsonNodeId(
+      payloadValue,
+      "reportingNodeId",
+      "reporting_node_id",
+      "nodeId",
+      "node_id") ??
+      normalizeNodeIdFromNumber(fallbackReportingNodeNumber),
+    neighbors
+  };
+}
+
+function normalizeJsonNeighborEntry(payloadValue) {
+  if (!payloadValue || typeof payloadValue !== "object") {
+    return null;
+  }
+
+  return {
+    nodeId: resolveJsonNodeId(payloadValue, "nodeId", "node_id", "id"),
+    snrDb: normalizeJsonMetricNumber(payloadValue, "snrDb", "snr_db", "snr"),
+    lastRxAtUtc: normalizeJsonTimestamp(
+      getJsonProperty(payloadValue, "lastRxAtUtc", "last_rx_at_utc", "lastRxAt", "last_rx_at", "lastRxTime", "last_rx_time"))
+  };
+}
+
+function normalizeJsonRoutingPayload(payloadValue) {
+  if (!payloadValue || typeof payloadValue !== "object") {
+    return null;
+  }
+
+  const routeRequest = normalizeJsonRouteDiscovery(
+    getJsonProperty(payloadValue, "routeRequest", "route_request"));
+  if (routeRequest) {
+    return {
+      kind: "routeRequest",
+      errorCode: null,
+      errorName: null,
+      ...routeRequest
+    };
+  }
+
+  const routeReply = normalizeJsonRouteDiscovery(
+    getJsonProperty(payloadValue, "routeReply", "route_reply"));
+  if (routeReply) {
+    return {
+      kind: "routeReply",
+      errorCode: null,
+      errorName: null,
+      ...routeReply
+    };
+  }
+
+  const errorInfo = normalizeJsonRoutingError(
+    getJsonProperty(payloadValue, "errorReason", "error_reason", "error"));
+  if (errorInfo) {
+    return {
+      kind: "errorReason",
+      errorCode: errorInfo.code,
+      errorName: errorInfo.name,
+      routeNodeIds: [],
+      snrTowards: [],
+      routeBackNodeIds: [],
+      snrBack: []
+    };
+  }
+
+  const fallbackDiscovery = normalizeJsonRouteDiscovery(payloadValue);
+  return fallbackDiscovery
+    ? {
+        kind: "routeRequest",
+        errorCode: null,
+        errorName: null,
+        ...fallbackDiscovery
+      }
+    : null;
+}
+
+function normalizeJsonRouteDiscovery(payloadValue) {
+  if (!payloadValue || typeof payloadValue !== "object") {
+    return null;
+  }
+
+  const routeNodeIds = normalizeJsonNodeIdArray(getJsonProperty(payloadValue, "route"));
+  const snrTowards = normalizeJsonIntegerArray(getJsonProperty(payloadValue, "snrTowards", "snr_towards"));
+  const routeBackNodeIds = normalizeJsonNodeIdArray(getJsonProperty(payloadValue, "routeBack", "route_back"));
+  const snrBack = normalizeJsonIntegerArray(getJsonProperty(payloadValue, "snrBack", "snr_back"));
+
+  return routeNodeIds.length > 0 || routeBackNodeIds.length > 0 || snrTowards.length > 0 || snrBack.length > 0
+    ? {
+        routeNodeIds,
+        snrTowards,
+        routeBackNodeIds,
+        snrBack
+      }
+    : null;
+}
+
+function normalizeJsonRoutingError(value) {
+  if (Number.isFinite(value)) {
+    const code = Number(value);
+    return {
+      code,
+      name: routingErrorNamesByCode[code] ?? `UNKNOWN_${code}`
+    };
+  }
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedToken = normalizeToken(value);
+  for (const [codeText, errorName] of Object.entries(routingErrorNamesByCode)) {
+    if (normalizeToken(errorName) === normalizedToken) {
+      return {
+        code: Number.parseInt(codeText, 10),
+        name: errorName
+      };
+    }
+  }
+
+  return {
+    code: null,
+    name: normalizeText(value) ?? value
+  };
+}
+
+function normalizeJsonNodeIdArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        return normalizeNodeId(item);
+      }
+
+      if (Number.isFinite(item)) {
+        return normalizeNodeIdFromNumber(Number(item));
+      }
+
+      return null;
+    })
+    .filter((item) => typeof item === "string" && item.length > 0);
+}
+
+function normalizeJsonIntegerArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (Number.isFinite(item)) {
+        return Math.trunc(Number(item));
+      }
+
+      if (typeof item === "string") {
+        const parsed = Number.parseInt(item, 10);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+
+      return null;
+    })
+    .filter((item) => Number.isFinite(item));
+}
+
+function decodeJsonTextPayload(payloadValue, payloadBytes) {
+  const text = decodeJsonTextValue(payloadValue);
+
+  if (text) {
+    return normalizePreviewText(text);
+  }
+
+  return decodeTextPayload(payloadBytes);
+}
+
+function decodeJsonTextValue(payloadValue) {
+  if (typeof payloadValue === "string") {
+    const decodedBase64 = tryDecodeBase64Strict(payloadValue);
+    if (decodedBase64) {
+      try {
+        return textDecoder.decode(decodedBase64);
+      } catch {
+        return payloadValue;
+      }
+    }
+
+    return payloadValue;
+  }
+
+  if (payloadValue && typeof payloadValue === "object") {
+    return getJsonString(payloadValue, "text", "message");
+  }
+
+  return null;
+}
+
+function parseJsonPortNumValue(value) {
+  if (Number.isFinite(value)) {
+    return Number(value);
+  }
+
+  if (typeof value === "string") {
+    const numericValue = Number.parseInt(value, 10);
+    if (Number.isFinite(numericValue)) {
+      return numericValue;
+    }
+
+    const normalized = normalizeToken(value);
+    switch (normalized) {
+      case "textmessageapp":
+      case "text":
+        return portNums.textMessageApp;
+      case "positionapp":
+      case "position":
+        return portNums.positionApp;
+      case "nodeinfoapp":
+      case "nodeinfo":
+        return portNums.nodeinfoApp;
+      case "routingapp":
+      case "routing":
+        return portNums.routingApp;
+      case "telemetryapp":
+      case "telemetry":
+        return portNums.telemetryApp;
+      case "neighborinfoapp":
+      case "neighborinfo":
+        return portNums.neighborinfoApp;
+      case "mapreportapp":
+      case "mapreport":
+        return portNums.mapReportApp;
+    }
+  }
+
+  return null;
+}
+
+function mapJsonTypeToPortNum(value) {
+  switch (normalizeToken(value)) {
+    case "text":
+    case "sendtext":
+    case "textmessage":
+    case "textmessageapp":
+      return portNums.textMessageApp;
+    case "position":
+    case "positionupdate":
+    case "positionapp":
+      return portNums.positionApp;
+    case "nodeinfo":
+    case "nodeinformation":
+    case "nodeinfoapp":
+      return portNums.nodeinfoApp;
+    case "routing":
+    case "routingapp":
+      return portNums.routingApp;
+    case "telemetry":
+    case "telemetryapp":
+      return portNums.telemetryApp;
+    case "neighborinfo":
+    case "neighborinfoapp":
+      return portNums.neighborinfoApp;
+    case "mapreport":
+    case "mapreportapp":
+      return portNums.mapReportApp;
+    default:
+      return null;
+  }
+}
+
+function resolveJsonNodeNumber(root, ...names) {
+  for (const name of names) {
+    const directValue = getJsonProperty(root, name);
+    const directNumber = normalizeJsonNodeNumber(directValue);
+    if (directNumber !== null) {
+      return directNumber;
+    }
+
+    const decoded = getJsonProperty(root, "decoded");
+    if (decoded && typeof decoded === "object") {
+      const decodedValue = getJsonProperty(decoded, name);
+      const decodedNumber = normalizeJsonNodeNumber(decodedValue);
+      if (decodedNumber !== null) {
+        return decodedNumber;
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeJsonNodeNumber(value) {
+  if (Number.isFinite(value) && value > 0) {
+    return Number(value);
+  }
+
+  if (typeof value === "string") {
+    const normalizedValue = normalizeText(value);
+    if (!normalizedValue) {
+      return null;
+    }
+
+    if (normalizedValue.startsWith("!")) {
+      const numericValue = Number.parseInt(normalizedValue.slice(1), 16);
+      return Number.isFinite(numericValue) && numericValue > 0
+        ? numericValue
+        : null;
+    }
+
+    const numericValue = Number.parseInt(normalizedValue, 10);
+    return Number.isFinite(numericValue) && numericValue > 0
+      ? numericValue
+      : null;
+  }
+
+  return null;
+}
+
+function resolveJsonNodeId(target, ...names) {
+  if (!target || typeof target !== "object") {
+    return null;
+  }
+
+  for (const name of names) {
+    const value = getJsonProperty(target, name);
+    if (value === undefined) {
+      continue;
+    }
+
+    if (typeof value === "string") {
+      const normalized = normalizeNodeId(value);
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    if (Number.isFinite(value)) {
+      const normalized = normalizeNodeIdFromNumber(Number(value));
+      if (normalized) {
+        return normalized;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveJsonNodeIdFromRoot(payloadValue) {
+  return resolveJsonNodeId(payloadValue, "sender", "fromId", "from_id", "from");
+}
+
+function resolveJsonNodeIdFromTopic(sourceTopic) {
+  const normalizedNodeId = normalizeText(sourceTopic)
+    ? tryExtractNodeIdFromJsonTopic(sourceTopic)
+    : null;
+
+  return normalizedNodeId && normalizedNodeId !== "broker"
+    ? normalizedNodeId
+    : null;
+}
+
+function normalizeJsonCoordinate(decimalValue, scaledIntegerValue) {
+  if (Number.isFinite(decimalValue)) {
+    return Number(decimalValue);
+  }
+
+  if (Number.isFinite(scaledIntegerValue)) {
+    return Number(scaledIntegerValue) / 10000000;
+  }
+
+  return null;
+}
+
+function normalizeJsonMetricNumber(target, ...names) {
+  if (!target || typeof target !== "object") {
+    return null;
+  }
+
+  return normalizeNumericMetric(getJsonNumber(target, ...names));
+}
+
+function normalizeJsonTimestamp(value) {
+  if (typeof value === "string") {
+    const normalizedText = normalizeText(value);
+    if (!normalizedText) {
+      return null;
+    }
+
+    if (/^\d+$/.test(normalizedText)) {
+      const numericValue = Number.parseInt(normalizedText, 10);
+      return normalizeUnixTimestamp(numericValue);
+    }
+
+    const parsedDate = Date.parse(normalizedText);
+    return Number.isFinite(parsedDate)
+      ? new Date(parsedDate).toISOString()
+      : null;
+  }
+
+  if (Number.isFinite(value)) {
+    return normalizeUnixTimestamp(Number(value));
+  }
+
+  return null;
+}
+
+function normalizeUnixTimestamp(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  const milliseconds = value >= 1000000000000
+    ? value
+    : value * 1000;
+
+  return new Date(milliseconds).toISOString();
+}
+
+function getJsonProperty(target, ...names) {
+  if (!target || typeof target !== "object") {
+    return undefined;
+  }
+
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(target, name)) {
+      return target[name];
+    }
+  }
+
+  return undefined;
+}
+
+function getJsonString(target, ...names) {
+  const value = getJsonProperty(target, ...names);
+  return typeof value === "string"
+    ? normalizeText(value)
+    : null;
+}
+
+function getJsonNumber(target, ...names) {
+  const value = getJsonProperty(target, ...names);
+
+  if (Number.isFinite(value)) {
+    return Number(value);
+  }
+
+  if (typeof value === "string") {
+    const numericValue = Number.parseFloat(value);
+    return Number.isFinite(numericValue)
+      ? numericValue
+      : null;
+  }
+
+  return null;
+}
+
+function normalizeToken(value) {
+  const normalized = normalizeText(value);
+  return normalized
+    ? normalized.replace(/[^a-z0-9]+/gi, "").toLowerCase()
+    : "";
+}
+
+function tryDecodeBase64Strict(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  if (normalizedValue.length === 0 || normalizedValue.length % 4 !== 0) {
+    return null;
+  }
+
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalizedValue)) {
+    return null;
+  }
+
+  return base64ToBytes(normalizedValue);
+}
+
+function tryExtractNodeIdFromJsonTopic(sourceTopic) {
+  const normalizedTopic = normalizeText(sourceTopic);
+  if (!normalizedTopic) {
+    return null;
+  }
+
+  const segments = normalizedTopic
+    .split("/")
+    .map(segment => segment.trim())
+    .filter(Boolean);
+  const lastSegment = segments.at(-1);
+
+  return lastSegment?.startsWith("!")
+    ? lastSegment.toLowerCase()
+    : null;
 }
 
 function parseDataMessage(payloadBytes) {
@@ -906,6 +1949,15 @@ function tryCreateNodeProjectionEvent(rawPacket, dataMessage, portMetadata) {
         }
       }
       break;
+    case portNums.neighborinfoApp:
+      {
+        const neighborInfo = parseNeighborInfoPayload(dataMessage.payloadBytes, nodeNumber);
+        if (neighborInfo) {
+          projection.nodeId = neighborInfo.reportingNodeId ?? projection.nodeId;
+          payloadPreview = buildNeighborInfoPreview(neighborInfo);
+        }
+      }
+      break;
   }
 
   projection.payloadPreview = payloadPreview ??
@@ -914,6 +1966,35 @@ function tryCreateNodeProjectionEvent(rawPacket, dataMessage, portMetadata) {
   return {
     nodeProjection: projection,
     payloadPreview: projection.payloadPreview
+  };
+}
+
+function tryCreateNeighborInfoEvent(rawPacket, dataMessage) {
+  if (!rawPacket || typeof rawPacket !== "object" || !dataMessage || typeof dataMessage !== "object") {
+    return null;
+  }
+
+  if (dataMessage.portNumValue !== portNums.neighborinfoApp) {
+    return null;
+  }
+
+  const fallbackNodeNumber = dataMessage.sourceNodeNumber ?? rawPacket.fromNodeNumber ?? null;
+  const neighborInfo = parseNeighborInfoPayload(dataMessage.payloadBytes, fallbackNodeNumber);
+
+  if (!neighborInfo?.reportingNodeId) {
+    return null;
+  }
+
+  return {
+    neighborInfo: {
+      reportingNodeId: neighborInfo.reportingNodeId,
+      neighbors: neighborInfo.neighbors.map((neighbor) => ({
+        nodeId: neighbor.nodeId,
+        snrDb: neighbor.snrDb,
+        lastRxAtUtc: neighbor.lastRxAtUtc
+      }))
+    },
+    payloadPreview: buildNeighborInfoPreview(neighborInfo)
   };
 }
 
@@ -1143,6 +2224,473 @@ function parseTelemetryPayload(payloadBytes) {
   };
 }
 
+function parseNeighborInfoPayload(payloadBytes, fallbackReportingNodeNumber = null) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let hasKnownField = false;
+  let reportingNodeId = null;
+  const neighbors = [];
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+      case 2:
+      case 3:
+        if (wireType !== 0) {
+          return null;
+        }
+
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const numericValue = numberOrNull(field.value);
+
+          if (fieldNumber === 1) {
+            reportingNodeId = normalizeNodeIdFromNumber(numericValue);
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      case 4:
+        if (wireType !== 2) {
+          return null;
+        }
+
+        {
+          const field = readLengthDelimited(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const neighbor = parseNeighborEntryPayload(field.value);
+
+          if (neighbor?.nodeId) {
+            neighbors.push(neighbor);
+          }
+
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  return {
+    reportingNodeId: reportingNodeId ?? normalizeNodeIdFromNumber(fallbackReportingNodeNumber),
+    neighbors
+  };
+}
+
+function parseNeighborEntryPayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let hasKnownField = false;
+  let nodeId = null;
+  let snrDb = null;
+  let lastRxAtUtc = null;
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+        if (wireType !== 0) {
+          return null;
+        }
+
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const numericValue = numberOrNull(field.value);
+
+          nodeId = normalizeNodeIdFromNumber(numericValue);
+          hasKnownField = true;
+        }
+        break;
+      case 2:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readFloat32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          snrDb = normalizeSnrDb(field.value);
+          hasKnownField = true;
+        }
+        break;
+      case 3:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readFixed32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          lastRxAtUtc = normalizeUnixTimestampSeconds(field.value);
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  return {
+    nodeId,
+    snrDb,
+    lastRxAtUtc
+  };
+}
+
+function parseRoutingPayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let hasKnownField = false;
+  let routingInfo = null;
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+      case 2:
+        if (wireType !== 2) {
+          return null;
+        }
+
+        {
+          const field = readLengthDelimited(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const routeDiscovery = parseRouteDiscoveryPayload(field.value);
+          if (!routeDiscovery) {
+            return null;
+          }
+
+          routingInfo = {
+            kind: fieldNumber === 1 ? "routeRequest" : "routeReply",
+            errorCode: null,
+            errorName: null,
+            routeNodeIds: routeDiscovery.routeNodeIds,
+            snrTowards: routeDiscovery.snrTowards,
+            routeBackNodeIds: routeDiscovery.routeBackNodeIds,
+            snrBack: routeDiscovery.snrBack
+          };
+          hasKnownField = true;
+        }
+        break;
+      case 3:
+        if (wireType !== 0) {
+          return null;
+        }
+
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const errorCode = numberOrNull(field.value);
+          if (errorCode === null) {
+            return null;
+          }
+
+          routingInfo = {
+            kind: "errorReason",
+            errorCode,
+            errorName: routingErrorNamesByCode[errorCode] ?? `UNKNOWN_${errorCode}`,
+            routeNodeIds: [],
+            snrTowards: [],
+            routeBackNodeIds: [],
+            snrBack: []
+          };
+          hasKnownField = true;
+        }
+        break;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  return hasKnownField ? routingInfo : null;
+}
+
+function parseRouteDiscoveryPayload(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
+    return null;
+  }
+
+  let offset = 0;
+  let hasKnownField = false;
+  const routeNodeIds = [];
+  const snrTowards = [];
+  const routeBackNodeIds = [];
+  const snrBack = [];
+
+  while (offset < payloadBytes.length) {
+    const tag = readVarint(payloadBytes, offset);
+    if (!tag) {
+      return null;
+    }
+
+    offset = tag.nextOffset;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+
+    switch (fieldNumber) {
+      case 1:
+      case 3:
+        if (wireType === 5) {
+          const field = readFixed32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const nodeId = normalizeNodeIdFromNumber(field.value);
+          if (nodeId) {
+            if (fieldNumber === 1) {
+              routeNodeIds.push(nodeId);
+            } else {
+              routeBackNodeIds.push(nodeId);
+            }
+          }
+
+          hasKnownField = true;
+          break;
+        }
+
+        if (wireType === 2) {
+          const field = readLengthDelimited(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const nodeIds = parsePackedFixed32NodeIds(field.value);
+          if (nodeIds === null) {
+            return null;
+          }
+
+          if (fieldNumber === 1) {
+            routeNodeIds.push(...nodeIds);
+          } else {
+            routeBackNodeIds.push(...nodeIds);
+          }
+
+          hasKnownField = true;
+          break;
+        }
+
+        return null;
+      case 2:
+      case 4:
+        if (wireType === 0) {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const snrValue = int32OrNull(field.value);
+          if (snrValue === null) {
+            return null;
+          }
+
+          if (fieldNumber === 2) {
+            snrTowards.push(snrValue);
+          } else {
+            snrBack.push(snrValue);
+          }
+
+          hasKnownField = true;
+          break;
+        }
+
+        if (wireType === 2) {
+          const field = readLengthDelimited(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          const snrValues = parsePackedInt32Values(field.value);
+          if (snrValues === null) {
+            return null;
+          }
+
+          if (fieldNumber === 2) {
+            snrTowards.push(...snrValues);
+          } else {
+            snrBack.push(...snrValues);
+          }
+
+          hasKnownField = true;
+          break;
+        }
+
+        return null;
+      default:
+        {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+    }
+  }
+
+  if (!hasKnownField) {
+    return null;
+  }
+
+  return {
+    routeNodeIds,
+    snrTowards,
+    routeBackNodeIds,
+    snrBack
+  };
+}
+
+function parsePackedFixed32NodeIds(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length % 4 !== 0) {
+    return null;
+  }
+
+  const nodeIds = [];
+
+  for (let offset = 0; offset < payloadBytes.length; offset += 4) {
+    const field = readFixed32(payloadBytes, offset);
+    if (!field) {
+      return null;
+    }
+
+    const nodeId = normalizeNodeIdFromNumber(field.value);
+    if (nodeId) {
+      nodeIds.push(nodeId);
+    }
+  }
+
+  return nodeIds;
+}
+
+function parsePackedInt32Values(payloadBytes) {
+  if (!(payloadBytes instanceof Uint8Array)) {
+    return null;
+  }
+
+  let offset = 0;
+  const values = [];
+
+  while (offset < payloadBytes.length) {
+    const field = readVarint(payloadBytes, offset);
+    if (!field) {
+      return null;
+    }
+
+    offset = field.nextOffset;
+    const numericValue = int32OrNull(field.value);
+    if (numericValue === null) {
+      return null;
+    }
+
+    values.push(numericValue);
+  }
+
+  return values;
+}
+
 function parseDeviceMetrics(payloadBytes) {
   if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
     return null;
@@ -1214,6 +2762,22 @@ function parseDeviceMetrics(payloadBytes) {
             airUtilTx = field.value;
           }
 
+          hasKnownField = true;
+        }
+        break;
+      case 3:
+        if (wireType !== 5) {
+          return null;
+        }
+
+        {
+          const field = readFixed32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          lastRxAtUtc = normalizeUnixTimestampSeconds(field.value);
           hasKnownField = true;
         }
         break;
@@ -1459,6 +3023,14 @@ function numberOrNull(value) {
   return Number.isSafeInteger(numberValue) ? numberValue : null;
 }
 
+function int32OrNull(value) {
+  if (typeof value !== "bigint") {
+    return null;
+  }
+
+  return Number(BigInt.asIntN(32, value));
+}
+
 function isValidAesKeyLength(length) {
   return length === 16 || length === 24 || length === 32;
 }
@@ -1493,6 +3065,20 @@ function bytesToBase64(bytes) {
 function buildPayloadPreview(portMetadata, payloadBytes) {
   if (portMetadata.portNumValue === portNums.textMessageApp) {
     return decodeTextPayload(payloadBytes);
+  }
+
+  if (portMetadata.portNumValue === portNums.routingApp) {
+    const routingInfo = parseRoutingPayload(payloadBytes);
+    return routingInfo
+      ? buildRoutingPreview(routingInfo)
+      : "Routing update";
+  }
+
+  if (portMetadata.portNumValue === portNums.neighborinfoApp) {
+    const neighborInfo = parseNeighborInfoPayload(payloadBytes);
+    return neighborInfo
+      ? buildNeighborInfoPreview(neighborInfo)
+      : "Neighbor info update";
   }
 
   return `${portMetadata.packetType} payload (${payloadBytes.length} bytes)`;
@@ -1574,6 +3160,49 @@ function buildTelemetryPreview(deviceMetrics, environmentMetrics) {
     : "Telemetry update";
 }
 
+function buildNeighborInfoPreview(neighborInfo) {
+  if (!neighborInfo || typeof neighborInfo !== "object" || !Array.isArray(neighborInfo.neighbors)) {
+    return "Neighbor info update";
+  }
+
+  const neighborCount = neighborInfo.neighbors.length;
+  const suffix = neighborCount === 1 ? "neighbor" : "neighbors";
+  return `Neighbor info: ${neighborCount} ${suffix} reported`;
+}
+
+function buildRoutingPreview(routingInfo) {
+  if (!routingInfo || typeof routingInfo !== "object") {
+    return "Routing update";
+  }
+
+  if (routingInfo.kind === "errorReason") {
+    return `Routing error: ${routingInfo.errorName ?? "UNKNOWN"}`;
+  }
+
+  const prefix = routingInfo.kind === "routeReply"
+    ? "Routing route reply"
+    : "Routing route request";
+  const routeNodeIds = Array.isArray(routingInfo.routeNodeIds)
+    ? routingInfo.routeNodeIds.filter((nodeId) => typeof nodeId === "string" && nodeId.length > 0)
+    : [];
+  const routeBackNodeIds = Array.isArray(routingInfo.routeBackNodeIds)
+    ? routingInfo.routeBackNodeIds.filter((nodeId) => typeof nodeId === "string" && nodeId.length > 0)
+    : [];
+  const parts = [];
+
+  if (routeNodeIds.length > 0) {
+    parts.push(routeNodeIds.join(" -> "));
+  }
+
+  if (routeBackNodeIds.length > 0) {
+    parts.push(`return ${routeBackNodeIds.join(" -> ")}`);
+  }
+
+  return parts.length > 0
+    ? `${prefix}: ${parts.join("; ")}`
+    : prefix;
+}
+
 function decodeTextPayload(payloadBytes) {
   if (!(payloadBytes instanceof Uint8Array) || payloadBytes.length === 0) {
     return "Text message payload (0 bytes)";
@@ -1646,6 +3275,14 @@ function normalizeNodeId(value) {
   }
 
   if (normalizedValue.startsWith("!")) {
+    const hexValue = normalizedValue.slice(1);
+    if (/^[0-9a-f]+$/i.test(hexValue) && hexValue.length <= 8) {
+      const numericValue = Number.parseInt(hexValue, 16);
+      return Number.isFinite(numericValue)
+        ? normalizeNodeIdFromNumber(numericValue)
+        : normalizedValue.toLowerCase();
+    }
+
     return normalizedValue.toLowerCase();
   }
 
@@ -1682,6 +3319,20 @@ function normalizeNumericMetric(value) {
   return typeof value === "number" && Number.isFinite(value) && value !== 0
     ? value
     : null;
+}
+
+function normalizeSnrDb(value) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : null;
+}
+
+function normalizeUnixTimestampSeconds(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+
+  return new Date(value * 1000).toISOString();
 }
 
 function formatDuration(totalSeconds) {

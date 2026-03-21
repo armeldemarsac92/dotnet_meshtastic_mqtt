@@ -19,4 +19,8 @@ public sealed class RealtimeDecodedPacketEvent
     public uint? DestinationNodeNumber { get; init; }
 
     public RealtimeNodeProjectionEvent? NodeProjection { get; init; }
+
+    public RealtimeNeighborInfoEvent? NeighborInfo { get; init; }
+
+    public RealtimeRoutingEvent? RoutingInfo { get; init; }
 }

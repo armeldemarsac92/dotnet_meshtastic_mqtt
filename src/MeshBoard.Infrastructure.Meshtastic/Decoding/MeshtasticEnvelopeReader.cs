@@ -315,6 +315,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         return packetType switch
         {
             "Text Message" => BuildJsonTextPayloadPreview(root, payloadLength),
+            "Routing" => BuildJsonRoutingPayloadPreview(root, payloadLength),
             _ => $"JSON {packetType.ToLowerInvariant()} payload ({payloadLength} bytes)"
         };
     }
@@ -360,7 +361,9 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             PortNum.TextMessageCompressedApp => $"Compressed text payload ({decoded.Payload.Length} bytes)",
             PortNum.PositionApp => DecodePositionPayload(envelope, decoded.Payload),
             PortNum.NodeinfoApp => DecodeNodeInfoPayload(envelope, decoded.Payload),
+            PortNum.RoutingApp => DecodeRoutingPayload(decoded.Payload),
             PortNum.TelemetryApp => DecodeTelemetryPayload(envelope, decoded.Payload),
+            PortNum.NeighborinfoApp => DecodeNeighborInfoPayload(envelope, decoded.Payload),
             _ => $"{GetPacketType(decoded.Portnum)} payload ({decoded.Payload.Length} bytes)"
         };
     }
@@ -448,6 +451,47 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         }
     }
 
+    private string DecodeNeighborInfoPayload(MeshtasticEnvelope envelope, ByteString payload)
+    {
+        try
+        {
+            var neighborInfo = NeighborInfo.Parser.ParseFrom(payload);
+
+            if (string.IsNullOrWhiteSpace(envelope.FromNodeId) && neighborInfo.NodeId != 0)
+            {
+                envelope.FromNodeId = FormatNodeId(neighborInfo.NodeId);
+            }
+
+            envelope.Neighbors = neighborInfo.Neighbors
+                .Select(MapNeighborEntry)
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.NodeId))
+                .ToList();
+
+            var neighborCount = envelope.Neighbors.Count;
+            var suffix = neighborCount == 1 ? "neighbor" : "neighbors";
+            return $"Neighbor info: {neighborCount} {suffix} reported";
+        }
+        catch (InvalidProtocolBufferException exception)
+        {
+            _logger.LogDebug(exception, "Unable to decode Meshtastic neighbor info payload");
+            return $"Neighbor info payload ({payload.Length} bytes)";
+        }
+    }
+
+    private string DecodeRoutingPayload(ByteString payload)
+    {
+        try
+        {
+            var routing = Routing.Parser.ParseFrom(payload);
+            return BuildRoutingPreview(routing);
+        }
+        catch (InvalidProtocolBufferException exception)
+        {
+            _logger.LogDebug(exception, "Unable to decode Meshtastic routing payload");
+            return $"Routing payload ({payload.Length} bytes)";
+        }
+    }
+
     private static string DecodeDeviceMetrics(MeshtasticEnvelope envelope, DeviceMetrics metrics)
     {
         envelope.BatteryLevelPercent = metrics.BatteryLevel == 0 && metrics.Voltage == 0
@@ -514,6 +558,18 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         return parts.Count == 0 ? "Telemetry update" : $"Environment metrics: {string.Join(", ", parts)}";
     }
 
+    private static MeshtasticNeighborEntry MapNeighborEntry(Neighbor neighbor)
+    {
+        return new MeshtasticNeighborEntry
+        {
+            NodeId = FormatNodeId(neighbor.NodeId) ?? string.Empty,
+            SnrDb = float.IsFinite(neighbor.Snr) ? neighbor.Snr : null,
+            LastRxAtUtc = neighbor.LastRxTime > 0
+                ? DateTimeOffset.FromUnixTimeSeconds(neighbor.LastRxTime)
+                : null
+        };
+    }
+
     private static string DecodeTextPayload(ByteString payload)
     {
         if (payload.IsEmpty)
@@ -532,7 +588,9 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             PortNum.TextMessageCompressedApp => "Compressed Text Message",
             PortNum.PositionApp => "Position Update",
             PortNum.NodeinfoApp => "Node Info",
+            PortNum.RoutingApp => "Routing",
             PortNum.TelemetryApp => "Telemetry",
+            PortNum.NeighborinfoApp => "Neighbor Info",
             _ => portNum.ToString()
         };
     }
@@ -688,7 +746,9 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             "text" or "textmessage" or "textmessageapp" => "Text Message",
             "nodeinfo" or "nodeinformation" or "nodeinfoapp" => "Node Info",
             "position" or "positionupdate" or "positionapp" => "Position Update",
+            "routing" or "routingapp" => "Routing",
             "telemetry" or "telemetryapp" => "Telemetry",
+            "neighborinfo" or "neighborinfoapp" => "Neighbor Info",
             "encrypted" or "encryptedpacket" => "Encrypted Packet",
             _ => jsonType
         };
@@ -723,7 +783,9 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
                 "textmessagecompressedapp" => PortNum.TextMessageCompressedApp,
                 "position" or "positionapp" => PortNum.PositionApp,
                 "nodeinfo" or "nodeinfoapp" => PortNum.NodeinfoApp,
+                "routing" or "routingapp" => PortNum.RoutingApp,
                 "telemetry" or "telemetryapp" => PortNum.TelemetryApp,
+                "neighborinfo" or "neighborinfoapp" => PortNum.NeighborinfoApp,
                 _ => PortNum.UnknownApp
             };
 
@@ -808,6 +870,193 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         return valueElement.ValueKind == JsonValueKind.String ? valueElement.GetString() : null;
     }
 
+    private static string BuildJsonRoutingPayloadPreview(JsonElement root, int payloadLength)
+    {
+        if (TryGetProperty(root, out var payloadElement, "payload"))
+        {
+            if (payloadElement.ValueKind == JsonValueKind.String)
+            {
+                var payloadText = payloadElement.GetString() ?? string.Empty;
+
+                if (TryDecodeBase64(payloadText, out var decodedBytes))
+                {
+                    try
+                    {
+                        return BuildRoutingPreview(Routing.Parser.ParseFrom(decodedBytes));
+                    }
+                    catch (InvalidProtocolBufferException)
+                    {
+                    }
+                }
+            }
+
+            if (TryBuildJsonRoutingPreview(payloadElement, out var payloadPreview))
+            {
+                return payloadPreview;
+            }
+        }
+
+        return $"JSON routing payload ({payloadLength} bytes)";
+    }
+
+    private static bool TryBuildJsonRoutingPreview(JsonElement payloadElement, out string payloadPreview)
+    {
+        payloadPreview = string.Empty;
+
+        if (payloadElement.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (TryGetProperty(payloadElement, out var routeRequestElement, "routeRequest", "route_request") &&
+            TryBuildJsonRouteDiscoveryPreview(routeRequestElement, "Routing route request", out payloadPreview))
+        {
+            return true;
+        }
+
+        if (TryGetProperty(payloadElement, out var routeReplyElement, "routeReply", "route_reply") &&
+            TryBuildJsonRouteDiscoveryPreview(routeReplyElement, "Routing route reply", out payloadPreview))
+        {
+            return true;
+        }
+
+        if (TryGetProperty(payloadElement, out var errorElement, "errorReason", "error_reason", "error"))
+        {
+            var errorName = errorElement.ValueKind switch
+            {
+                JsonValueKind.Number when errorElement.TryGetInt32(out var numericValue) &&
+                    Enum.IsDefined(typeof(Routing.Types.Error), numericValue)
+                    => ((Routing.Types.Error)numericValue).ToString(),
+                JsonValueKind.String => TryParseRoutingErrorName(errorElement.GetString()),
+                _ => null
+            };
+
+            if (!string.IsNullOrWhiteSpace(errorName))
+            {
+                payloadPreview = $"Routing error: {errorName}";
+                return true;
+            }
+        }
+
+        return TryBuildJsonRouteDiscoveryPreview(payloadElement, "Routing route request", out payloadPreview);
+    }
+
+    private static bool TryBuildJsonRouteDiscoveryPreview(
+        JsonElement routeDiscoveryElement,
+        string prefix,
+        out string payloadPreview)
+    {
+        payloadPreview = string.Empty;
+
+        if (routeDiscoveryElement.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        var route = TryGetNodeIdList(routeDiscoveryElement, "route");
+        var routeBack = TryGetNodeIdList(routeDiscoveryElement, "routeBack", "route_back");
+        var hasRoute = route.Count > 0;
+        var hasRouteBack = routeBack.Count > 0;
+
+        if (!hasRoute && !hasRouteBack)
+        {
+            return false;
+        }
+
+        payloadPreview = BuildRouteDiscoveryPreview(prefix, route, routeBack);
+        return true;
+    }
+
+    private static string BuildRoutingPreview(Routing routing)
+    {
+        return routing.VariantCase switch
+        {
+            Routing.VariantOneofCase.RouteRequest => BuildRouteDiscoveryPreview(
+                "Routing route request",
+                routing.RouteRequest.Route.Select(nodeId => FormatNodeId(nodeId)).Where(static nodeId => !string.IsNullOrWhiteSpace(nodeId)).Select(static nodeId => nodeId!).ToList(),
+                routing.RouteRequest.RouteBack.Select(nodeId => FormatNodeId(nodeId)).Where(static nodeId => !string.IsNullOrWhiteSpace(nodeId)).Select(static nodeId => nodeId!).ToList()),
+            Routing.VariantOneofCase.RouteReply => BuildRouteDiscoveryPreview(
+                "Routing route reply",
+                routing.RouteReply.Route.Select(nodeId => FormatNodeId(nodeId)).Where(static nodeId => !string.IsNullOrWhiteSpace(nodeId)).Select(static nodeId => nodeId!).ToList(),
+                routing.RouteReply.RouteBack.Select(nodeId => FormatNodeId(nodeId)).Where(static nodeId => !string.IsNullOrWhiteSpace(nodeId)).Select(static nodeId => nodeId!).ToList()),
+            Routing.VariantOneofCase.ErrorReason => $"Routing error: {routing.ErrorReason}",
+            _ => "Routing update"
+        };
+    }
+
+    private static string BuildRouteDiscoveryPreview(
+        string prefix,
+        IReadOnlyList<string> route,
+        IReadOnlyList<string> routeBack)
+    {
+        if (route.Count == 0 && routeBack.Count == 0)
+        {
+            return prefix;
+        }
+
+        var parts = new List<string>();
+
+        if (route.Count > 0)
+        {
+            parts.Add(string.Join(" -> ", route));
+        }
+
+        if (routeBack.Count > 0)
+        {
+            parts.Add($"return {string.Join(" -> ", routeBack)}");
+        }
+
+        return parts.Count == 0 ? prefix : $"{prefix}: {string.Join("; ", parts)}";
+    }
+
+    private static List<string> TryGetNodeIdList(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var routeElement, propertyNames) ||
+            routeElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var route = new List<string>();
+
+        foreach (var item in routeElement.EnumerateArray())
+        {
+            string? nodeId = item.ValueKind switch
+            {
+                JsonValueKind.Number when item.TryGetUInt32(out var nodeNumber) => FormatNodeId(nodeNumber),
+                JsonValueKind.String => NormalizeNodeId(item.GetString()),
+                _ => null
+            };
+
+            if (!string.IsNullOrWhiteSpace(nodeId))
+            {
+                route.Add(nodeId);
+            }
+        }
+
+        return route;
+    }
+
+    private static string? TryParseRoutingErrorName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = NormalizeToken(value);
+
+        foreach (var errorValue in Enum.GetValues<Routing.Types.Error>())
+        {
+            if (NormalizeToken(errorValue.ToString()) == normalized)
+            {
+                return errorValue.ToString();
+            }
+        }
+
+        return value;
+    }
+
     private static bool TryGetProperty(JsonElement element, out JsonElement value, params string[] propertyNames)
     {
         if (element.ValueKind != JsonValueKind.Object)
@@ -841,7 +1090,14 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
 
         if (trimmed.StartsWith('!'))
         {
-            return trimmed;
+            var hexNodeText = trimmed[1..];
+
+            if (uint.TryParse(hexNodeText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hexBangNode))
+            {
+                return FormatNodeId(hexBangNode);
+            }
+
+            return trimmed.ToLowerInvariant();
         }
 
         if (uint.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var decimalNode))

@@ -213,6 +213,279 @@ test("processPacketRequest emits node projection metrics for position and teleme
   assert.match(telemetryResult.decodedPacket?.nodeProjection?.payloadPreview ?? "", /^Device metrics:/);
 });
 
+test("processPacketRequest emits neighbor info for radio link payloads", async () => {
+  const lastRxAtUtc = "2026-03-14T17:00:00.000Z";
+  const lastRxTimeSeconds = Math.floor(Date.parse(lastRxAtUtc) / 1000);
+  const packetBytes = createDecodedMeshPacket({
+    fromNodeNumber: 0x00001234,
+    packetId: 95,
+    dataBytes: encodeDataMessage({
+      portNumValue: 71,
+      sourceNodeNumber: 0x00001234,
+      payloadBytes: encodeNeighborInfoPayload({
+        reportingNodeNumber: 0x00001234,
+        lastSentByNodeNumber: 0x00005678,
+        nodeBroadcastIntervalSeconds: 480,
+        neighbors: [
+          {
+            nodeNumber: 0x00005678,
+            snrDb: 6.0,
+            lastRxTimeSeconds
+          },
+          {
+            nodeNumber: 0x00009abc,
+            snrDb: -11.25
+          }
+        ]
+      })
+    })
+  });
+
+  const result = await processPacketRequest(
+    createWorkerRequest("msh/US/2/e/LongFast/!abcd1234", packetBytes),
+    normalizeKeyRecords([]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decodedPacket?.packetType, "Neighbor Info");
+  assert.equal(result.decodedPacket?.payloadPreview, "Neighbor info: 2 neighbors reported");
+  assert.equal(result.decodedPacket?.nodeProjection?.nodeId, "!00001234");
+  assert.equal(result.decodedPacket?.nodeProjection?.packetType, "Neighbor Info");
+  assert.equal(result.decodedPacket?.nodeProjection?.payloadPreview, "Neighbor info: 2 neighbors reported");
+  assert.equal(result.decodedPacket?.neighborInfo?.reportingNodeId, "!00001234");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors.length, 2);
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[0]?.nodeId, "!00005678");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[0]?.snrDb, 6);
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[0]?.lastRxAtUtc, lastRxAtUtc);
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[1]?.nodeId, "!00009abc");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[1]?.snrDb, -11.25);
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[1]?.lastRxAtUtc, null);
+});
+
+test("processPacketRequest emits routing info for protobuf routing payloads", async () => {
+  const packetBytes = createDecodedMeshPacket({
+    fromNodeNumber: 0x12345678,
+    packetId: 96,
+    dataBytes: encodeDataMessage({
+      portNumValue: 5,
+      sourceNodeNumber: 0x12345678,
+      payloadBytes: encodeRoutingPayload({
+        kind: "routeReply",
+        routeNodeNumbers: [0x12345678, 0x87654321],
+        snrTowards: [7, -4],
+        routeBackNodeNumbers: [0xaabbccdd],
+        snrBack: [5]
+      })
+    })
+  });
+
+  const result = await processPacketRequest(
+    createWorkerRequest("msh/US/2/e/LongFast/!12345678", packetBytes),
+    normalizeKeyRecords([]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decodedPacket?.packetType, "Routing");
+  assert.equal(result.decodedPacket?.payloadPreview, "Routing route reply: !12345678 -> !87654321; return !aabbccdd");
+  assert.equal(result.decodedPacket?.routingInfo?.kind, "routeReply");
+  assert.equal(result.decodedPacket?.routingInfo?.errorCode, null);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.routeNodeIds, ["!12345678", "!87654321"]);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.snrTowards, [7, -4]);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.routeBackNodeIds, ["!aabbccdd"]);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.snrBack, [5]);
+});
+
+test("processPacketRequest emits node projection metadata for Meshtastic JSON source payloads", async () => {
+  const positionResult = await processPacketRequest(
+    createWorkerRequest(
+      "msh/US/2/json/LongFast/!88c46b62",
+      new TextEncoder().encode(JSON.stringify({
+        id: 561724089,
+        channel: 0,
+        from: 2294573922,
+        to: -1,
+        sender: "!88c46b62",
+        timestamp: 1770088250,
+        type: "position",
+        payload: {
+          latitude_i: 425197568,
+          longitude_i: -712572928,
+          altitude: 50,
+          precision_bits: 16,
+          time: 1770088250
+        }
+      }))),
+    normalizeKeyRecords([]));
+  const nodeInfoResult = await processPacketRequest(
+    createWorkerRequest(
+      "msh/EU_868/2/json/LongFast/!1309a6b0",
+      new TextEncoder().encode(JSON.stringify({
+        channel: 0,
+        from: 3317162552,
+        hop_start: 4,
+        hops_away: 0,
+        id: 1562972592,
+        payload: {
+          hardware: 39,
+          id: "!c5b7e238",
+          longname: "amgslab dnipro",
+          role: 0,
+          shortname: "amgs"
+        },
+        rssi: -113,
+        sender: "!1309a6b0",
+        timestamp: 1774120586,
+        to: 4184515532,
+        type: "nodeinfo"
+      }))),
+    normalizeKeyRecords([]));
+  const telemetryResult = await processPacketRequest(
+    createWorkerRequest(
+      "msh/EU_868/2/json/LongFast/!75ede484",
+      new TextEncoder().encode(JSON.stringify({
+        channel: 0,
+        from: 799858865,
+        hop_start: 7,
+        hops_away: 6,
+        id: 742042965,
+        payload: {
+          barometric_pressure: 1010.73388671875,
+          relative_humidity: 45.6162109375,
+          temperature: 10.289999961853
+        },
+        rssi: -127,
+        sender: "!75ede484",
+        snr: -17.25,
+        timestamp: 1774120586,
+        to: 4294967295,
+        type: "telemetry"
+      }))),
+    normalizeKeyRecords([]));
+
+  assert.equal(positionResult.isSuccess, true);
+  assert.equal(positionResult.decodedPacket?.packetType, "Position Update");
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.nodeId, "!88c46b62");
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.lastKnownLatitude, 42.5197568);
+  assert.equal(positionResult.decodedPacket?.nodeProjection?.lastKnownLongitude, -71.2572928);
+  assert.equal(positionResult.decodedPacket?.payloadPreview, "Position: 42.51976, -71.25729");
+
+  assert.equal(nodeInfoResult.isSuccess, true);
+  assert.equal(nodeInfoResult.decodedPacket?.packetType, "Node Info");
+  assert.equal(nodeInfoResult.decodedPacket?.nodeProjection?.nodeId, "!c5b7e238");
+  assert.equal(nodeInfoResult.decodedPacket?.nodeProjection?.longName, "amgslab dnipro");
+  assert.equal(nodeInfoResult.decodedPacket?.nodeProjection?.shortName, "amgs");
+  assert.equal(nodeInfoResult.decodedPacket?.payloadPreview, "Node info: amgslab dnipro (amgs)");
+
+  assert.equal(telemetryResult.isSuccess, true);
+  assert.equal(telemetryResult.decodedPacket?.packetType, "Telemetry");
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.temperatureCelsius ?? 0) - 10.289999961853) < 0.0001);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.relativeHumidity ?? 0) - 45.6162109375) < 0.0001);
+  assert.ok(Math.abs((telemetryResult.decodedPacket?.nodeProjection?.barometricPressure ?? 0) - 1010.73388671875) < 0.0001);
+  assert.match(telemetryResult.decodedPacket?.payloadPreview ?? "", /^Environment metrics:/);
+});
+
+test("processPacketRequest emits neighbor info for Meshtastic JSON source payloads", async () => {
+  const result = await processPacketRequest(
+    createWorkerRequest(
+      "msh/EU_868/2/json/LongFast/!75ede484",
+      new TextEncoder().encode(JSON.stringify({
+        channel: 0,
+        from: 1978524804,
+        id: 742042965,
+        payload: {
+          node_id: 1978524804,
+          last_sent_by_id: 1978524804,
+          node_broadcast_interval_secs: 14400,
+          neighbors: [
+            {
+              node_id: 2658539756,
+              snr: 6.75,
+              last_rx_time: 1774120587
+            },
+            {
+              node_id: 3247529913,
+              snr: -9.5
+            }
+          ]
+        },
+        sender: "!75ede484",
+        timestamp: 1774120586,
+        to: 4294967295,
+        type: "neighborinfo"
+      }))),
+    normalizeKeyRecords([]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decodedPacket?.packetType, "Neighbor Info");
+  assert.equal(result.decodedPacket?.nodeProjection?.nodeId, "!75ede484");
+  assert.equal(result.decodedPacket?.payloadPreview, "Neighbor info: 2 neighbors reported");
+  assert.equal(result.decodedPacket?.neighborInfo?.reportingNodeId, "!75ede484");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors.length, 2);
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[0]?.nodeId, "!9e7618ec");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[0]?.snrDb, 6.75);
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[0]?.lastRxAtUtc, "2026-03-21T19:16:27.000Z");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[1]?.nodeId, "!c1915fb9");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[1]?.snrDb, -9.5);
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[1]?.lastRxAtUtc, null);
+});
+
+test("processPacketRequest emits routing info for Meshtastic JSON source payloads", async () => {
+  const result = await processPacketRequest(
+    createWorkerRequest(
+      "msh/EU_868/2/json/LongFast/!11223344",
+      new TextEncoder().encode(JSON.stringify({
+        from: 287454020,
+        id: 742042966,
+        sender: "!11223344",
+        timestamp: 1774120586,
+        type: "routing",
+        payload: {
+          route_request: {
+            route: [287454020, "!55667788"],
+            snr_towards: [9, -3],
+            route_back: ["!99aabbcc"]
+          }
+        }
+      }))),
+    normalizeKeyRecords([]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decodedPacket?.packetType, "Routing");
+  assert.equal(result.decodedPacket?.payloadPreview, "Routing route request: !11223344 -> !55667788; return !99aabbcc");
+  assert.equal(result.decodedPacket?.routingInfo?.kind, "routeRequest");
+  assert.equal(result.decodedPacket?.routingInfo?.errorCode, null);
+  assert.equal(result.decodedPacket?.routingInfo?.errorName, null);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.routeNodeIds, ["!11223344", "!55667788"]);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.snrTowards, [9, -3]);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.routeBackNodeIds, ["!99aabbcc"]);
+  assert.deepEqual(result.decodedPacket?.routingInfo?.snrBack, []);
+});
+
+test("processPacketRequest canonicalizes compact bang-hex node ids from JSON payloads", async () => {
+  const result = await processPacketRequest(
+    createWorkerRequest(
+      "msh/US/2/json/LongFast/!999999",
+      new TextEncoder().encode(JSON.stringify({
+        from: 10066329,
+        sender: "!999999",
+        timestamp: 1774120586,
+        type: "neighborinfo",
+        payload: {
+          node_id: "!999999",
+          neighbors: [
+            {
+              node_id: "!abc",
+              snr: 3.5
+            }
+          ]
+        }
+      }))),
+    normalizeKeyRecords([]));
+
+  assert.equal(result.isSuccess, true);
+  assert.equal(result.decodedPacket?.nodeProjection?.nodeId, "!00999999");
+  assert.equal(result.decodedPacket?.neighborInfo?.reportingNodeId, "!00999999");
+  assert.equal(result.decodedPacket?.neighborInfo?.neighbors[0]?.nodeId, "!00000abc");
+});
+
 test("processPacketRequest returns unsupported port classification when the data wrapper is valid but unmapped", async () => {
   const topic = "msh/US/2/e/LongFast/!abcd1234";
   const keyBytes = new Uint8Array([0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59, 0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01]);
@@ -436,6 +709,115 @@ function encodeTelemetryPayload({
     encodeLengthDelimited(environmentMetrics));
 }
 
+function encodeNeighborInfoPayload({
+  reportingNodeNumber,
+  lastSentByNodeNumber,
+  nodeBroadcastIntervalSeconds,
+  neighbors = []
+}) {
+  const parts = [];
+
+  if (Number.isFinite(reportingNodeNumber)) {
+    parts.push(encodeTag(1, 0), encodeVarint(reportingNodeNumber));
+  }
+
+  if (Number.isFinite(lastSentByNodeNumber)) {
+    parts.push(encodeTag(2, 0), encodeVarint(lastSentByNodeNumber));
+  }
+
+  if (Number.isFinite(nodeBroadcastIntervalSeconds)) {
+    parts.push(encodeTag(3, 0), encodeVarint(nodeBroadcastIntervalSeconds));
+  }
+
+  for (const neighbor of neighbors) {
+    parts.push(
+      encodeTag(4, 2),
+      encodeLengthDelimited(encodeNeighborEntryPayload(neighbor)));
+  }
+
+  return concatBytes(...parts);
+}
+
+function encodeRoutingPayload({
+  kind,
+  errorCode = 1,
+  routeNodeNumbers = [],
+  snrTowards = [],
+  routeBackNodeNumbers = [],
+  snrBack = []
+}) {
+  if (kind === "errorReason") {
+    return concatBytes(
+      encodeTag(3, 0),
+      encodeVarint(errorCode));
+  }
+
+  const discoveryPayload = encodeRouteDiscoveryPayload({
+    routeNodeNumbers,
+    snrTowards,
+    routeBackNodeNumbers,
+    snrBack
+  });
+  const fieldNumber = kind === "routeReply" ? 2 : 1;
+
+  return concatBytes(
+    encodeTag(fieldNumber, 2),
+    encodeLengthDelimited(discoveryPayload));
+}
+
+function encodeRouteDiscoveryPayload({
+  routeNodeNumbers = [],
+  snrTowards = [],
+  routeBackNodeNumbers = [],
+  snrBack = []
+}) {
+  const parts = [];
+
+  if (routeNodeNumbers.length > 0) {
+    parts.push(
+      encodeTag(1, 2),
+      encodeLengthDelimited(encodePackedFixed32Array(routeNodeNumbers)));
+  }
+
+  if (snrTowards.length > 0) {
+    parts.push(
+      encodeTag(2, 2),
+      encodeLengthDelimited(encodePackedInt32Array(snrTowards)));
+  }
+
+  if (routeBackNodeNumbers.length > 0) {
+    parts.push(
+      encodeTag(3, 2),
+      encodeLengthDelimited(encodePackedFixed32Array(routeBackNodeNumbers)));
+  }
+
+  if (snrBack.length > 0) {
+    parts.push(
+      encodeTag(4, 2),
+      encodeLengthDelimited(encodePackedInt32Array(snrBack)));
+  }
+
+  return concatBytes(...parts);
+}
+
+function encodeNeighborEntryPayload({ nodeNumber, snrDb, lastRxTimeSeconds }) {
+  const parts = [];
+
+  if (Number.isFinite(nodeNumber)) {
+    parts.push(encodeTag(1, 0), encodeVarint(nodeNumber));
+  }
+
+  if (Number.isFinite(snrDb)) {
+    parts.push(encodeTag(2, 5), encodeFloat32(snrDb));
+  }
+
+  if (Number.isFinite(lastRxTimeSeconds)) {
+    parts.push(encodeTag(3, 5), encodeFixed32(lastRxTimeSeconds));
+  }
+
+  return concatBytes(...parts);
+}
+
 function buildNonce(fromNodeNumber, packetId) {
   const nonce = new Uint8Array(16);
   const view = new DataView(nonce.buffer);
@@ -471,7 +853,15 @@ function encodeFloat32(value) {
 }
 
 function encodeVarint(value) {
-  let current = BigInt(value);
+  return encodeRawVarint(BigInt(value));
+}
+
+function encodeInt32Varint(value) {
+  return encodeRawVarint(BigInt.asUintN(64, BigInt.asIntN(32, BigInt(value))));
+}
+
+function encodeRawVarint(value) {
+  let current = value;
   const bytes = [];
 
   while (current >= 0x80n) {
@@ -481,6 +871,14 @@ function encodeVarint(value) {
 
   bytes.push(Number(current));
   return Uint8Array.from(bytes);
+}
+
+function encodePackedFixed32Array(values) {
+  return concatBytes(...values.map((value) => encodeFixed32(value)));
+}
+
+function encodePackedInt32Array(values) {
+  return concatBytes(...values.map((value) => encodeInt32Varint(value)));
 }
 
 function concatBytes(...parts) {

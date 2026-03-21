@@ -17,6 +17,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
 {
     private readonly ILogger<MeshtasticIngestionService> _logger;
     private readonly IMessageRepository _messageRepository;
+    private readonly INeighborLinkRepository? _neighborLinkRepository;
     private readonly INodeRepository _nodeRepository;
     private readonly ITopicDiscoveryService _topicDiscoveryService;
     private readonly IUnitOfWork _unitOfWork;
@@ -26,9 +27,11 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
         INodeRepository nodeRepository,
         ITopicDiscoveryService topicDiscoveryService,
         IUnitOfWork unitOfWork,
-        ILogger<MeshtasticIngestionService> logger)
+        ILogger<MeshtasticIngestionService> logger,
+        INeighborLinkRepository? neighborLinkRepository = null)
     {
         _messageRepository = messageRepository;
+        _neighborLinkRepository = neighborLinkRepository;
         _nodeRepository = nodeRepository;
         _topicDiscoveryService = topicDiscoveryService;
         _unitOfWork = unitOfWork;
@@ -108,6 +111,19 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                     cancellationToken);
             }
 
+            if (_neighborLinkRepository is not null)
+            {
+                var neighborLinks = BuildNeighborLinkRecords(envelope);
+
+                if (neighborLinks.Count > 0)
+                {
+                    await _neighborLinkRepository.UpsertAsync(
+                        workspaceId,
+                        neighborLinks,
+                        cancellationToken);
+                }
+            }
+
             await _unitOfWork.CommitAsync(cancellationToken);
         }
         catch
@@ -139,5 +155,72 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
         return Convert.ToHexStringLower(hashBytes);
+    }
+
+    private static IReadOnlyList<NeighborLinkRecord> BuildNeighborLinkRecords(MeshtasticEnvelope envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.FromNodeId) || envelope.Neighbors is null || envelope.Neighbors.Count == 0)
+        {
+            return [];
+        }
+
+        var reportingNodeId = envelope.FromNodeId.Trim();
+        var linksByKey = new Dictionary<string, NeighborLinkRecord>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var neighbor in envelope.Neighbors)
+        {
+            if (string.IsNullOrWhiteSpace(neighbor.NodeId) ||
+                string.Equals(reportingNodeId, neighbor.NodeId.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var canonical = CreateCanonicalNeighborLink(
+                reportingNodeId,
+                neighbor.NodeId,
+                neighbor.SnrDb,
+                neighbor.LastRxAtUtc ?? envelope.ReceivedAtUtc);
+            var linkKey = $"{canonical.SourceNodeId}|{canonical.TargetNodeId}";
+
+            if (!linksByKey.TryGetValue(linkKey, out var existing))
+            {
+                linksByKey[linkKey] = canonical;
+                continue;
+            }
+
+            var isIncomingLatest = canonical.LastSeenAtUtc >= existing.LastSeenAtUtc;
+            linksByKey[linkKey] = new NeighborLinkRecord
+            {
+                SourceNodeId = existing.SourceNodeId,
+                TargetNodeId = existing.TargetNodeId,
+                SnrDb = isIncomingLatest
+                    ? canonical.SnrDb ?? existing.SnrDb
+                    : existing.SnrDb ?? canonical.SnrDb,
+                LastSeenAtUtc = isIncomingLatest
+                    ? canonical.LastSeenAtUtc
+                    : existing.LastSeenAtUtc
+            };
+        }
+
+        return linksByKey.Values.ToArray();
+    }
+
+    private static NeighborLinkRecord CreateCanonicalNeighborLink(
+        string leftNodeId,
+        string rightNodeId,
+        float? snrDb,
+        DateTimeOffset lastSeenAtUtc)
+    {
+        var normalizedLeft = leftNodeId.Trim();
+        var normalizedRight = rightNodeId.Trim();
+        var leftFirst = StringComparer.OrdinalIgnoreCase.Compare(normalizedLeft, normalizedRight) <= 0;
+
+        return new NeighborLinkRecord
+        {
+            SourceNodeId = leftFirst ? normalizedLeft : normalizedRight,
+            TargetNodeId = leftFirst ? normalizedRight : normalizedLeft,
+            SnrDb = snrDb,
+            LastSeenAtUtc = lastSeenAtUtc
+        };
     }
 }

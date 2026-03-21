@@ -4,6 +4,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 @inject MapProjectionStore ProjectionStore
+@inject RadioLinkProjectionStore RadioLinkProjectionStore
 
 <PageTitle>Map</PageTitle>
 
@@ -15,7 +16,8 @@
         </div>
         <p class="max-w-5xl text-sm leading-7 text-cinder-800 sm:text-base">
             Browse all locally projected nodes on the map. Click a node to pin focus, click the map again to release it,
-            hover to reveal its shared-channel cohort, and open node or channel details in the popup flow.
+            and open node or channel details in the popup flow. Toggle Radio links to inspect real RF adjacency
+            from NeighborInfo packets, or Channel cohort to reveal same-channel relationships across the visible map.
         </p>
     </header>
 
@@ -24,13 +26,16 @@
             <div class="space-y-1">
                 <p>@GetMapSummaryText()</p>
                 <p class="text-[0.72rem] text-cinder-800/62">
-                    Hover links show shared-channel cohorts, not proven radio paths. 3D buildings visible at close zoom.
+                    Radio links come from live NeighborInfo packets. Channel cohort lines show same-channel proximity only. 3D buildings visible at close zoom.
                 </p>
             </div>
 
             <div class="space-y-1 text-right text-xs text-cinder-800/72">
                 <p>Projected nodes: @_snapshot.Nodes.Count</p>
                 <p>Unique map positions: @_visiblePositionCount</p>
+                <p>NeighborInfo reports: @RadioLinkProjectionStore.ObservedReportCount</p>
+                <p>Active radio links: @_cachedRadioLinkCount</p>
+                <p>Visible radio links: @_radioLinkPoints.Count</p>
                 <p title="@FormatTimestamp(_snapshot.LastProjectedAtUtc)">Last projection: @FormatRelativeTime(_snapshot.LastProjectedAtUtc)</p>
             </div>
         </div>
@@ -127,6 +132,16 @@
                     Refresh map
                 </button>
                 <button type="button"
+                        class="@GetToggleClass(_showRadioLinks)"
+                        @onclick="ToggleRadioLinksAsync">
+                    Radio links @(_radioLinkPoints.Count > 0 ? $"({_radioLinkPoints.Count})" : "")
+                </button>
+                <button type="button"
+                        class="@GetToggleClass(_showChannelCohorts)"
+                        @onclick="ToggleChannelCohortsAsync">
+                    Channel cohort
+                </button>
+                <button type="button"
                         class="shell-button rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35"
                         @onclick="ResetViewAsync"
                         disabled="@(!_visibleNodes.Any() && string.IsNullOrWhiteSpace(_searchText) && string.IsNullOrWhiteSpace(_focusedChannel))">
@@ -135,7 +150,7 @@
                 <button type="button"
                         class="shell-button rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35"
                         @onclick="ClearMapCache"
-                        disabled="@(_snapshot.Nodes.Count == 0)">
+                        disabled="@(_snapshot.Nodes.Count == 0 && RadioLinkProjectionStore.Current.Count == 0)">
                     Clear cache
                 </button>
             </div>
@@ -149,7 +164,7 @@
                     @if (FocusedNode is null)
                     {
                         <p class="text-xs leading-6 text-cinder-800/72">
-                            Hover a node on the map to inspect its active channel cohort, or click one to pin this panel.
+                            Hover a node on the map to inspect its nearby context, or click one to pin this panel.
                         </p>
                     }
                     else
@@ -208,6 +223,33 @@
             </div>
         </div>
 
+        @if (_showRadioLinks)
+        {
+            <div class="pointer-events-none absolute bottom-7 left-7 z-10 max-w-xs">
+                <div class="pointer-events-auto shell-subpanel space-y-2 rounded-[1.35rem] border border-white/70 bg-white/90 p-4 text-xs text-cinder-800/82 shadow-lg shadow-cinder-950/15">
+                    <p class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">SNR legend</p>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#31a354]"></span>
+                        <span>Strong (&gt; 0 dB)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#fdbb84]"></span>
+                        <span>Moderate (-10 to 0 dB)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#e34a33]"></span>
+                        <span>Weak (&lt; -10 dB)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#a0a0a0]"></span>
+                        <span>Unknown SNR</span>
+                    </div>
+
+                    <p class="pt-1 text-[0.72rem] leading-5 text-cinder-800/68">@GetRadioLinkStatusText()</p>
+                </div>
+            </div>
+        }
+
         @if (_visibleNodes.Count == 0)
         {
             <div class="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
@@ -221,7 +263,7 @@
         }
         else if (_visiblePositionCount < _visibleNodes.Count)
         {
-            <div class="pointer-events-none absolute bottom-6 left-6 max-w-md rounded-[1.3rem] border border-white/70 bg-white/90 px-4 py-3 text-sm leading-6 text-cinder-800/82 shadow-lg shadow-cinder-950/10">
+            <div class="@GetOverlapHintClass(_showRadioLinks)">
                 @_visibleNodes.Count nodes match the current filters, but @_visiblePositionCount unique positions are represented on the map.
                 Overlapping coordinates are spread slightly so you can still select them.
             </div>
@@ -242,17 +284,24 @@
 @code {
     private const string MapElementId = "meshboard-client-node-map";
     private const int MaxVisibleLegendEntries = 10;
+    private const string RadioLinksPreferenceKey = "meshboard:map:radioLinks";
+    private const string ChannelCohortsPreferenceKey = "meshboard:map:channelCohorts";
     private IReadOnlyList<ChannelLegendEntry> _channelLegendEntries = Array.Empty<ChannelLegendEntry>();
     private IReadOnlyList<MapNodeActivity> _pendingActivityPulses = MapProjectionSnapshot.EmptyActivityPulses;
+    private IReadOnlyList<RadioLinkPoint> _radioLinkPoints = Array.Empty<RadioLinkPoint>();
     private MapProjectionSnapshot _snapshot = new();
     private IReadOnlyList<MapProjectionEnvelope> _searchMatchedNodes = MapProjectionSnapshot.EmptyNodes;
     private IReadOnlyList<MapProjectionEnvelope> _visibleNodes = MapProjectionSnapshot.EmptyNodes;
     private IReadOnlyList<MapNodePoint> _visibleMapNodes = Array.Empty<MapNodePoint>();
+    private int _cachedRadioLinkCount;
+    private int _positionResolvedRadioLinkCount;
     private int _visiblePositionCount;
     private DotNetObjectReference<Map>? _mapCallbackReference;
     private Lazy<Task<IJSObjectReference>>? _moduleTask;
     private bool _isDisposed;
     private bool _isMapRenderPending;
+    private bool _showChannelCohorts;
+    private bool _showRadioLinks;
     private bool _shouldFitMapToNodes = true;
     private int _hiddenChannelLegendCount;
     private string _searchText = string.Empty;
@@ -277,12 +326,21 @@
     protected override void OnInitialized()
     {
         ProjectionStore.Changed += HandleProjectionStoreChanged;
+        RadioLinkProjectionStore.Changed += HandleProjectionStoreChanged;
         RefreshView(mergeActivityPulses: true);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender || _isMapRenderPending)
+        if (firstRender)
+        {
+            await RestoreLayerVisibilityAsync();
+            _isMapRenderPending = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_isMapRenderPending)
         {
             _isMapRenderPending = false;
             await RenderMapAsync();
@@ -293,6 +351,7 @@
     {
         _isDisposed = true;
         ProjectionStore.Changed -= HandleProjectionStoreChanged;
+        RadioLinkProjectionStore.Changed -= HandleProjectionStoreChanged;
         _mapCallbackReference?.Dispose();
 
         if (_moduleTask is null || !_moduleTask.IsValueCreated)
@@ -381,6 +440,22 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async Task ToggleRadioLinksAsync()
+    {
+        _showRadioLinks = !_showRadioLinks;
+        await PersistLayerVisibilityAsync(RadioLinksPreferenceKey, _showRadioLinks);
+        _isMapRenderPending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToggleChannelCohortsAsync()
+    {
+        _showChannelCohorts = !_showChannelCohorts;
+        await PersistLayerVisibilityAsync(ChannelCohortsPreferenceKey, _showChannelCohorts);
+        _isMapRenderPending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task ResetViewAsync()
     {
         _searchText = string.Empty;
@@ -407,6 +482,7 @@
         _selectedNodeId = null;
         _selectedChannelKey = null;
         _shouldFitMapToNodes = true;
+        RadioLinkProjectionStore.Clear();
         ProjectionStore.Clear();
     }
 
@@ -462,6 +538,9 @@
                 .ToArray();
         _visibleMapNodes = MapProjectionStore.ToMapNodePoints(_visibleNodes);
         _visiblePositionCount = MapProjectionStore.CountCoordinateBuckets(_visibleNodes);
+        _cachedRadioLinkCount = RadioLinkProjectionStore.Current.Count;
+        _positionResolvedRadioLinkCount = BuildRadioLinkPoints(_snapshot.Nodes).Count;
+        _radioLinkPoints = BuildRadioLinkPoints(_visibleNodes);
 
         if (mergeActivityPulses)
         {
@@ -504,7 +583,13 @@
                 _visibleMapNodes,
                 _pendingActivityPulses,
                 _shouldFitMapToNodes,
-                _mapCallbackReference);
+                _mapCallbackReference,
+                _radioLinkPoints,
+                new MapLayerVisibility
+                {
+                    RadioLinks = _showRadioLinks,
+                    ChannelCohorts = _showChannelCohorts
+                });
             await SynchronizePinnedNodeAsync();
 
             _pendingActivityPulses = MapProjectionSnapshot.EmptyActivityPulses;
@@ -523,7 +608,7 @@
     private Task<IJSObjectReference> GetMapModuleAsync()
     {
         _moduleTask ??= new Lazy<Task<IJSObjectReference>>(
-            () => JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=3").AsTask());
+            () => JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=5").AsTask());
         return _moduleTask.Value;
     }
 
@@ -563,7 +648,99 @@
             .Distinct(StringComparer.Ordinal)
             .Count();
 
-        return $"{_searchMatchedNodes.Count} matching nodes across {cohortCount} channel cohorts.";
+        return $"{_searchMatchedNodes.Count} matching nodes, {_radioLinkPoints.Count} visible radio links ({_cachedRadioLinkCount} active), across {cohortCount} channel cohorts.";
+    }
+
+    private string GetRadioLinkStatusText()
+    {
+        if (RadioLinkProjectionStore.ObservedReportCount == 0)
+        {
+            return "No NeighborInfo packets have been observed in this browser session yet.";
+        }
+
+        if (RadioLinkProjectionStore.ObservedNeighborCount == 0)
+        {
+            return $"NeighborInfo packets are arriving ({RadioLinkProjectionStore.ObservedReportCount} reports), but every decoded report so far contains zero neighbors.";
+        }
+
+        if (_cachedRadioLinkCount == 0)
+        {
+            return $"Decoded {RadioLinkProjectionStore.ObservedNeighborCount} neighbor entries across {RadioLinkProjectionStore.ObservedReportCount} NeighborInfo reports, but no active radio links are retained right now.";
+        }
+
+        if (_positionResolvedRadioLinkCount == 0)
+        {
+            return $"{_cachedRadioLinkCount} active radio links are cached, but none of their endpoints currently resolve to positioned nodes on the map.";
+        }
+
+        if (_radioLinkPoints.Count == 0)
+        {
+            return $"{_positionResolvedRadioLinkCount} radio links have positioned endpoints, but none match the current visible node set.";
+        }
+
+        if (_radioLinkPoints.Count == _cachedRadioLinkCount)
+        {
+            return $"Displaying all {_radioLinkPoints.Count} active radio links decoded in this session.";
+        }
+
+        return $"Displaying {_radioLinkPoints.Count} of {_cachedRadioLinkCount} active radio links. {_positionResolvedRadioLinkCount} have positioned endpoints.";
+    }
+
+    private IReadOnlyList<RadioLinkPoint> BuildRadioLinkPoints(IReadOnlyList<MapProjectionEnvelope> visibleNodes)
+    {
+        if (visibleNodes.Count == 0)
+        {
+            return Array.Empty<RadioLinkPoint>();
+        }
+
+        var visibleNodesById = visibleNodes.ToDictionary(node => node.NodeId, StringComparer.OrdinalIgnoreCase);
+
+        return RadioLinkProjectionStore.Current
+            .Select(link => TryResolveCoordinates(link, visibleNodesById))
+            .OfType<RadioLinkPoint>()
+            .ToArray();
+    }
+
+    private static RadioLinkPoint? TryResolveCoordinates(
+        RadioLinkEnvelope link,
+        IReadOnlyDictionary<string, MapProjectionEnvelope> visibleNodesById)
+    {
+        if (!visibleNodesById.TryGetValue(link.SourceNodeId, out var sourceNode) ||
+            !visibleNodesById.TryGetValue(link.TargetNodeId, out var targetNode))
+        {
+            return null;
+        }
+
+        return new RadioLinkPoint
+        {
+            SourceNodeId = link.SourceNodeId,
+            TargetNodeId = link.TargetNodeId,
+            SnrDb = link.SnrDb,
+            SourceLatitude = sourceNode.Latitude,
+            SourceLongitude = sourceNode.Longitude,
+            TargetLatitude = targetNode.Latitude,
+            TargetLongitude = targetNode.Longitude
+        };
+    }
+
+    private async Task RestoreLayerVisibilityAsync()
+    {
+        _showRadioLinks = string.Equals(
+            await JSRuntime.InvokeAsync<string?>("localStorage.getItem", RadioLinksPreferenceKey),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        _showChannelCohorts = string.Equals(
+            await JSRuntime.InvokeAsync<string?>("localStorage.getItem", ChannelCohortsPreferenceKey),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task PersistLayerVisibilityAsync(string storageKey, bool value)
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            storageKey,
+            value ? "true" : "false");
     }
 
     private static IReadOnlyList<MapNodeActivity> MergeActivityPulses(
@@ -626,11 +803,25 @@
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    private static string GetToggleClass(bool isEnabled)
+    {
+        return isEnabled
+            ? "shell-button shell-button-accent rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35"
+            : "shell-button rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/35";
+    }
+
     private static string GetChannelChipClass(bool isFocused)
     {
         return isFocused
             ? "shell-button shell-button-accent inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
             : "shell-button inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]";
+    }
+
+    private static string GetOverlapHintClass(bool showRadioLinks)
+    {
+        return showRadioLinks
+            ? "pointer-events-none absolute bottom-40 left-6 max-w-md rounded-[1.3rem] border border-white/70 bg-white/90 px-4 py-3 text-sm leading-6 text-cinder-800/82 shadow-lg shadow-cinder-950/10"
+            : "pointer-events-none absolute bottom-6 left-6 max-w-md rounded-[1.3rem] border border-white/70 bg-white/90 px-4 py-3 text-sm leading-6 text-cinder-800/82 shadow-lg shadow-cinder-950/10";
     }
 
     private static string ResolveChannelColorCss(string channel)

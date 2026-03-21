@@ -112,6 +112,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
         services.AddScoped<IDiscoveredTopicRepository, DiscoveredTopicRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
+        services.AddScoped<INeighborLinkRepository, NeighborLinkRepository>();
         services.AddScoped<INodeRepository, NodeRepository>();
         services.AddScoped<ISubscriptionIntentRepository, SubscriptionIntentRepository>();
     }

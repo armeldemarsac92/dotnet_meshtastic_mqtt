@@ -256,7 +256,7 @@
     private Task<IJSObjectReference> GetMapModuleAsync()
     {
         _moduleTask ??= new Lazy<Task<IJSObjectReference>>(
-            () => JS.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=3").AsTask());
+            () => JS.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=5").AsTask());
         return _moduleTask.Value;
     }
 

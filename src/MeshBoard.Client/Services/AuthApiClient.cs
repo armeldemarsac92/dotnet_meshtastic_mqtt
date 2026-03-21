@@ -23,6 +23,7 @@ public sealed class AuthApiClient
     private readonly LocalVaultService _localVaultService;
     private readonly MapProjectionStore _mapProjectionStore;
     private readonly NodeProjectionStore _nodeProjectionStore;
+    private readonly RadioLinkProjectionStore _radioLinkProjectionStore;
 
     public AuthApiClient(
         IAuthApi authApi,
@@ -34,7 +35,8 @@ public sealed class AuthApiClient
         LiveMessageFeedService liveMessageFeedService,
         LocalVaultService localVaultService,
         MapProjectionStore mapProjectionStore,
-        NodeProjectionStore nodeProjectionStore)
+        NodeProjectionStore nodeProjectionStore,
+        RadioLinkProjectionStore radioLinkProjectionStore)
     {
         _authApi = authApi;
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
@@ -46,6 +48,7 @@ public sealed class AuthApiClient
         _localVaultService = localVaultService;
         _mapProjectionStore = mapProjectionStore;
         _nodeProjectionStore = nodeProjectionStore;
+        _radioLinkProjectionStore = radioLinkProjectionStore;
     }
 
     public async Task<AuthenticatedUserResponse?> LoginAsync(
@@ -110,6 +113,7 @@ public sealed class AuthApiClient
             _liveMessageFeedService.Clear();
             _mapProjectionStore.Clear();
             _nodeProjectionStore.Clear();
+            _radioLinkProjectionStore.Clear();
         }
     }
 

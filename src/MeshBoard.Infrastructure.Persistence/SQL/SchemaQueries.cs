@@ -166,6 +166,18 @@ internal static class SchemaQueries
             is_private INTEGER NOT NULL,
             received_at_utc TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS neighbor_links (
+            workspace_id TEXT NOT NULL,
+            source_node_id TEXT NOT NULL,
+            target_node_id TEXT NOT NULL,
+            snr_db REAL NULL,
+            last_seen_at_utc TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, source_node_id, target_node_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_neighbor_links_workspace_seen
+            ON neighbor_links(workspace_id, last_seen_at_utc DESC);
         """;
 
     public static string DeleteExpiredMessages =>

@@ -50,6 +50,7 @@ public class Program
         builder.Services.AddScoped<MapProjectionState>();
         builder.Services.AddScoped<NodeProjectionStore>();
         builder.Services.AddScoped<NodeProjectionState>();
+        builder.Services.AddScoped<RadioLinkProjectionStore>();
         builder.Services.AddScoped<LocalVaultService>();
         builder.Services.AddScoped<ReceiveScopeSummaryBuilder>();
         builder.Services.AddScoped<RealtimeClientState>();

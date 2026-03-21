@@ -18,6 +18,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
     private readonly MapProjectionStore _mapProjectionStore;
     private readonly Lazy<Task<IJSObjectReference>> _moduleTask;
     private readonly NodeProjectionStore _nodeProjectionStore;
+    private readonly RadioLinkProjectionStore _radioLinkProjectionStore;
     private readonly RealtimeClientState _realtimeClientState;
     private readonly RealtimeSessionApiClient _realtimeSessionApiClient;
     private readonly RealtimePacketWorkerClient _realtimePacketWorkerClient;
@@ -32,6 +33,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         LiveMessageFeedService liveMessageFeedService,
         MapProjectionStore mapProjectionStore,
         NodeProjectionStore nodeProjectionStore,
+        RadioLinkProjectionStore radioLinkProjectionStore,
         RealtimeClientState realtimeClientState,
         RealtimeSessionApiClient realtimeSessionApiClient,
         RealtimePacketWorkerClient realtimePacketWorkerClient,
@@ -44,6 +46,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         _mapProjectionStore = mapProjectionStore;
         _moduleTask = new(() => jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/realtimeClient.js").AsTask());
         _nodeProjectionStore = nodeProjectionStore;
+        _radioLinkProjectionStore = radioLinkProjectionStore;
         _realtimeClientState = realtimeClientState;
         _realtimeSessionApiClient = realtimeSessionApiClient;
         _realtimePacketWorkerClient = realtimePacketWorkerClient;
@@ -218,6 +221,7 @@ public sealed class BrowserRealtimeClient : IAsyncDisposable
         _decryptedMessageStore.Project(processedPacket);
         _mapProjectionStore.Project(processedPacket);
         _nodeProjectionStore.Project(processedPacket);
+        _radioLinkProjectionStore.Project(processedPacket);
 
         SetSnapshot(snapshot => snapshot with
         {

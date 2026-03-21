@@ -1,20 +1,23 @@
 const MAPLIBRE_SCRIPT_ID = "meshboard-maplibre-script";
 const MAPLIBRE_SCRIPT_URL = "https://unpkg.com/maplibre-gl@^5/dist/maplibre-gl.js";
+const DECKGL_SCRIPT_ID = "meshboard-deckgl-script";
+const DECKGL_SCRIPT_URL = "https://unpkg.com/deck.gl@^9.0.0/dist.min.js";
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 const DEM_TILES_URL = "https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png";
-const HOVER_LINK_LIMIT = 18;
+const ACTIVE_COHORT_PREVIEW_LIMIT = 18;
+const MAX_COHORT_PAIRS_PER_CHANNEL = 300;
+const MAX_COHORT_PAIRS_TOTAL = 1000;
+const MAX_COHORT_NEIGHBORS_PER_AXIS = 12;
 const DEFAULT_CENTER = [0, 20];
 const DEFAULT_ZOOM = 2;
-const NODE_SOURCE_ID = "meshboard-nodes";
-const LINK_SOURCE_ID = "meshboard-links";
-const PULSE_SOURCE_ID = "meshboard-pulse";
 const CONTOUR_SOURCE_ID = "meshboard-contours";
+const BUILDINGS_LAYER_ID = "meshboard-buildings";
+const CONTOUR_LAYER_ID = "meshboard-contour-lines";
 const NODE_LAYER_ID = "meshboard-node-circles";
 const NODE_LABEL_LAYER_ID = "meshboard-node-labels";
+const RADIO_LINK_LAYER_ID = "meshboard-radio-link-lines";
 const LINK_LAYER_ID = "meshboard-link-lines";
-const BUILDINGS_LAYER_ID = "meshboard-buildings";
 const PULSE_LAYER_ID = "meshboard-pulse-circles";
-const CONTOUR_LAYER_ID = "meshboard-contour-lines";
 const MINI_NODE_SOURCE_ID = "meshboard-mini-node";
 const MINI_CONTOUR_SOURCE_ID = "meshboard-mini-contours";
 const MINI_NODE_LAYER_ID = "meshboard-mini-node-circle";
@@ -22,32 +25,54 @@ const MINI_BUILDINGS_LAYER_ID = "meshboard-mini-buildings";
 const MINI_CONTOUR_LAYER_ID = "meshboard-mini-contour-lines";
 
 let maplibreLoadPromise = null;
+let deckGlLoadPromise = null;
 let demSource = null;
+const colorCache = new Map();
 const mapStates = new Map();
 const miniMapStates = new Map();
+const LAYER_VISIBILITY_DEFAULTS = Object.freeze({
+    radioLinks: false,
+    channelCohorts: false
+});
 
-function ensureMapLibreScript() {
-    const existing = document.getElementById(MAPLIBRE_SCRIPT_ID);
+function ensureExternalScript(scriptId, scriptUrl, readyCheck, errorMessage) {
+    const existing = document.getElementById(scriptId);
 
     if (existing) {
-        if (window.maplibregl) {
+        if (readyCheck()) {
             return Promise.resolve();
         }
 
         return new Promise((resolve, reject) => {
             existing.addEventListener("load", () => resolve(), { once: true });
-            existing.addEventListener("error", () => reject(new Error("Failed to load MapLibre GL JS.")), { once: true });
+            existing.addEventListener("error", () => reject(new Error(errorMessage)), { once: true });
         });
     }
 
     return new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.id = MAPLIBRE_SCRIPT_ID;
-        script.src = MAPLIBRE_SCRIPT_URL;
+        script.id = scriptId;
+        script.src = scriptUrl;
         script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Failed to load MapLibre GL JS."));
+        script.onerror = () => reject(new Error(errorMessage));
         document.head.appendChild(script);
     });
+}
+
+function ensureMapLibreScript() {
+    return ensureExternalScript(
+        MAPLIBRE_SCRIPT_ID,
+        MAPLIBRE_SCRIPT_URL,
+        () => Boolean(window.maplibregl),
+        "Failed to load MapLibre GL JS.");
+}
+
+function ensureDeckGlScript() {
+    return ensureExternalScript(
+        DECKGL_SCRIPT_ID,
+        DECKGL_SCRIPT_URL,
+        () => Boolean(window.deck?.MapboxOverlay),
+        "Failed to load deck.gl.");
 }
 
 async function ensureMapLibre() {
@@ -72,6 +97,18 @@ async function ensureMapLibre() {
     }
 
     await maplibreLoadPromise;
+}
+
+async function ensureDeckGl() {
+    if (window.deck?.MapboxOverlay) {
+        return;
+    }
+
+    if (!deckGlLoadPromise) {
+        deckGlLoadPromise = ensureDeckGlScript();
+    }
+
+    await deckGlLoadPromise;
 }
 
 function resolveBatteryColor(batteryLevelPercent) {
@@ -123,6 +160,45 @@ function hslToHex(h, s, l) {
     return `#${channel(0)}${channel(8)}${channel(4)}`;
 }
 
+function toRgba(hexColor, alpha = 255) {
+    const normalizedAlpha = Math.max(0, Math.min(255, Math.round(alpha)));
+    const cacheKey = `${hexColor}:${normalizedAlpha}`;
+    const cached = colorCache.get(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
+    const normalizedHex = hexColor.startsWith("#")
+        ? hexColor.slice(1)
+        : hexColor;
+
+    const value = normalizedHex.length === 3
+        ? normalizedHex.split("").map((part) => `${part}${part}`).join("")
+        : normalizedHex;
+
+    if (value.length !== 6) {
+        return [160, 160, 160, normalizedAlpha];
+    }
+
+    const rgba = [
+        Number.parseInt(value.slice(0, 2), 16),
+        Number.parseInt(value.slice(2, 4), 16),
+        Number.parseInt(value.slice(4, 6), 16),
+        normalizedAlpha
+    ];
+
+    colorCache.set(cacheKey, rgba);
+    return rgba;
+}
+
+function withAlpha(color, alpha) {
+    if (!Array.isArray(color) || color.length < 3) {
+        return [160, 160, 160, Math.max(0, Math.min(255, Math.round(alpha)))];
+    }
+
+    return [color[0], color[1], color[2], Math.max(0, Math.min(255, Math.round(alpha)))];
+}
+
 function normalizeNodes(nodes) {
     return (nodes ?? [])
         .map((node) => ({
@@ -138,56 +214,218 @@ function normalizeNodes(nodes) {
         .filter((node) => Number.isFinite(node.latitude) && Number.isFinite(node.longitude));
 }
 
-function buildNodeGeoJson(nodes, hoveredNodeId) {
+function buildRenderableNodes(nodes) {
+    return nodes.map((node) => {
+        const battery = resolveBatteryColor(node.batteryLevelPercent);
+        const channelColorHex = resolveChannelColorHex(node.channel);
+
+        return {
+            ...node,
+            position: [node.longitude, node.latitude],
+            fillColor: toRgba(battery.fill, 232),
+            strokeColor: toRgba(battery.stroke, 255),
+            highlightStrokeColor: toRgba(channelColorHex, 255),
+            pulseColor: toRgba(channelColorHex, 255)
+        };
+    });
+}
+
+function normalizeRadioLinks(radioLinks) {
+    return (radioLinks ?? [])
+        .map((link) => ({
+            sourceNodeId: link.sourceNodeId,
+            targetNodeId: link.targetNodeId,
+            snrDb: Number.isFinite(Number.parseFloat(link.snrDb))
+                ? Number.parseFloat(link.snrDb)
+                : null,
+            sourceLatitude: Number.parseFloat(link.sourceLatitude),
+            sourceLongitude: Number.parseFloat(link.sourceLongitude),
+            targetLatitude: Number.parseFloat(link.targetLatitude),
+            targetLongitude: Number.parseFloat(link.targetLongitude)
+        }))
+        .filter((link) =>
+            link.sourceNodeId &&
+            link.targetNodeId &&
+            Number.isFinite(link.sourceLatitude) &&
+            Number.isFinite(link.sourceLongitude) &&
+            Number.isFinite(link.targetLatitude) &&
+            Number.isFinite(link.targetLongitude));
+}
+
+function buildRenderableRadioLinks(radioLinks) {
+    return radioLinks.map((link) => ({
+        ...link,
+        sourcePosition: [link.sourceLongitude, link.sourceLatitude],
+        targetPosition: [link.targetLongitude, link.targetLatitude],
+        color: toRgba(resolveSnrColorHex(link.snrDb), Math.round(255 * 0.7)),
+        width: resolveSnrWidth(link.snrDb)
+    }));
+}
+
+function normalizeLayerVisibility(layerVisibility) {
     return {
-        type: "FeatureCollection",
-        features: nodes.map((node) => {
-            const battery = resolveBatteryColor(node.batteryLevelPercent);
-            const isHovered = node.nodeId === hoveredNodeId;
-            return {
-                type: "Feature",
-                id: node.nodeId,
-                geometry: {
-                    type: "Point",
-                    coordinates: [node.longitude, node.latitude]
-                },
-                properties: {
-                    nodeId: node.nodeId,
-                    displayName: node.displayName,
-                    channel: node.channel ?? "",
-                    fillColor: battery.fill,
-                    strokeColor: isHovered ? resolveChannelColorHex(node.channel) : battery.stroke,
-                    radius: isHovered ? 9 : 7,
-                    strokeWidth: isHovered ? 3 : 2,
-                    showLabel: isHovered ? 1 : 0
-                }
-            };
-        })
+        radioLinks: Boolean(layerVisibility?.radioLinks),
+        channelCohorts: Boolean(layerVisibility?.channelCohorts)
     };
 }
 
-function buildLinkGeoJson(hoveredNode, peers) {
-    if (!hoveredNode || peers.length === 0) {
-        return { type: "FeatureCollection", features: [] };
+function createLinkDatum(source, target, colorHex, width, opacity, distanceMeters = 0) {
+    return {
+        sourceNodeId: source.nodeId,
+        targetNodeId: target.nodeId,
+        sourcePosition: source.position,
+        targetPosition: target.position,
+        color: toRgba(colorHex, Math.round(opacity * 255)),
+        width,
+        distanceMeters
+    };
+}
+
+function buildActiveChannelPreviewLinks(nodes, activeNodeId) {
+    const activeNode = activeNodeId
+        ? nodes.find((node) => node.nodeId === activeNodeId) ?? null
+        : null;
+
+    if (!activeNode || !activeNode.channel) {
+        return [];
     }
 
-    return {
-        type: "FeatureCollection",
-        features: peers.map((peer) => ({
-            type: "Feature",
-            geometry: {
-                type: "LineString",
-                coordinates: [
-                    [hoveredNode.longitude, hoveredNode.latitude],
-                    [peer.longitude, peer.latitude]
-                ]
-            },
-            properties: {
-                color: resolveChannelColorHex(hoveredNode.channel),
-                nodeId: hoveredNode.nodeId
-            }
-        }))
-    };
+    const closestPeers = [];
+
+    for (const node of nodes) {
+        if (node.nodeId === activeNode.nodeId || !node.channel || node.channel !== activeNode.channel) {
+            continue;
+        }
+
+        const distanceMeters = distanceBetweenNodes(activeNode, node);
+        let insertIndex = closestPeers.findIndex((entry) => distanceMeters < entry.distanceMeters);
+        if (insertIndex === -1) {
+            insertIndex = closestPeers.length;
+        }
+
+        closestPeers.splice(insertIndex, 0, { node, distanceMeters });
+        if (closestPeers.length > ACTIVE_COHORT_PREVIEW_LIMIT) {
+            closestPeers.pop();
+        }
+    }
+
+    return closestPeers.map((entry) =>
+        createLinkDatum(activeNode, entry.node, resolveChannelColorHex(activeNode.channel), 2.5, 0.72, entry.distanceMeters));
+}
+
+function registerCandidatePair(pairMap, source, target, colorHex) {
+    const leftNodeId = source.nodeId < target.nodeId ? source.nodeId : target.nodeId;
+    const rightNodeId = source.nodeId < target.nodeId ? target.nodeId : source.nodeId;
+    const pairKey = `${leftNodeId}|${rightNodeId}`;
+
+    if (pairMap.has(pairKey)) {
+        return;
+    }
+
+    pairMap.set(
+        pairKey,
+        createLinkDatum(source, target, colorHex, 1.25, 0.42, distanceBetweenNodes(source, target))
+    );
+}
+
+function collectAxisNeighborPairs(sortedGroup, pairMap, colorHex) {
+    for (let leftIndex = 0; leftIndex < sortedGroup.length; leftIndex += 1) {
+        const maxRightIndex = Math.min(sortedGroup.length, leftIndex + MAX_COHORT_NEIGHBORS_PER_AXIS + 1);
+        for (let rightIndex = leftIndex + 1; rightIndex < maxRightIndex; rightIndex += 1) {
+            registerCandidatePair(pairMap, sortedGroup[leftIndex], sortedGroup[rightIndex], colorHex);
+        }
+    }
+}
+
+function buildChannelCohortPairs(nodes) {
+    const channelGroups = new Map();
+
+    for (const node of nodes) {
+        if (!node.channel) {
+            continue;
+        }
+
+        const group = channelGroups.get(node.channel) ?? [];
+        group.push(node);
+        channelGroups.set(node.channel, group);
+    }
+
+    const pairs = [];
+
+    for (const [channel, group] of channelGroups.entries()) {
+        if (group.length < 2) {
+            continue;
+        }
+
+        const pairMap = new Map();
+        const colorHex = resolveChannelColorHex(channel);
+        const latitudeSortedGroup = [...group].sort((left, right) =>
+            left.latitude === right.latitude
+                ? left.longitude - right.longitude
+                : left.latitude - right.latitude);
+        const longitudeSortedGroup = [...group].sort((left, right) =>
+            left.longitude === right.longitude
+                ? left.latitude - right.latitude
+                : left.longitude - right.longitude);
+
+        collectAxisNeighborPairs(latitudeSortedGroup, pairMap, colorHex);
+        collectAxisNeighborPairs(longitudeSortedGroup, pairMap, colorHex);
+
+        const channelPairs = Array.from(pairMap.values())
+            .sort((left, right) => left.distanceMeters - right.distanceMeters)
+            .slice(0, MAX_COHORT_PAIRS_PER_CHANNEL);
+
+        pairs.push(...channelPairs);
+    }
+
+    return pairs
+        .sort((left, right) => left.distanceMeters - right.distanceMeters)
+        .slice(0, MAX_COHORT_PAIRS_TOTAL);
+}
+
+function buildNodeGeometryKey(nodes) {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+        return "0";
+    }
+
+    const parts = [...nodes]
+        .sort((left, right) => left.nodeId.localeCompare(right.nodeId))
+        .map((node) =>
+            `${node.nodeId}|${node.channel ?? ""}|${node.latitude.toFixed(5)}|${node.longitude.toFixed(5)}`);
+
+    return `${parts.length}:${parts.join(";")}`;
+}
+
+function resolveSnrColorHex(snrDb) {
+    if (!Number.isFinite(snrDb)) {
+        return "#a0a0a0";
+    }
+
+    if (snrDb < -10) {
+        return "#e34a33";
+    }
+
+    if (snrDb <= 0) {
+        return "#fdbb84";
+    }
+
+    return "#31a354";
+}
+
+function resolveSnrWidth(snrDb) {
+    if (!Number.isFinite(snrDb)) {
+        return 1.5;
+    }
+
+    if (snrDb < -10) {
+        return 1.25;
+    }
+
+    if (snrDb <= 0) {
+        return 2;
+    }
+
+    return 3;
 }
 
 function distanceBetweenNodes(source, target) {
@@ -311,21 +549,6 @@ function createMap(container, center, zoom) {
 }
 
 function addMapSources(map) {
-    map.addSource(NODE_SOURCE_ID, {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] }
-    });
-
-    map.addSource(LINK_SOURCE_ID, {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] }
-    });
-
-    map.addSource(PULSE_SOURCE_ID, {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] }
-    });
-
     const contourSourceData = buildContourSourceData();
     if (contourSourceData) {
         map.addSource(CONTOUR_SOURCE_ID, contourSourceData);
@@ -338,64 +561,204 @@ function addMapLayers(map) {
     if (map.getSource(CONTOUR_SOURCE_ID)) {
         addContourLayers(map, CONTOUR_SOURCE_ID, CONTOUR_LAYER_ID);
     }
+}
 
-    map.addLayer({
-        id: LINK_LAYER_ID,
-        type: "line",
-        source: LINK_SOURCE_ID,
-        paint: {
-            "line-color": ["get", "color"],
-            "line-width": 2.5,
-            "line-opacity": 0.72
-        }
+function addDeckOverlay(mapState) {
+    const overlay = new window.deck.MapboxOverlay({
+        interleaved: false,
+        layers: [],
+        pickingRadius: 8,
+        useDevicePixels: Math.min(window.devicePixelRatio || 1, 2)
     });
 
-    map.addLayer({
-        id: PULSE_LAYER_ID,
-        type: "circle",
-        source: PULSE_SOURCE_ID,
-        paint: {
-            "circle-radius": ["get", "radius"],
-            "circle-color": ["get", "color"],
-            "circle-opacity": ["get", "opacity"],
-            "circle-stroke-width": 0
-        }
-    });
+    mapState.map.addControl(overlay);
+    mapState.deckOverlay = overlay;
 
-    map.addLayer({
+    const canvas = overlay.getCanvas?.();
+    if (canvas) {
+        canvas.style.pointerEvents = "none";
+    }
+}
+
+function buildLineLayer(layerId, data, visible) {
+    if (!visible || !Array.isArray(data) || data.length === 0) {
+        return null;
+    }
+
+    return new window.deck.LineLayer({
+        id: layerId,
+        data,
+        pickable: false,
+        widthUnits: "pixels",
+        widthMinPixels: 1,
+        getSourcePosition: (line) => line.sourcePosition,
+        getTargetPosition: (line) => line.targetPosition,
+        getColor: (line) => line.color,
+        getWidth: (line) => line.width,
+        parameters: { depthTest: false }
+    });
+}
+
+function buildNodeLayer(nodes, activeNodeId) {
+    return new window.deck.ScatterplotLayer({
         id: NODE_LAYER_ID,
-        type: "circle",
-        source: NODE_SOURCE_ID,
-        paint: {
-            "circle-radius": ["get", "radius"],
-            "circle-color": ["get", "fillColor"],
-            "circle-stroke-color": ["get", "strokeColor"],
-            "circle-stroke-width": ["get", "strokeWidth"]
-        }
+        data: nodes,
+        pickable: true,
+        stroked: true,
+        filled: true,
+        radiusUnits: "pixels",
+        lineWidthUnits: "pixels",
+        radiusMinPixels: 6,
+        getPosition: (node) => node.position,
+        getRadius: (node) => node.nodeId === activeNodeId ? 9 : 7,
+        getFillColor: (node) => node.fillColor,
+        getLineColor: (node) => node.nodeId === activeNodeId ? node.highlightStrokeColor : node.strokeColor,
+        getLineWidth: (node) => node.nodeId === activeNodeId ? 3 : 2,
+        parameters: { depthTest: false }
+    });
+}
+
+function buildLabelLayer(activeNode) {
+    if (!activeNode) {
+        return null;
+    }
+
+    const label = activeNode.channel
+        ? `${activeNode.displayName} · Channel ${activeNode.channel}`
+        : `${activeNode.displayName} · Channel unknown`;
+
+    return new window.deck.TextLayer({
+        id: NODE_LABEL_LAYER_ID,
+        data: [{ position: activeNode.position, label }],
+        pickable: false,
+        background: true,
+        sizeUnits: "pixels",
+        sizeMinPixels: 12,
+        getPosition: (entry) => entry.position,
+        getText: (entry) => entry.label,
+        getSize: 12,
+        getColor: [247, 239, 225, 255],
+        getBackgroundColor: [16, 32, 47, 228],
+        getBorderColor: [16, 32, 47, 255],
+        getBorderWidth: 1,
+        getPixelOffset: [0, -24],
+        getTextAnchor: "middle",
+        getAlignmentBaseline: "bottom",
+        fontFamily: "Noto Sans, sans-serif",
+        parameters: { depthTest: false }
+    });
+}
+
+function buildPulseLayer(activePulses, now) {
+    if (!Array.isArray(activePulses) || activePulses.length === 0) {
+        return null;
+    }
+
+    const data = activePulses.map((pulse) => {
+        const progress = Math.min(1, (now - pulse.startedAt) / pulse.duration);
+        return {
+            position: pulse.node.position,
+            radius: progress * pulse.maxRadius,
+            color: withAlpha(pulse.baseColor, 0.7 * (1 - progress) * 255)
+        };
     });
 
-    map.addLayer({
-        id: NODE_LABEL_LAYER_ID,
-        type: "symbol",
-        source: NODE_SOURCE_ID,
-        filter: ["==", ["get", "showLabel"], 1],
-        layout: {
-            "text-field": ["concat", ["get", "displayName"], "\n", ["case",
-                ["!=", ["get", "channel"], ""], ["concat", "Channel ", ["get", "channel"]],
-                "Channel unknown"
-            ]],
-            "text-font": ["Noto Sans Bold", "Noto Sans Regular"],
-            "text-size": 12,
-            "text-offset": [0, -1.8],
-            "text-anchor": "bottom",
-            "text-max-width": 14
-        },
-        paint: {
-            "text-color": "#f7efe1",
-            "text-halo-color": "#10202f",
-            "text-halo-width": 2
-        }
+    return new window.deck.ScatterplotLayer({
+        id: PULSE_LAYER_ID,
+        data,
+        pickable: false,
+        stroked: false,
+        filled: true,
+        radiusUnits: "pixels",
+        getPosition: (pulse) => pulse.position,
+        getRadius: (pulse) => pulse.radius,
+        getFillColor: (pulse) => pulse.color,
+        parameters: { depthTest: false }
     });
+}
+
+function ensureChannelCohortCache(mapState) {
+    if (mapState.cohortPairsCacheKey === mapState.nodeGeometryKey) {
+        return;
+    }
+
+    mapState.cohortPairsCacheKey = mapState.nodeGeometryKey;
+    mapState.cohortPairsCache = buildChannelCohortPairs(mapState.nodes);
+}
+
+function buildStaticDeckLayers(mapState) {
+    const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
+    const activeNode = activeNodeId
+        ? mapState.nodeDataById.get(activeNodeId) ?? null
+        : null;
+
+    let cohortLinks = [];
+    if (mapState.layerVisibility.channelCohorts) {
+        ensureChannelCohortCache(mapState);
+        cohortLinks = mapState.cohortPairsCache;
+    } else if (activeNodeId) {
+        cohortLinks = buildActiveChannelPreviewLinks(mapState.nodes, activeNodeId);
+    }
+
+    return {
+        backgroundLayers: [
+            buildLineLayer(LINK_LAYER_ID, cohortLinks, cohortLinks.length > 0),
+            buildLineLayer(
+                RADIO_LINK_LAYER_ID,
+                mapState.radioLinks,
+                mapState.layerVisibility.radioLinks && mapState.radioLinks.length > 0)
+        ].filter(Boolean),
+        foregroundLayers: [
+            buildNodeLayer(mapState.nodes, activeNodeId),
+            buildLabelLayer(activeNode)
+        ].filter(Boolean)
+    };
+}
+
+function refreshNodeAppearance(mapState, pulseNow = performance.now(), rebuildStaticLayers = true) {
+    if (!mapState.deckOverlay) {
+        return;
+    }
+
+    if (rebuildStaticLayers || !mapState.staticBackgroundLayers || !mapState.staticForegroundLayers) {
+        const layers = buildStaticDeckLayers(mapState);
+        mapState.staticBackgroundLayers = layers.backgroundLayers;
+        mapState.staticForegroundLayers = layers.foregroundLayers;
+    }
+
+    const pulseLayer = buildPulseLayer(mapState.activePulses, pulseNow);
+
+    mapState.deckOverlay.setProps({
+        layers: [
+            ...(mapState.staticBackgroundLayers ?? []),
+            ...(pulseLayer ? [pulseLayer] : []),
+            ...(mapState.staticForegroundLayers ?? [])
+        ]
+    });
+}
+
+function setCanvasCursor(mapState, cursor) {
+    mapState.map.getCanvas().style.cursor = cursor;
+
+    const overlayCanvas = mapState.deckOverlay?.getCanvas?.();
+    if (overlayCanvas) {
+        overlayCanvas.style.cursor = cursor;
+    }
+}
+
+function pickNodeAtPoint(mapState, point) {
+    if (!mapState.deckOverlay) {
+        return null;
+    }
+
+    const result = mapState.deckOverlay.pickObject({
+        x: point.x,
+        y: point.y,
+        radius: 8,
+        layerIds: [NODE_LAYER_ID]
+    });
+
+    return result?.object ?? null;
 }
 
 async function getOrCreateMapState(containerId, dotNetCallbackRef) {
@@ -416,7 +779,16 @@ async function getOrCreateMapState(containerId, dotNetCallbackRef) {
         containerId,
         dotNetCallbackRef,
         map,
+        deckOverlay: null,
         nodeDataById: new Map(),
+        nodes: [],
+        radioLinks: [],
+        layerVisibility: { ...LAYER_VISIBILITY_DEFAULTS },
+        nodeGeometryKey: "0",
+        cohortPairsCacheKey: null,
+        cohortPairsCache: [],
+        staticBackgroundLayers: null,
+        staticForegroundLayers: null,
         hoveredNodeId: null,
         pinnedNodeId: null,
         didAutoFrame: false,
@@ -430,6 +802,8 @@ async function getOrCreateMapState(containerId, dotNetCallbackRef) {
         map.once("load", () => {
             addMapSources(map);
             addMapLayers(map);
+            addDeckOverlay(mapState);
+            setCanvasCursor(mapState, "grab");
             wireInteractions(mapState);
             resolve();
         });
@@ -441,82 +815,62 @@ async function getOrCreateMapState(containerId, dotNetCallbackRef) {
 function wireInteractions(mapState) {
     const { map } = mapState;
 
-    map.on("mousemove", NODE_LAYER_ID, (event) => {
-        if (!event.features?.length) {
+    map.on("mousemove", (event) => {
+        const pickedNode = pickNodeAtPoint(mapState, event.point);
+        if (!pickedNode?.nodeId) {
+            if (mapState.hoveredNodeId !== null) {
+                mapState.hoveredNodeId = null;
+                refreshNodeAppearance(mapState);
+                mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+            }
+
+            setCanvasCursor(mapState, "grab");
             return;
         }
 
-        const nodeId = event.features[0].properties.nodeId;
-
-        if (nodeId === mapState.hoveredNodeId) {
+        if (pickedNode.nodeId === mapState.hoveredNodeId) {
+            setCanvasCursor(mapState, "pointer");
             return;
         }
 
-        mapState.hoveredNodeId = nodeId;
-        map.getCanvas().style.cursor = "pointer";
+        mapState.hoveredNodeId = pickedNode.nodeId;
+        setCanvasCursor(mapState, "pointer");
         refreshNodeAppearance(mapState);
-        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", nodeId);
+        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", pickedNode.nodeId);
     });
 
-    map.on("mouseleave", NODE_LAYER_ID, () => {
-        if (mapState.pinnedNodeId) {
-            mapState.hoveredNodeId = null;
-            refreshNodeAppearance(mapState);
-            mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
+    map.on("mouseleave", () => {
+        if (mapState.hoveredNodeId === null) {
+            setCanvasCursor(mapState, "grab");
             return;
         }
 
         mapState.hoveredNodeId = null;
-        map.getCanvas().style.cursor = "grab";
+        setCanvasCursor(mapState, "grab");
         refreshNodeAppearance(mapState);
         mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeHoveredFromMap", null);
     });
 
-    map.on("click", NODE_LAYER_ID, (event) => {
-        if (!event.features?.length) {
-            return;
-        }
-
-        const nodeId = event.features[0].properties.nodeId;
-        mapState.hoveredNodeId = nodeId;
-        mapState.pinnedNodeId = mapState.pinnedNodeId === nodeId ? null : nodeId;
-        refreshNodeAppearance(mapState);
-        mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", nodeId);
-    });
-
     map.on("click", (event) => {
-        const features = map.queryRenderedFeatures(event.point, { layers: [NODE_LAYER_ID] });
-        if (features.length > 0) {
+        const pickedNode = pickNodeAtPoint(mapState, event.point);
+        if (pickedNode?.nodeId) {
+            mapState.hoveredNodeId = pickedNode.nodeId;
+            mapState.pinnedNodeId = mapState.pinnedNodeId === pickedNode.nodeId
+                ? null
+                : pickedNode.nodeId;
+
+            setCanvasCursor(mapState, "pointer");
+            refreshNodeAppearance(mapState);
+            mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", pickedNode.nodeId);
             return;
         }
 
         mapState.pinnedNodeId = null;
         mapState.hoveredNodeId = null;
-        map.getCanvas().style.cursor = "grab";
+        setCanvasCursor(mapState, "grab");
         refreshNodeAppearance(mapState);
         mapState.dotNetCallbackRef?.invokeMethodAsync("OnNodeSelectedFromMap", null);
     });
-}
-
-function refreshNodeAppearance(mapState) {
-    const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
-    const nodes = Array.from(mapState.nodeDataById.values());
-
-    mapState.map.getSource(NODE_SOURCE_ID)?.setData(buildNodeGeoJson(nodes, activeNodeId));
-
-    const hoveredNode = activeNodeId ? mapState.nodeDataById.get(activeNodeId) : null;
-
-    if (!hoveredNode) {
-        mapState.map.getSource(LINK_SOURCE_ID)?.setData({ type: "FeatureCollection", features: [] });
-        return;
-    }
-
-    const peers = nodes
-        .filter((node) => node.nodeId !== hoveredNode.nodeId && node.channel && node.channel === hoveredNode.channel)
-        .sort((a, b) => distanceBetweenNodes(hoveredNode, a) - distanceBetweenNodes(hoveredNode, b))
-        .slice(0, HOVER_LINK_LIMIT);
-
-    mapState.map.getSource(LINK_SOURCE_ID)?.setData(buildLinkGeoJson(hoveredNode, peers));
 }
 
 function maybeFrameCamera(mapState, nodes, fitCameraToNodes) {
@@ -567,13 +921,12 @@ function triggerActivityPulses(mapState, activityPulses) {
 }
 
 function triggerActivityPulse(mapState, node) {
-    const startedAt = performance.now();
     mapState.activePulses.push({
         node,
-        startedAt,
+        startedAt: performance.now(),
         duration: 1200,
         maxRadius: 40,
-        color: resolveChannelColorHex(node.channel)
+        baseColor: node.pulseColor
     });
     schedulePulseFrame(mapState);
 }
@@ -595,26 +948,10 @@ function updatePulses(mapState, now) {
     }
 
     mapState.activePulses = mapState.activePulses.filter((pulse) => (now - pulse.startedAt) < pulse.duration);
-
-    const features = mapState.activePulses.map((pulse) => {
-        const progress = Math.min(1, (now - pulse.startedAt) / pulse.duration);
-        return {
-            type: "Feature",
-            geometry: { type: "Point", coordinates: [pulse.node.longitude, pulse.node.latitude] },
-            properties: {
-                radius: progress * pulse.maxRadius,
-                color: pulse.color,
-                opacity: 0.7 * (1 - progress)
-            }
-        };
-    });
-
-    mapState.map.getSource(PULSE_SOURCE_ID)?.setData({ type: "FeatureCollection", features });
+    refreshNodeAppearance(mapState, now, false);
 
     if (mapState.activePulses.length > 0) {
         schedulePulseFrame(mapState);
-    } else {
-        mapState.map.getSource(PULSE_SOURCE_ID)?.setData({ type: "FeatureCollection", features: [] });
     }
 }
 
@@ -697,16 +1034,27 @@ export function disposeMiniMap(containerId) {
 
 // --- Main node map ---
 
-export async function renderNodeMap(containerId, nodes, activityPulses, fitCameraToNodes, dotNetCallbackRef) {
-    await ensureMapLibre();
+export async function renderNodeMap(
+    containerId,
+    nodes,
+    activityPulses,
+    fitCameraToNodes,
+    dotNetCallbackRef,
+    radioLinks = [],
+    layerVisibility = null) {
+    await Promise.all([ensureMapLibre(), ensureDeckGl()]);
 
     const mapState = await getOrCreateMapState(containerId, dotNetCallbackRef);
     if (!mapState) {
         return;
     }
 
-    const normalizedNodes = normalizeNodes(nodes);
-    mapState.nodeDataById = new Map(normalizedNodes.map((n) => [n.nodeId, n]));
+    const renderableNodes = buildRenderableNodes(normalizeNodes(nodes));
+    mapState.nodes = renderableNodes;
+    mapState.nodeDataById = new Map(renderableNodes.map((node) => [node.nodeId, node]));
+    mapState.radioLinks = buildRenderableRadioLinks(normalizeRadioLinks(radioLinks));
+    mapState.layerVisibility = normalizeLayerVisibility(layerVisibility);
+    mapState.nodeGeometryKey = buildNodeGeometryKey(renderableNodes);
 
     if (mapState.hoveredNodeId && !mapState.nodeDataById.has(mapState.hoveredNodeId)) {
         mapState.hoveredNodeId = null;
@@ -717,7 +1065,7 @@ export async function renderNodeMap(containerId, nodes, activityPulses, fitCamer
     }
 
     refreshNodeAppearance(mapState);
-    maybeFrameCamera(mapState, normalizedNodes, Boolean(fitCameraToNodes));
+    maybeFrameCamera(mapState, renderableNodes, Boolean(fitCameraToNodes));
     triggerActivityPulses(mapState, activityPulses);
 }
 
@@ -740,6 +1088,11 @@ export function disposeNodeMap(containerId) {
     if (mapState.rafId !== null) {
         cancelAnimationFrame(mapState.rafId);
         mapState.rafId = null;
+    }
+
+    if (mapState.deckOverlay) {
+        mapState.map.removeControl(mapState.deckOverlay);
+        mapState.deckOverlay = null;
     }
 
     mapState.map.remove();

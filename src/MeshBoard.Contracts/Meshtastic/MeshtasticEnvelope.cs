@@ -46,5 +46,7 @@ public sealed class MeshtasticEnvelope
 
     public double? BarometricPressure { get; set; }
 
+    public List<MeshtasticNeighborEntry>? Neighbors { get; set; }
+
     public DateTimeOffset ReceivedAtUtc { get; set; }
 }
