@@ -29,6 +29,10 @@ public interface ICollectorReadService
     Task<CollectorNeighborLinkStatsSnapshot> GetNeighborLinkStats(
         CollectorNeighborLinkStatsQuery? query = null,
         CancellationToken cancellationToken = default);
+
+    Task<CollectorTopologySnapshot> GetTopologySnapshot(
+        CollectorTopologyQuery? query = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class CollectorReadService : ICollectorReadService
@@ -43,6 +47,9 @@ public sealed class CollectorReadService : ICollectorReadService
     private const int MaxStatsLookbackHours = 24 * 30;
     private const int DefaultStatsMaxRows = 500;
     private const int MaxStatsRows = 5_000;
+    private const int DefaultTopologyTopCount = 10;
+    private const int MaxTopologyTopCount = 100;
+    private const int MaxTopologyRollupRows = 20_000;
 
     private readonly ICollectorReadRepository _collectorReadRepository;
     private readonly ILogger<CollectorReadService> _logger;
@@ -251,6 +258,109 @@ public sealed class CollectorReadService : ICollectorReadService
         };
     }
 
+    public async Task<CollectorTopologySnapshot> GetTopologySnapshot(
+        CollectorTopologyQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sanitizedQuery = SanitizeTopologyQuery(query);
+        var generatedAtUtc = _timeProvider.GetUtcNow();
+        var notBeforeUtc = generatedAtUtc.AddHours(-sanitizedQuery.ActiveWithinHours);
+
+        _logger.LogDebug(
+            "Attempting to fetch collector topology snapshot for server {ServerAddress}, region {Region}, channel {ChannelName}, active within {ActiveWithinHours} hours",
+            sanitizedQuery.ServerAddress,
+            sanitizedQuery.Region,
+            sanitizedQuery.ChannelName,
+            sanitizedQuery.ActiveWithinHours);
+
+        var topologyNodesTask = _collectorReadRepository.GetTopologyNodesAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            sanitizedQuery,
+            notBeforeUtc,
+            cancellationToken);
+        var topologyLinksTask = _collectorReadRepository.GetTopologyLinksAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            sanitizedQuery,
+            notBeforeUtc,
+            cancellationToken);
+        var rollupsTask = _collectorReadRepository.GetNeighborLinkRollupsAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            new CollectorNeighborLinkStatsQuery
+            {
+                ServerAddress = sanitizedQuery.ServerAddress,
+                Region = sanitizedQuery.Region,
+                ChannelName = sanitizedQuery.ChannelName,
+                LookbackHours = sanitizedQuery.ActiveWithinHours,
+                MaxRows = MaxTopologyRollupRows
+            },
+            notBeforeUtc,
+            cancellationToken);
+
+        await Task.WhenAll(topologyNodesTask, topologyLinksTask, rollupsTask);
+
+        var nodes = await topologyNodesTask;
+        var links = await topologyLinksTask;
+        var rollups = await rollupsTask;
+
+        var nodeById = nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+        var adjacency = BuildAdjacency(nodes.Select(node => node.NodeId), links);
+        var components = BuildComponents(adjacency, sanitizedQuery.TopCount);
+        var componentSizes = components
+            .SelectMany(component => component.NodeIds.Select(nodeId => new KeyValuePair<string, int>(nodeId, component.NodeCount)))
+            .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
+        var degrees = adjacency.ToDictionary(entry => entry.Key, entry => entry.Value.Count, StringComparer.Ordinal);
+        var articulationNodeIds = FindArticulationPoints(adjacency);
+        var strongestLinks = BuildStrongestLinks(
+            links,
+            rollups,
+            nodeById,
+            sanitizedQuery.TopCount);
+
+        return new CollectorTopologySnapshot
+        {
+            GeneratedAtUtc = generatedAtUtc,
+            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
+            ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
+            Region = NullIfEmpty(sanitizedQuery.Region),
+            ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
+            ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
+            NodeCount = nodes.Count,
+            LinkCount = links.Count,
+            ConnectedComponentCount = components.Count,
+            LargestConnectedComponentSize = components.Count == 0 ? 0 : components.Max(component => component.NodeCount),
+            IsolatedNodeCount = degrees.Count(entry => entry.Value == 0),
+            BridgeNodeCount = articulationNodeIds.Count,
+            Components = components
+                .Take(sanitizedQuery.TopCount)
+                .Select((component, index) => new CollectorTopologyComponentSummary
+                {
+                    ComponentIndex = index + 1,
+                    NodeCount = component.NodeCount,
+                    LinkCount = component.LinkCount,
+                    SampleNodeIds = component.NodeIds.Take(3).ToArray()
+                })
+                .ToArray(),
+            TopDegreeNodes = nodes
+                .OrderByDescending(node => degrees.GetValueOrDefault(node.NodeId))
+                .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(node => node.NodeId, StringComparer.Ordinal)
+                .Take(sanitizedQuery.TopCount)
+                .Select(node => MapTopologyNode(node, degrees.GetValueOrDefault(node.NodeId), componentSizes.GetValueOrDefault(node.NodeId)))
+                .ToArray(),
+            BridgeNodes = articulationNodeIds
+                .Select(nodeId => nodeById.GetValueOrDefault(nodeId))
+                .Where(node => node is not null)
+                .Select(node => node!)
+                .OrderByDescending(node => degrees.GetValueOrDefault(node.NodeId))
+                .ThenBy(node => node.LongName ?? node.ShortName ?? node.NodeId, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(node => node.NodeId, StringComparer.Ordinal)
+                .Take(sanitizedQuery.TopCount)
+                .Select(node => MapTopologyNode(node, degrees.GetValueOrDefault(node.NodeId), componentSizes.GetValueOrDefault(node.NodeId)))
+                .ToArray(),
+            StrongestLinks = strongestLinks
+        };
+    }
+
     private static CollectorMapQuery SanitizeQuery(CollectorMapQuery? query)
     {
         return new CollectorMapQuery
@@ -292,6 +402,20 @@ public sealed class CollectorReadService : ICollectorReadService
         };
     }
 
+    private static CollectorTopologyQuery SanitizeTopologyQuery(CollectorTopologyQuery? query)
+    {
+        return new CollectorTopologyQuery
+        {
+            ServerAddress = Normalize(query?.ServerAddress),
+            Region = Normalize(query?.Region),
+            ChannelName = Normalize(query?.ChannelName),
+            ActiveWithinHours = Clamp(query?.ActiveWithinHours ?? DefaultActiveWithinHours, 1, MaxActiveWithinHours),
+            MaxNodes = Clamp(query?.MaxNodes ?? MaxNodes, 1, MaxNodes),
+            MaxLinks = Clamp(query?.MaxLinks ?? MaxLinks, 1, MaxLinks),
+            TopCount = Clamp(query?.TopCount ?? DefaultTopologyTopCount, 1, MaxTopologyTopCount)
+        };
+    }
+
     private static int Clamp(int value, int min, int max)
     {
         if (value < min)
@@ -312,5 +436,257 @@ public sealed class CollectorReadService : ICollectorReadService
     private static string? NullIfEmpty(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static Dictionary<string, HashSet<string>> BuildAdjacency(
+        IEnumerable<string> nodeIds,
+        IReadOnlyCollection<CollectorMapLinkSummary> links)
+    {
+        var adjacency = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        foreach (var nodeId in nodeIds)
+        {
+            if (!adjacency.ContainsKey(nodeId))
+            {
+                adjacency[nodeId] = new HashSet<string>(StringComparer.Ordinal);
+            }
+        }
+
+        foreach (var link in links)
+        {
+            if (!adjacency.TryGetValue(link.SourceNodeId, out var sourceNeighbors))
+            {
+                sourceNeighbors = new HashSet<string>(StringComparer.Ordinal);
+                adjacency[link.SourceNodeId] = sourceNeighbors;
+            }
+
+            if (!adjacency.TryGetValue(link.TargetNodeId, out var targetNeighbors))
+            {
+                targetNeighbors = new HashSet<string>(StringComparer.Ordinal);
+                adjacency[link.TargetNodeId] = targetNeighbors;
+            }
+
+            sourceNeighbors.Add(link.TargetNodeId);
+            targetNeighbors.Add(link.SourceNodeId);
+        }
+
+        return adjacency;
+    }
+
+    private static IReadOnlyCollection<GraphComponent> BuildComponents(
+        IReadOnlyDictionary<string, HashSet<string>> adjacency,
+        int topCount)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var components = new List<GraphComponent>();
+
+        foreach (var nodeId in adjacency.Keys.Order(StringComparer.Ordinal))
+        {
+            if (!visited.Add(nodeId))
+            {
+                continue;
+            }
+
+            var queue = new Queue<string>();
+            var componentNodeIds = new List<string>();
+            var degreeSum = 0;
+            queue.Enqueue(nodeId);
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                componentNodeIds.Add(current);
+
+                if (!adjacency.TryGetValue(current, out var neighbors))
+                {
+                    continue;
+                }
+
+                degreeSum += neighbors.Count;
+
+                foreach (var neighbor in neighbors.Order(StringComparer.Ordinal))
+                {
+                    if (visited.Add(neighbor))
+                    {
+                        queue.Enqueue(neighbor);
+                    }
+                }
+            }
+
+            componentNodeIds.Sort(StringComparer.Ordinal);
+            components.Add(new GraphComponent(componentNodeIds, degreeSum / 2));
+        }
+
+        return components
+            .OrderByDescending(component => component.NodeCount)
+            .ThenByDescending(component => component.LinkCount)
+            .ThenBy(component => component.NodeIds[0], StringComparer.Ordinal)
+            .Take(Math.Max(topCount, components.Count))
+            .ToArray();
+    }
+
+    private static HashSet<string> FindArticulationPoints(IReadOnlyDictionary<string, HashSet<string>> adjacency)
+    {
+        var time = 0;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var discovery = new Dictionary<string, int>(StringComparer.Ordinal);
+        var low = new Dictionary<string, int>(StringComparer.Ordinal);
+        var parent = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var articulationPoints = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var nodeId in adjacency.Keys.Order(StringComparer.Ordinal))
+        {
+            if (!visited.Contains(nodeId))
+            {
+                DepthFirstSearch(
+                    nodeId,
+                    adjacency,
+                    visited,
+                    discovery,
+                    low,
+                    parent,
+                    articulationPoints,
+                    ref time);
+            }
+        }
+
+        return articulationPoints;
+    }
+
+    private static void DepthFirstSearch(
+        string nodeId,
+        IReadOnlyDictionary<string, HashSet<string>> adjacency,
+        HashSet<string> visited,
+        Dictionary<string, int> discovery,
+        Dictionary<string, int> low,
+        Dictionary<string, string?> parent,
+        HashSet<string> articulationPoints,
+        ref int time)
+    {
+        visited.Add(nodeId);
+        discovery[nodeId] = low[nodeId] = ++time;
+        var childCount = 0;
+
+        foreach (var neighbor in adjacency[nodeId].Order(StringComparer.Ordinal))
+        {
+            if (!visited.Contains(neighbor))
+            {
+                childCount++;
+                parent[neighbor] = nodeId;
+                DepthFirstSearch(neighbor, adjacency, visited, discovery, low, parent, articulationPoints, ref time);
+                low[nodeId] = Math.Min(low[nodeId], low[neighbor]);
+
+                var isRoot = !parent.ContainsKey(nodeId);
+                if ((isRoot && childCount > 1) ||
+                    (!isRoot && low[neighbor] >= discovery[nodeId]))
+                {
+                    articulationPoints.Add(nodeId);
+                }
+            }
+            else if (!string.Equals(parent.GetValueOrDefault(nodeId), neighbor, StringComparison.Ordinal))
+            {
+                low[nodeId] = Math.Min(low[nodeId], discovery[neighbor]);
+            }
+        }
+    }
+
+    private static IReadOnlyCollection<CollectorTopologyLinkSummary> BuildStrongestLinks(
+        IReadOnlyCollection<CollectorMapLinkSummary> currentLinks,
+        IReadOnlyCollection<CollectorNeighborLinkHourlyRollup> rollups,
+        IReadOnlyDictionary<string, MeshBoard.Contracts.Nodes.NodeSummary> nodeById,
+        int topCount)
+    {
+        var rollupsByKey = rollups
+            .GroupBy(rollup => CreateLinkKey(rollup.SourceNodeId, rollup.TargetNodeId), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+
+        return currentLinks
+            .Select(link =>
+            {
+                var linkKey = CreateLinkKey(link.SourceNodeId, link.TargetNodeId);
+                var sourceNode = nodeById.GetValueOrDefault(link.SourceNodeId);
+                var targetNode = nodeById.GetValueOrDefault(link.TargetNodeId);
+
+                if (!rollupsByKey.TryGetValue(linkKey, out var matchingRollups) || matchingRollups.Length == 0)
+                {
+                    return new CollectorTopologyLinkSummary
+                    {
+                        SourceNodeId = link.SourceNodeId,
+                        TargetNodeId = link.TargetNodeId,
+                        SourceShortName = sourceNode?.ShortName,
+                        SourceLongName = sourceNode?.LongName,
+                        TargetShortName = targetNode?.ShortName,
+                        TargetLongName = targetNode?.LongName,
+                        ObservationCount = 1,
+                        AverageSnrDb = link.SnrDb,
+                        MaxSnrDb = link.SnrDb,
+                        LastSnrDb = link.SnrDb
+                    };
+                }
+
+                var totalObservationCount = matchingRollups.Sum(rollup => rollup.ObservationCount);
+                var weightedSnrObservations = matchingRollups
+                    .Where(rollup => rollup.AverageSnrDb.HasValue)
+                    .Sum(rollup => rollup.ObservationCount);
+                var weightedSnrSum = matchingRollups
+                    .Where(rollup => rollup.AverageSnrDb.HasValue)
+                    .Sum(rollup => rollup.AverageSnrDb!.Value * rollup.ObservationCount);
+                var latestRollup = matchingRollups
+                    .OrderByDescending(rollup => rollup.LastSeenAtUtc)
+                    .ThenByDescending(rollup => rollup.ObservationCount)
+                    .First();
+
+                return new CollectorTopologyLinkSummary
+                {
+                    SourceNodeId = link.SourceNodeId,
+                    TargetNodeId = link.TargetNodeId,
+                    SourceShortName = sourceNode?.ShortName,
+                    SourceLongName = sourceNode?.LongName,
+                    TargetShortName = targetNode?.ShortName,
+                    TargetLongName = targetNode?.LongName,
+                    ObservationCount = totalObservationCount,
+                    AverageSnrDb = weightedSnrObservations > 0 ? weightedSnrSum / weightedSnrObservations : link.SnrDb,
+                    MaxSnrDb = matchingRollups
+                        .Where(rollup => rollup.MaxSnrDb.HasValue)
+                        .Select(rollup => rollup.MaxSnrDb!.Value)
+                        .DefaultIfEmpty(link.SnrDb ?? float.MinValue)
+                        .Max() is var maxSnr && maxSnr != float.MinValue ? maxSnr : link.SnrDb,
+                    LastSnrDb = latestRollup.LastSnrDb ?? link.SnrDb
+                };
+            })
+            .OrderByDescending(link => link.ObservationCount)
+            .ThenByDescending(link => link.AverageSnrDb ?? float.MinValue)
+            .ThenByDescending(link => link.MaxSnrDb ?? float.MinValue)
+            .ThenBy(link => link.SourceNodeId, StringComparer.Ordinal)
+            .ThenBy(link => link.TargetNodeId, StringComparer.Ordinal)
+            .Take(topCount)
+            .ToArray();
+    }
+
+    private static CollectorTopologyNodeSummary MapTopologyNode(
+        MeshBoard.Contracts.Nodes.NodeSummary node,
+        int degree,
+        int componentSize)
+    {
+        return new CollectorTopologyNodeSummary
+        {
+            NodeId = node.NodeId,
+            ShortName = node.ShortName,
+            LongName = node.LongName,
+            Degree = degree,
+            ComponentSize = componentSize
+        };
+    }
+
+    private static string CreateLinkKey(string sourceNodeId, string targetNodeId)
+    {
+        return string.CompareOrdinal(sourceNodeId, targetNodeId) <= 0
+            ? $"{sourceNodeId}|{targetNodeId}"
+            : $"{targetNodeId}|{sourceNodeId}";
+    }
+
+    private sealed record GraphComponent(IReadOnlyList<string> NodeIds, int LinkCount)
+    {
+        public int NodeCount => NodeIds.Count;
     }
 }

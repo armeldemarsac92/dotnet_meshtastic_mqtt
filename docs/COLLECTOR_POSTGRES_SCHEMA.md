@@ -231,8 +231,15 @@ The first read-only public collector endpoints now exist in the API:
 - `GET /api/public/collector/stats/channel-packets`
 - `GET /api/public/collector/stats/node-packets`
 - `GET /api/public/collector/stats/neighbor-links`
+- `GET /api/public/collector/topology`
 
 Those endpoints are intentionally limited to current-state map reads and bounded hourly analytics over the normalized collector tables.
+
+The topology endpoint is intentionally broader than the map snapshot:
+
+- it resolves active nodes even when they do not have coordinates
+- it computes connected components, isolated nodes, articulation-point bridge nodes, and strongest active links
+- it uses the current `collector_neighbor_links` graph plus hourly link rollups for strength/stability ranking
 
 ## Not Included Yet
 

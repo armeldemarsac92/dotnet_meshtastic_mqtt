@@ -69,6 +69,40 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         )
         """;
 
+    private const string LatestTopologyNodesCte =
+        FilteredChannelsCte +
+        """
+        ,
+        latest_nodes AS (
+            SELECT DISTINCT ON (n.node_id)
+                n.node_id AS NodeId,
+                fc.ServerAddress AS BrokerServer,
+                n.short_name AS ShortName,
+                n.long_name AS LongName,
+                n.last_heard_at_utc::text AS LastHeardAtUtc,
+                CONCAT(fc.Region, '/', fc.ChannelName) AS LastHeardChannel,
+                n.last_text_message_at_utc::text AS LastTextMessageAtUtc,
+                n.last_known_latitude AS LastKnownLatitude,
+                n.last_known_longitude AS LastKnownLongitude,
+                n.battery_level_percent AS BatteryLevelPercent,
+                n.voltage AS Voltage,
+                n.channel_utilization AS ChannelUtilization,
+                n.air_util_tx AS AirUtilTx,
+                n.uptime_seconds AS UptimeSeconds,
+                n.temperature_celsius AS TemperatureCelsius,
+                n.relative_humidity AS RelativeHumidity,
+                n.barometric_pressure AS BarometricPressure
+            FROM collector_nodes n
+            INNER JOIN filtered_channels fc
+                ON fc.ChannelId = n.channel_id
+            WHERE n.workspace_id = @WorkspaceId
+              AND COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) >= @NotBeforeUtc
+            ORDER BY n.node_id,
+                     COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) DESC NULLS LAST,
+                     n.id DESC
+        )
+        """;
+
     private readonly IDbContext _dbContext;
 
     public CollectorReadRepository(IDbContext dbContext)
@@ -210,6 +244,74 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
 
         var responses = await _dbContext.QueryAsync<CollectorMapLinkSqlResponse>(
             LatestMapNodesCte +
+            """
+            SELECT
+                l.source_node_id AS SourceNodeId,
+                l.target_node_id AS TargetNodeId,
+                l.snr_db AS SnrDb,
+                l.last_seen_at_utc::text AS LastSeenAtUtc,
+                fc.ServerAddress,
+                fc.Region,
+                fc.MeshVersion,
+                fc.ChannelName
+            FROM collector_neighbor_links l
+            INNER JOIN filtered_channels fc
+                ON fc.ChannelId = l.channel_id
+            INNER JOIN latest_nodes source_node
+                ON source_node.NodeId = l.source_node_id
+            INNER JOIN latest_nodes target_node
+                ON target_node.NodeId = l.target_node_id
+            WHERE l.workspace_id = @WorkspaceId
+              AND l.last_seen_at_utc >= @NotBeforeUtc
+            ORDER BY l.last_seen_at_utc DESC,
+                     l.source_node_id ASC,
+                     l.target_node_id ASC
+            LIMIT @MaxLinks;
+            """,
+            parameters,
+            cancellationToken);
+
+        return responses.Select(MapLink).ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<NodeSummary>> GetTopologyNodesAsync(
+        string workspaceId,
+        CollectorTopologyQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = CreateTopologyParameters(workspaceId, query);
+        parameters.Add("NotBeforeUtc", notBeforeUtc);
+        parameters.Add("MaxNodes", query.MaxNodes);
+
+        var responses = await _dbContext.QueryAsync<NodeSqlResponse>(
+            LatestTopologyNodesCte +
+            """
+            SELECT *
+            FROM latest_nodes
+            ORDER BY COALESCE(LastHeardAtUtc, LastTextMessageAtUtc, '') DESC,
+                     COALESCE(LongName, ShortName, NodeId) ASC,
+                     NodeId ASC
+            LIMIT @MaxNodes;
+            """,
+            parameters,
+            cancellationToken);
+
+        return responses.MapToNodes();
+    }
+
+    public async Task<IReadOnlyCollection<CollectorMapLinkSummary>> GetTopologyLinksAsync(
+        string workspaceId,
+        CollectorTopologyQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = CreateTopologyParameters(workspaceId, query);
+        parameters.Add("NotBeforeUtc", notBeforeUtc);
+        parameters.Add("MaxLinks", query.MaxLinks);
+
+        var responses = await _dbContext.QueryAsync<CollectorMapLinkSqlResponse>(
+            LatestTopologyNodesCte +
             """
             SELECT
                 l.source_node_id AS SourceNodeId,
@@ -432,6 +534,16 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         parameters.Add("ChannelName", query.ChannelName ?? string.Empty);
         parameters.Add("NodeId", query.NodeId ?? string.Empty);
         parameters.Add("PacketType", query.PacketType ?? string.Empty);
+        return parameters;
+    }
+
+    private static DynamicParameters CreateTopologyParameters(string workspaceId, CollectorTopologyQuery query)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("WorkspaceId", workspaceId.Trim());
+        parameters.Add("ServerAddress", query.ServerAddress ?? string.Empty);
+        parameters.Add("Region", query.Region ?? string.Empty);
+        parameters.Add("ChannelName", query.ChannelName ?? string.Empty);
         return parameters;
     }
 

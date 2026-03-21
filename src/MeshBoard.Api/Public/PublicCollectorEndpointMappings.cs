@@ -112,6 +112,25 @@ internal static class PublicCollectorEndpointMappings
                 return Results.Ok(snapshot);
             });
 
+        group.MapGet(
+            "/topology",
+            async Task<IResult> (
+                [FromQuery(Name = "serverAddress")] string? serverAddress,
+                [FromQuery] string? region,
+                [FromQuery] string? channelName,
+                [FromQuery] int? activeWithinHours,
+                [FromQuery] int? maxNodes,
+                [FromQuery] int? maxLinks,
+                [FromQuery] int? topCount,
+                ICollectorReadService collectorReadService,
+                CancellationToken cancellationToken) =>
+            {
+                var snapshot = await collectorReadService.GetTopologySnapshot(
+                    CreateTopologyQuery(serverAddress, region, channelName, activeWithinHours, maxNodes, maxLinks, topCount),
+                    cancellationToken);
+                return Results.Ok(snapshot);
+            });
+
         return endpoints;
     }
 
@@ -173,6 +192,27 @@ internal static class PublicCollectorEndpointMappings
             TargetNodeId = targetNodeId,
             LookbackHours = lookbackHours ?? 24 * 7,
             MaxRows = maxRows ?? 500
+        };
+    }
+
+    private static CollectorTopologyQuery CreateTopologyQuery(
+        string? serverAddress,
+        string? region,
+        string? channelName,
+        int? activeWithinHours,
+        int? maxNodes,
+        int? maxLinks,
+        int? topCount)
+    {
+        return new CollectorTopologyQuery
+        {
+            ServerAddress = serverAddress,
+            Region = region,
+            ChannelName = channelName,
+            ActiveWithinHours = activeWithinHours ?? 24,
+            MaxNodes = maxNodes ?? 10_000,
+            MaxLinks = maxLinks ?? 20_000,
+            TopCount = topCount ?? 10
         };
     }
 }

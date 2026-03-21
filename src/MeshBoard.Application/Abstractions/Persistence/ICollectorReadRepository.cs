@@ -26,6 +26,18 @@ public interface ICollectorReadRepository
         DateTimeOffset notBeforeUtc,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<NodeSummary>> GetTopologyNodesAsync(
+        string workspaceId,
+        CollectorTopologyQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<CollectorMapLinkSummary>> GetTopologyLinksAsync(
+        string workspaceId,
+        CollectorTopologyQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<CollectorChannelPacketHourlyRollup>> GetChannelPacketRollupsAsync(
         string workspaceId,
         CollectorPacketStatsQuery query,
