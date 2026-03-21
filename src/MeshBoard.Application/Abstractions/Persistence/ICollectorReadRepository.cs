@@ -37,4 +37,10 @@ public interface ICollectorReadRepository
         CollectorPacketStatsQuery query,
         DateTimeOffset notBeforeUtc,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<CollectorNeighborLinkHourlyRollup>> GetNeighborLinkRollupsAsync(
+        string workspaceId,
+        CollectorNeighborLinkStatsQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default);
 }

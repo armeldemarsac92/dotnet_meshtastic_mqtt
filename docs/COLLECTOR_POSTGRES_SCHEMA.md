@@ -185,6 +185,33 @@ Uniqueness:
 
 - `(workspace_id, channel_id, bucket_start_utc, node_id, packet_type)`
 
+### `collector_neighbor_link_hourly_rollups`
+
+Hourly link-observation counts and SNR aggregates per canonical link within a channel.
+
+Key columns:
+
+- `workspace_id`
+- `channel_id`
+- `bucket_start_utc`
+- `source_node_id`
+- `target_node_id`
+- `observation_count`
+- `snr_sample_count`
+- `snr_sum_db`
+- `max_snr_db`
+- `last_snr_db`
+- `first_seen_at_utc`
+- `last_seen_at_utc`
+
+Relationships:
+
+- `channel_id -> collector_channels.id`
+
+Uniqueness:
+
+- `(workspace_id, channel_id, bucket_start_utc, source_node_id, target_node_id)`
+
 ## Why This Shape
 
 Compared to the old denormalized collector tables:
@@ -203,8 +230,9 @@ The first read-only public collector endpoints now exist in the API:
 - `GET /api/public/collector/snapshot`
 - `GET /api/public/collector/stats/channel-packets`
 - `GET /api/public/collector/stats/node-packets`
+- `GET /api/public/collector/stats/neighbor-links`
 
-Those endpoints are intentionally limited to current-state map reads and bounded hourly packet analytics over the normalized collector tables.
+Those endpoints are intentionally limited to current-state map reads and bounded hourly analytics over the normalized collector tables.
 
 ## Not Included Yet
 

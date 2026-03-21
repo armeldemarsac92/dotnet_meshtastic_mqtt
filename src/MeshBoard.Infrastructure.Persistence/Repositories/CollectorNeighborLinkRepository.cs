@@ -79,6 +79,8 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
                     link.LastSeenAtUtc
                 },
                 cancellationToken);
+
+            await RecordHourlyRollupAsync(normalizedWorkspaceId, channelId, link, cancellationToken);
         }
     }
 
@@ -170,5 +172,86 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
         }
 
         return canonicalLinks.Values.ToArray();
+    }
+
+    private async Task RecordHourlyRollupAsync(
+        string workspaceId,
+        long channelId,
+        NeighborLinkRecord link,
+        CancellationToken cancellationToken)
+    {
+        var bucketStartUtc = GetBucketStartUtc(link.LastSeenAtUtc);
+        var hasSnr = link.SnrDb.HasValue;
+        var snrValue = link.SnrDb ?? 0f;
+
+        await _dbContext.ExecuteAsync(
+            """
+            INSERT INTO collector_neighbor_link_hourly_rollups (
+                workspace_id,
+                channel_id,
+                bucket_start_utc,
+                source_node_id,
+                target_node_id,
+                observation_count,
+                snr_sample_count,
+                snr_sum_db,
+                max_snr_db,
+                last_snr_db,
+                first_seen_at_utc,
+                last_seen_at_utc)
+            VALUES (
+                @WorkspaceId,
+                @ChannelId,
+                @BucketStartUtc,
+                @SourceNodeId,
+                @TargetNodeId,
+                1,
+                @SnrSampleCount,
+                @SnrSumDb,
+                @MaxSnrDb,
+                @LastSnrDb,
+                @ObservedAtUtc,
+                @ObservedAtUtc)
+            ON CONFLICT(workspace_id, channel_id, bucket_start_utc, source_node_id, target_node_id) DO UPDATE SET
+                observation_count = collector_neighbor_link_hourly_rollups.observation_count + 1,
+                snr_sample_count = collector_neighbor_link_hourly_rollups.snr_sample_count + EXCLUDED.snr_sample_count,
+                snr_sum_db = collector_neighbor_link_hourly_rollups.snr_sum_db + EXCLUDED.snr_sum_db,
+                max_snr_db = CASE
+                    WHEN EXCLUDED.snr_sample_count = 0 THEN collector_neighbor_link_hourly_rollups.max_snr_db
+                    WHEN collector_neighbor_link_hourly_rollups.max_snr_db IS NULL THEN EXCLUDED.max_snr_db
+                    ELSE GREATEST(collector_neighbor_link_hourly_rollups.max_snr_db, EXCLUDED.max_snr_db)
+                END,
+                last_snr_db = CASE
+                    WHEN EXCLUDED.last_seen_at_utc >= collector_neighbor_link_hourly_rollups.last_seen_at_utc
+                        THEN COALESCE(EXCLUDED.last_snr_db, collector_neighbor_link_hourly_rollups.last_snr_db)
+                    ELSE collector_neighbor_link_hourly_rollups.last_snr_db
+                END,
+                first_seen_at_utc = LEAST(
+                    collector_neighbor_link_hourly_rollups.first_seen_at_utc,
+                    EXCLUDED.first_seen_at_utc),
+                last_seen_at_utc = GREATEST(
+                    collector_neighbor_link_hourly_rollups.last_seen_at_utc,
+                    EXCLUDED.last_seen_at_utc);
+            """,
+            new
+            {
+                WorkspaceId = workspaceId,
+                ChannelId = channelId,
+                BucketStartUtc = bucketStartUtc,
+                link.SourceNodeId,
+                link.TargetNodeId,
+                SnrSampleCount = hasSnr ? 1 : 0,
+                SnrSumDb = hasSnr ? snrValue : 0,
+                MaxSnrDb = hasSnr ? link.SnrDb : null,
+                LastSnrDb = hasSnr ? link.SnrDb : null,
+                ObservedAtUtc = link.LastSeenAtUtc
+            },
+            cancellationToken);
+    }
+
+    private static DateTimeOffset GetBucketStartUtc(DateTimeOffset observedAtUtc)
+    {
+        var utc = observedAtUtc.ToUniversalTime();
+        return new DateTimeOffset(utc.Year, utc.Month, utc.Day, utc.Hour, 0, 0, TimeSpan.Zero);
     }
 }

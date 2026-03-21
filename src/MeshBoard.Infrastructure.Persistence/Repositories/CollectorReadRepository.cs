@@ -352,6 +352,67 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         return responses.Select(MapNodePacketRollup).ToArray();
     }
 
+    public async Task<IReadOnlyCollection<CollectorNeighborLinkHourlyRollup>> GetNeighborLinkRollupsAsync(
+        string workspaceId,
+        CollectorNeighborLinkStatsQuery query,
+        DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var parameters = CreateNeighborLinkStatsParameters(workspaceId, query);
+        parameters.Add("NotBeforeUtc", notBeforeUtc);
+        parameters.Add("MaxRows", query.MaxRows);
+
+        var responses = await _dbContext.QueryAsync<CollectorNeighborLinkHourlyRollupSqlResponse>(
+            FilteredChannelsCte +
+            """
+            SELECT
+                r.bucket_start_utc::text AS BucketStartUtc,
+                fc.ServerAddress,
+                fc.Region,
+                fc.MeshVersion,
+                fc.ChannelName,
+                r.source_node_id AS SourceNodeId,
+                r.target_node_id AS TargetNodeId,
+                source_node.short_name AS SourceShortName,
+                source_node.long_name AS SourceLongName,
+                target_node.short_name AS TargetShortName,
+                target_node.long_name AS TargetLongName,
+                r.observation_count AS ObservationCount,
+                CASE
+                    WHEN r.snr_sample_count > 0 THEN (r.snr_sum_db / r.snr_sample_count)::real
+                    ELSE NULL
+                END AS AverageSnrDb,
+                r.max_snr_db AS MaxSnrDb,
+                r.last_snr_db AS LastSnrDb,
+                r.first_seen_at_utc::text AS FirstSeenAtUtc,
+                r.last_seen_at_utc::text AS LastSeenAtUtc
+            FROM collector_neighbor_link_hourly_rollups r
+            INNER JOIN filtered_channels fc
+                ON fc.ChannelId = r.channel_id
+            LEFT JOIN collector_nodes source_node
+                ON source_node.workspace_id = r.workspace_id
+               AND source_node.channel_id = r.channel_id
+               AND source_node.node_id = r.source_node_id
+            LEFT JOIN collector_nodes target_node
+                ON target_node.workspace_id = r.workspace_id
+               AND target_node.channel_id = r.channel_id
+               AND target_node.node_id = r.target_node_id
+            WHERE r.workspace_id = @WorkspaceId
+              AND r.bucket_start_utc >= @NotBeforeUtc
+              AND (@SourceNodeId = '' OR r.source_node_id = @SourceNodeId)
+              AND (@TargetNodeId = '' OR r.target_node_id = @TargetNodeId)
+            ORDER BY r.bucket_start_utc DESC,
+                     r.observation_count DESC,
+                     r.source_node_id ASC,
+                     r.target_node_id ASC
+            LIMIT @MaxRows;
+            """,
+            parameters,
+            cancellationToken);
+
+        return responses.Select(MapNeighborLinkRollup).ToArray();
+    }
+
     private static DynamicParameters CreateFilterParameters(string workspaceId, CollectorMapQuery query)
     {
         var parameters = new DynamicParameters();
@@ -371,6 +432,18 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         parameters.Add("ChannelName", query.ChannelName ?? string.Empty);
         parameters.Add("NodeId", query.NodeId ?? string.Empty);
         parameters.Add("PacketType", query.PacketType ?? string.Empty);
+        return parameters;
+    }
+
+    private static DynamicParameters CreateNeighborLinkStatsParameters(string workspaceId, CollectorNeighborLinkStatsQuery query)
+    {
+        var parameters = new DynamicParameters();
+        parameters.Add("WorkspaceId", workspaceId.Trim());
+        parameters.Add("ServerAddress", query.ServerAddress ?? string.Empty);
+        parameters.Add("Region", query.Region ?? string.Empty);
+        parameters.Add("ChannelName", query.ChannelName ?? string.Empty);
+        parameters.Add("SourceNodeId", query.SourceNodeId ?? string.Empty);
+        parameters.Add("TargetNodeId", query.TargetNodeId ?? string.Empty);
         return parameters;
     }
 
@@ -451,6 +524,30 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             LongName = response.LongName,
             PacketType = response.PacketType,
             PacketCount = response.PacketCount,
+            FirstSeenAtUtc = ParseTimestamp(response.FirstSeenAtUtc),
+            LastSeenAtUtc = ParseTimestamp(response.LastSeenAtUtc)
+        };
+    }
+
+    private static CollectorNeighborLinkHourlyRollup MapNeighborLinkRollup(CollectorNeighborLinkHourlyRollupSqlResponse response)
+    {
+        return new CollectorNeighborLinkHourlyRollup
+        {
+            BucketStartUtc = ParseTimestamp(response.BucketStartUtc),
+            ServerAddress = response.ServerAddress,
+            Region = response.Region,
+            MeshVersion = response.MeshVersion,
+            ChannelName = response.ChannelName,
+            SourceNodeId = response.SourceNodeId,
+            TargetNodeId = response.TargetNodeId,
+            SourceShortName = response.SourceShortName,
+            SourceLongName = response.SourceLongName,
+            TargetShortName = response.TargetShortName,
+            TargetLongName = response.TargetLongName,
+            ObservationCount = response.ObservationCount,
+            AverageSnrDb = response.AverageSnrDb,
+            MaxSnrDb = response.MaxSnrDb,
+            LastSnrDb = response.LastSnrDb,
             FirstSeenAtUtc = ParseTimestamp(response.FirstSeenAtUtc),
             LastSeenAtUtc = ParseTimestamp(response.LastSeenAtUtc)
         };

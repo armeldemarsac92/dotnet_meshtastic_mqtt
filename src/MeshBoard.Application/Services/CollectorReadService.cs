@@ -25,6 +25,10 @@ public interface ICollectorReadService
     Task<CollectorNodePacketStatsSnapshot> GetNodePacketStats(
         CollectorPacketStatsQuery? query = null,
         CancellationToken cancellationToken = default);
+
+    Task<CollectorNeighborLinkStatsSnapshot> GetNeighborLinkStats(
+        CollectorNeighborLinkStatsQuery? query = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class CollectorReadService : ICollectorReadService
@@ -209,6 +213,44 @@ public sealed class CollectorReadService : ICollectorReadService
         };
     }
 
+    public async Task<CollectorNeighborLinkStatsSnapshot> GetNeighborLinkStats(
+        CollectorNeighborLinkStatsQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sanitizedQuery = SanitizeNeighborLinkStatsQuery(query);
+        var generatedAtUtc = _timeProvider.GetUtcNow();
+        var notBeforeUtc = generatedAtUtc.AddHours(-sanitizedQuery.LookbackHours);
+
+        _logger.LogDebug(
+            "Attempting to fetch collector neighbor-link stats for server {ServerAddress}, region {Region}, channel {ChannelName}, source {SourceNodeId}, target {TargetNodeId}, lookback {LookbackHours} hours",
+            sanitizedQuery.ServerAddress,
+            sanitizedQuery.Region,
+            sanitizedQuery.ChannelName,
+            sanitizedQuery.SourceNodeId,
+            sanitizedQuery.TargetNodeId,
+            sanitizedQuery.LookbackHours);
+
+        var rollups = await _collectorReadRepository.GetNeighborLinkRollupsAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            sanitizedQuery,
+            notBeforeUtc,
+            cancellationToken);
+
+        return new CollectorNeighborLinkStatsSnapshot
+        {
+            GeneratedAtUtc = generatedAtUtc,
+            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
+            ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
+            Region = NullIfEmpty(sanitizedQuery.Region),
+            ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
+            SourceNodeId = NullIfEmpty(sanitizedQuery.SourceNodeId),
+            TargetNodeId = NullIfEmpty(sanitizedQuery.TargetNodeId),
+            LookbackHours = sanitizedQuery.LookbackHours,
+            RowCount = rollups.Count,
+            Rollups = rollups
+        };
+    }
+
     private static CollectorMapQuery SanitizeQuery(CollectorMapQuery? query)
     {
         return new CollectorMapQuery
@@ -231,6 +273,20 @@ public sealed class CollectorReadService : ICollectorReadService
             ChannelName = Normalize(query?.ChannelName),
             NodeId = Normalize(query?.NodeId),
             PacketType = Normalize(query?.PacketType),
+            LookbackHours = Clamp(query?.LookbackHours ?? DefaultStatsLookbackHours, 1, MaxStatsLookbackHours),
+            MaxRows = Clamp(query?.MaxRows ?? DefaultStatsMaxRows, 1, MaxStatsRows)
+        };
+    }
+
+    private static CollectorNeighborLinkStatsQuery SanitizeNeighborLinkStatsQuery(CollectorNeighborLinkStatsQuery? query)
+    {
+        return new CollectorNeighborLinkStatsQuery
+        {
+            ServerAddress = Normalize(query?.ServerAddress),
+            Region = Normalize(query?.Region),
+            ChannelName = Normalize(query?.ChannelName),
+            SourceNodeId = Normalize(query?.SourceNodeId),
+            TargetNodeId = Normalize(query?.TargetNodeId),
             LookbackHours = Clamp(query?.LookbackHours ?? DefaultStatsLookbackHours, 1, MaxStatsLookbackHours),
             MaxRows = Clamp(query?.MaxRows ?? DefaultStatsMaxRows, 1, MaxStatsRows)
         };

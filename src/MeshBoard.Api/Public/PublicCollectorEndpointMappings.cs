@@ -93,6 +93,25 @@ internal static class PublicCollectorEndpointMappings
                 return Results.Ok(snapshot);
             });
 
+        group.MapGet(
+            "/stats/neighbor-links",
+            async Task<IResult> (
+                [FromQuery(Name = "serverAddress")] string? serverAddress,
+                [FromQuery] string? region,
+                [FromQuery] string? channelName,
+                [FromQuery] string? sourceNodeId,
+                [FromQuery] string? targetNodeId,
+                [FromQuery] int? lookbackHours,
+                [FromQuery] int? maxRows,
+                ICollectorReadService collectorReadService,
+                CancellationToken cancellationToken) =>
+            {
+                var snapshot = await collectorReadService.GetNeighborLinkStats(
+                    CreateNeighborLinkStatsQuery(serverAddress, region, channelName, sourceNodeId, targetNodeId, lookbackHours, maxRows),
+                    cancellationToken);
+                return Results.Ok(snapshot);
+            });
+
         return endpoints;
     }
 
@@ -131,6 +150,27 @@ internal static class PublicCollectorEndpointMappings
             ChannelName = channelName,
             NodeId = nodeId,
             PacketType = packetType,
+            LookbackHours = lookbackHours ?? 24 * 7,
+            MaxRows = maxRows ?? 500
+        };
+    }
+
+    private static CollectorNeighborLinkStatsQuery CreateNeighborLinkStatsQuery(
+        string? serverAddress,
+        string? region,
+        string? channelName,
+        string? sourceNodeId,
+        string? targetNodeId,
+        int? lookbackHours,
+        int? maxRows)
+    {
+        return new CollectorNeighborLinkStatsQuery
+        {
+            ServerAddress = serverAddress,
+            Region = region,
+            ChannelName = channelName,
+            SourceNodeId = sourceNodeId,
+            TargetNodeId = targetNodeId,
             LookbackHours = lookbackHours ?? 24 * 7,
             MaxRows = maxRows ?? 500
         };
