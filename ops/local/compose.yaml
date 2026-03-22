@@ -116,6 +116,21 @@ services:
       RealtimeDownstreamBroker__Password: meshboard-bridge-local-secret
     restart: unless-stopped
 
+  meshboard-collector:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Collector/Dockerfile
+    container_name: meshboard-collector
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      MeshtasticRuntime__EnableHostedService: "true"
+      Persistence__Provider: PostgreSQL
+      Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
+    restart: unless-stopped
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: meshboard-cloudflared

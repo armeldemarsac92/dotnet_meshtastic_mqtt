@@ -2,7 +2,6 @@ using System.Net;
 using MeshBoard.Api.SDK.API;
 using MeshBoard.Client.Authentication;
 using MeshBoard.Client.Channels;
-using MeshBoard.Client.Maps;
 using MeshBoard.Client.Messages;
 using MeshBoard.Client.Nodes;
 using MeshBoard.Client.Realtime;
@@ -21,9 +20,7 @@ public sealed class AuthApiClient
     private readonly DecryptedMessageStore _decryptedMessageStore;
     private readonly LiveMessageFeedService _liveMessageFeedService;
     private readonly LocalVaultService _localVaultService;
-    private readonly MapProjectionStore _mapProjectionStore;
     private readonly NodeProjectionStore _nodeProjectionStore;
-    private readonly RadioLinkProjectionStore _radioLinkProjectionStore;
 
     public AuthApiClient(
         IAuthApi authApi,
@@ -34,9 +31,7 @@ public sealed class AuthApiClient
         DecryptedMessageStore decryptedMessageStore,
         LiveMessageFeedService liveMessageFeedService,
         LocalVaultService localVaultService,
-        MapProjectionStore mapProjectionStore,
-        NodeProjectionStore nodeProjectionStore,
-        RadioLinkProjectionStore radioLinkProjectionStore)
+        NodeProjectionStore nodeProjectionStore)
     {
         _authApi = authApi;
         _antiforgeryTokenProvider = antiforgeryTokenProvider;
@@ -46,9 +41,7 @@ public sealed class AuthApiClient
         _decryptedMessageStore = decryptedMessageStore;
         _liveMessageFeedService = liveMessageFeedService;
         _localVaultService = localVaultService;
-        _mapProjectionStore = mapProjectionStore;
         _nodeProjectionStore = nodeProjectionStore;
-        _radioLinkProjectionStore = radioLinkProjectionStore;
     }
 
     public async Task<AuthenticatedUserResponse?> LoginAsync(
@@ -111,9 +104,7 @@ public sealed class AuthApiClient
             _channelProjectionStore.Clear();
             _decryptedMessageStore.Clear();
             _liveMessageFeedService.Clear();
-            _mapProjectionStore.Clear();
             _nodeProjectionStore.Clear();
-            _radioLinkProjectionStore.Clear();
         }
     }
 

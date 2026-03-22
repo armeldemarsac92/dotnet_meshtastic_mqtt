@@ -16,6 +16,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         WITH filtered_channels AS (
             SELECT
                 c.id AS ChannelId,
+                c.server_id AS ServerId,
                 s.server_address AS ServerAddress,
                 c.region AS Region,
                 c.mesh_version AS MeshVersion,
@@ -26,8 +27,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             FROM collector_channels c
             INNER JOIN collector_servers s
                 ON s.id = c.server_id
-            WHERE c.workspace_id = @WorkspaceId
-              AND (@ServerAddress = '' OR s.server_address = @ServerAddress)
+            WHERE (@ServerAddress = '' OR s.server_address = @ServerAddress)
               AND (@Region = '' OR c.region = @Region)
               AND (@ChannelName = '' OR c.channel_name = @ChannelName)
         )
@@ -37,14 +37,36 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         FilteredChannelsCte +
         """
         ,
+        active_filtered_nodes AS (
+            SELECT DISTINCT
+                n.server_id AS ServerId,
+                n.node_id AS NodeId
+            FROM collector_nodes n
+            INNER JOIN filtered_channels fc
+                ON fc.ServerId = n.server_id
+               AND ((@Region = '' AND @ChannelName = '') OR n.last_heard_channel_id = fc.ChannelId)
+            WHERE COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) >= @NotBeforeUtc
+            UNION
+            SELECT DISTINCT
+                fc.ServerId,
+                r.node_id AS NodeId
+            FROM collector_node_packet_hourly_rollups r
+            INNER JOIN filtered_channels fc
+                ON fc.ChannelId = r.channel_id
+            WHERE r.bucket_start_utc >= date_trunc('hour', @NotBeforeUtc)
+        ),
         latest_nodes AS (
-            SELECT DISTINCT ON (n.node_id)
+            SELECT
+                n.server_id AS ServerId,
                 n.node_id AS NodeId,
-                fc.ServerAddress AS BrokerServer,
+                s.server_address AS BrokerServer,
                 n.short_name AS ShortName,
                 n.long_name AS LongName,
                 n.last_heard_at_utc::text AS LastHeardAtUtc,
-                CONCAT(fc.Region, '/', fc.ChannelName) AS LastHeardChannel,
+                CASE
+                    WHEN last_channel.id IS NULL THEN NULL
+                    ELSE CONCAT(last_channel.region, '/', last_channel.channel_name)
+                END AS LastHeardChannel,
                 n.last_text_message_at_utc::text AS LastTextMessageAtUtc,
                 n.last_known_latitude AS LastKnownLatitude,
                 n.last_known_longitude AS LastKnownLongitude,
@@ -57,15 +79,16 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
                 n.relative_humidity AS RelativeHumidity,
                 n.barometric_pressure AS BarometricPressure
             FROM collector_nodes n
-            INNER JOIN filtered_channels fc
-                ON fc.ChannelId = n.channel_id
-            WHERE n.workspace_id = @WorkspaceId
-              AND n.last_known_latitude IS NOT NULL
+            INNER JOIN collector_servers s
+                ON s.id = n.server_id
+            LEFT JOIN collector_channels last_channel
+                ON last_channel.id = n.last_heard_channel_id
+            INNER JOIN active_filtered_nodes active_nodes
+                ON active_nodes.ServerId = n.server_id
+               AND active_nodes.NodeId = n.node_id
+            WHERE n.last_known_latitude IS NOT NULL
               AND n.last_known_longitude IS NOT NULL
               AND COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) >= @NotBeforeUtc
-            ORDER BY n.node_id,
-                     COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) DESC NULLS LAST,
-                     n.id DESC
         )
         """;
 
@@ -73,14 +96,36 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         FilteredChannelsCte +
         """
         ,
+        active_filtered_nodes AS (
+            SELECT DISTINCT
+                n.server_id AS ServerId,
+                n.node_id AS NodeId
+            FROM collector_nodes n
+            INNER JOIN filtered_channels fc
+                ON fc.ServerId = n.server_id
+               AND ((@Region = '' AND @ChannelName = '') OR n.last_heard_channel_id = fc.ChannelId)
+            WHERE COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) >= @NotBeforeUtc
+            UNION
+            SELECT DISTINCT
+                fc.ServerId,
+                r.node_id AS NodeId
+            FROM collector_node_packet_hourly_rollups r
+            INNER JOIN filtered_channels fc
+                ON fc.ChannelId = r.channel_id
+            WHERE r.bucket_start_utc >= date_trunc('hour', @NotBeforeUtc)
+        ),
         latest_nodes AS (
-            SELECT DISTINCT ON (n.node_id)
+            SELECT
+                n.server_id AS ServerId,
                 n.node_id AS NodeId,
-                fc.ServerAddress AS BrokerServer,
+                s.server_address AS BrokerServer,
                 n.short_name AS ShortName,
                 n.long_name AS LongName,
                 n.last_heard_at_utc::text AS LastHeardAtUtc,
-                CONCAT(fc.Region, '/', fc.ChannelName) AS LastHeardChannel,
+                CASE
+                    WHEN last_channel.id IS NULL THEN NULL
+                    ELSE CONCAT(last_channel.region, '/', last_channel.channel_name)
+                END AS LastHeardChannel,
                 n.last_text_message_at_utc::text AS LastTextMessageAtUtc,
                 n.last_known_latitude AS LastKnownLatitude,
                 n.last_known_longitude AS LastKnownLongitude,
@@ -93,13 +138,14 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
                 n.relative_humidity AS RelativeHumidity,
                 n.barometric_pressure AS BarometricPressure
             FROM collector_nodes n
-            INNER JOIN filtered_channels fc
-                ON fc.ChannelId = n.channel_id
-            WHERE n.workspace_id = @WorkspaceId
-              AND COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) >= @NotBeforeUtc
-            ORDER BY n.node_id,
-                     COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) DESC NULLS LAST,
-                     n.id DESC
+            INNER JOIN collector_servers s
+                ON s.id = n.server_id
+            LEFT JOIN collector_channels last_channel
+                ON last_channel.id = n.last_heard_channel_id
+            INNER JOIN active_filtered_nodes active_nodes
+                ON active_nodes.ServerId = n.server_id
+               AND active_nodes.NodeId = n.node_id
+            WHERE COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) >= @NotBeforeUtc
         )
         """;
 
@@ -123,39 +169,32 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
                 (
                     SELECT COUNT(1)
                     FROM collector_channels c
-                    WHERE c.workspace_id = s.workspace_id
-                      AND c.server_id = s.id
+                    WHERE c.server_id = s.id
                 ) AS ChannelCount,
                 (
-                    SELECT COUNT(DISTINCT n.node_id)
+                    SELECT COUNT(1)
                     FROM collector_nodes n
-                    INNER JOIN collector_channels c
-                        ON c.id = n.channel_id
-                    WHERE n.workspace_id = s.workspace_id
-                      AND c.server_id = s.id
+                    WHERE n.server_id = s.id
                 ) AS NodeCount,
                 (
                     SELECT COUNT(1)
                     FROM collector_messages m
                     INNER JOIN collector_channels c
                         ON c.id = m.channel_id
-                    WHERE m.workspace_id = s.workspace_id
-                      AND c.server_id = s.id
+                    WHERE c.server_id = s.id
                 ) AS MessageCount,
                 (
                     SELECT COUNT(1)
                     FROM collector_neighbor_links l
                     INNER JOIN collector_channels c
                         ON c.id = l.channel_id
-                    WHERE l.workspace_id = s.workspace_id
-                      AND c.server_id = s.id
+                    WHERE c.server_id = s.id
                 ) AS NeighborLinkCount
             FROM collector_servers s
-            WHERE s.workspace_id = @WorkspaceId
             ORDER BY s.last_observed_at_utc DESC,
                      s.server_address ASC;
             """,
-            new { WorkspaceId = workspaceId.Trim() },
+            null,
             cancellationToken);
 
         return responses.Select(MapServer).ToArray();
@@ -178,22 +217,19 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
                 fc.FirstObservedAtUtc,
                 fc.LastObservedAtUtc,
                 (
-                    SELECT COUNT(DISTINCT n.node_id)
+                    SELECT COUNT(1)
                     FROM collector_nodes n
-                    WHERE n.workspace_id = @WorkspaceId
-                      AND n.channel_id = fc.ChannelId
+                    WHERE n.last_heard_channel_id = fc.ChannelId
                 ) AS NodeCount,
                 (
                     SELECT COUNT(1)
                     FROM collector_messages m
-                    WHERE m.workspace_id = @WorkspaceId
-                      AND m.channel_id = fc.ChannelId
+                    WHERE m.channel_id = fc.ChannelId
                 ) AS MessageCount,
                 (
                     SELECT COUNT(1)
                     FROM collector_neighbor_links l
-                    WHERE l.workspace_id = @WorkspaceId
-                      AND l.channel_id = fc.ChannelId
+                    WHERE l.channel_id = fc.ChannelId
                 ) AS NeighborLinkCount
             FROM filtered_channels fc
             ORDER BY fc.ServerAddress ASC,
@@ -258,11 +294,12 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             INNER JOIN filtered_channels fc
                 ON fc.ChannelId = l.channel_id
             INNER JOIN latest_nodes source_node
-                ON source_node.NodeId = l.source_node_id
+                ON source_node.ServerId = fc.ServerId
+               AND source_node.NodeId = l.source_node_id
             INNER JOIN latest_nodes target_node
-                ON target_node.NodeId = l.target_node_id
-            WHERE l.workspace_id = @WorkspaceId
-              AND l.last_seen_at_utc >= @NotBeforeUtc
+                ON target_node.ServerId = fc.ServerId
+               AND target_node.NodeId = l.target_node_id
+            WHERE l.last_seen_at_utc >= @NotBeforeUtc
             ORDER BY l.last_seen_at_utc DESC,
                      l.source_node_id ASC,
                      l.target_node_id ASC
@@ -326,11 +363,12 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             INNER JOIN filtered_channels fc
                 ON fc.ChannelId = l.channel_id
             INNER JOIN latest_nodes source_node
-                ON source_node.NodeId = l.source_node_id
+                ON source_node.ServerId = fc.ServerId
+               AND source_node.NodeId = l.source_node_id
             INNER JOIN latest_nodes target_node
-                ON target_node.NodeId = l.target_node_id
-            WHERE l.workspace_id = @WorkspaceId
-              AND l.last_seen_at_utc >= @NotBeforeUtc
+                ON target_node.ServerId = fc.ServerId
+               AND target_node.NodeId = l.target_node_id
+            WHERE l.last_seen_at_utc >= @NotBeforeUtc
             ORDER BY l.last_seen_at_utc DESC,
                      l.source_node_id ASC,
                      l.target_node_id ASC
@@ -358,16 +396,14 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             ,
             active_nodes AS (
                 SELECT
-                    workspace_id,
                     channel_id,
                     bucket_start_utc,
                     packet_type,
                     COUNT(1) AS ActiveNodeCount
                 FROM collector_node_packet_hourly_rollups
-                WHERE workspace_id = @WorkspaceId
-                  AND bucket_start_utc >= @NotBeforeUtc
+                WHERE bucket_start_utc >= @NotBeforeUtc
                   AND (@PacketType = '' OR packet_type = @PacketType)
-                GROUP BY workspace_id, channel_id, bucket_start_utc, packet_type
+                GROUP BY channel_id, bucket_start_utc, packet_type
             )
             SELECT
                 r.bucket_start_utc::text AS BucketStartUtc,
@@ -384,12 +420,10 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             INNER JOIN filtered_channels fc
                 ON fc.ChannelId = r.channel_id
             LEFT JOIN active_nodes
-                ON active_nodes.workspace_id = r.workspace_id
-               AND active_nodes.channel_id = r.channel_id
+                ON active_nodes.channel_id = r.channel_id
                AND active_nodes.bucket_start_utc = r.bucket_start_utc
                AND active_nodes.packet_type = r.packet_type
-            WHERE r.workspace_id = @WorkspaceId
-              AND r.bucket_start_utc >= @NotBeforeUtc
+            WHERE r.bucket_start_utc >= @NotBeforeUtc
               AND (@PacketType = '' OR r.packet_type = @PacketType)
             ORDER BY r.bucket_start_utc DESC,
                      r.packet_count DESC,
@@ -434,12 +468,12 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             FROM collector_node_packet_hourly_rollups r
             INNER JOIN filtered_channels fc
                 ON fc.ChannelId = r.channel_id
+            INNER JOIN collector_channels c
+                ON c.id = r.channel_id
             LEFT JOIN collector_nodes n
-                ON n.workspace_id = r.workspace_id
-               AND n.channel_id = r.channel_id
+                ON n.server_id = c.server_id
                AND n.node_id = r.node_id
-            WHERE r.workspace_id = @WorkspaceId
-              AND r.bucket_start_utc >= @NotBeforeUtc
+            WHERE r.bucket_start_utc >= @NotBeforeUtc
               AND (@NodeId = '' OR r.node_id = @NodeId)
               AND (@PacketType = '' OR r.packet_type = @PacketType)
             ORDER BY r.bucket_start_utc DESC,
@@ -472,8 +506,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             FROM collector_channel_packet_hourly_rollups r
             INNER JOIN filtered_channels fc
                 ON fc.ChannelId = r.channel_id
-            WHERE r.workspace_id = @WorkspaceId
-              AND r.bucket_start_utc >= @NotBeforeUtc
+            WHERE r.bucket_start_utc >= @NotBeforeUtc
               AND (@PacketType = '' OR r.packet_type = @PacketType)
             GROUP BY r.packet_type
             ORDER BY SUM(r.packet_count) DESC,
@@ -522,16 +555,15 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             FROM collector_neighbor_link_hourly_rollups r
             INNER JOIN filtered_channels fc
                 ON fc.ChannelId = r.channel_id
+            INNER JOIN collector_channels c
+                ON c.id = r.channel_id
             LEFT JOIN collector_nodes source_node
-                ON source_node.workspace_id = r.workspace_id
-               AND source_node.channel_id = r.channel_id
+                ON source_node.server_id = c.server_id
                AND source_node.node_id = r.source_node_id
             LEFT JOIN collector_nodes target_node
-                ON target_node.workspace_id = r.workspace_id
-               AND target_node.channel_id = r.channel_id
+                ON target_node.server_id = c.server_id
                AND target_node.node_id = r.target_node_id
-            WHERE r.workspace_id = @WorkspaceId
-              AND r.bucket_start_utc >= @NotBeforeUtc
+            WHERE r.bucket_start_utc >= @NotBeforeUtc
               AND (@SourceNodeId = '' OR r.source_node_id = @SourceNodeId)
               AND (@TargetNodeId = '' OR r.target_node_id = @TargetNodeId)
             ORDER BY r.bucket_start_utc DESC,
@@ -562,8 +594,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             FROM collector_neighbor_link_hourly_rollups r
             INNER JOIN filtered_channels fc
                 ON fc.ChannelId = r.channel_id
-            WHERE r.workspace_id = @WorkspaceId
-              AND r.bucket_start_utc >= @NotBeforeUtc
+            WHERE r.bucket_start_utc >= @NotBeforeUtc
               AND (@SourceNodeId = '' OR r.source_node_id = @SourceNodeId)
               AND (@TargetNodeId = '' OR r.target_node_id = @TargetNodeId);
             """,
@@ -576,7 +607,6 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
     private static DynamicParameters CreateFilterParameters(string workspaceId, CollectorMapQuery query)
     {
         var parameters = new DynamicParameters();
-        parameters.Add("WorkspaceId", workspaceId.Trim());
         parameters.Add("ServerAddress", query.ServerAddress ?? string.Empty);
         parameters.Add("Region", query.Region ?? string.Empty);
         parameters.Add("ChannelName", query.ChannelName ?? string.Empty);
@@ -586,7 +616,6 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
     private static DynamicParameters CreatePacketStatsParameters(string workspaceId, CollectorPacketStatsQuery query)
     {
         var parameters = new DynamicParameters();
-        parameters.Add("WorkspaceId", workspaceId.Trim());
         parameters.Add("ServerAddress", query.ServerAddress ?? string.Empty);
         parameters.Add("Region", query.Region ?? string.Empty);
         parameters.Add("ChannelName", query.ChannelName ?? string.Empty);
@@ -598,7 +627,6 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
     private static DynamicParameters CreateTopologyParameters(string workspaceId, CollectorTopologyQuery query)
     {
         var parameters = new DynamicParameters();
-        parameters.Add("WorkspaceId", workspaceId.Trim());
         parameters.Add("ServerAddress", query.ServerAddress ?? string.Empty);
         parameters.Add("Region", query.Region ?? string.Empty);
         parameters.Add("ChannelName", query.ChannelName ?? string.Empty);
@@ -608,7 +636,6 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
     private static DynamicParameters CreateNeighborLinkStatsParameters(string workspaceId, CollectorNeighborLinkStatsQuery query)
     {
         var parameters = new DynamicParameters();
-        parameters.Add("WorkspaceId", workspaceId.Trim());
         parameters.Add("ServerAddress", query.ServerAddress ?? string.Empty);
         parameters.Add("Region", query.Region ?? string.Empty);
         parameters.Add("ChannelName", query.ChannelName ?? string.Empty);

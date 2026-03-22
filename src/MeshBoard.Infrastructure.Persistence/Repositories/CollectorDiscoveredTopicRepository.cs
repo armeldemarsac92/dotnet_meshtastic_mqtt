@@ -29,15 +29,13 @@ internal sealed class CollectorDiscoveredTopicRepository : IDiscoveredTopicRepos
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug(
-            "Attempting to fetch collector discovered topics for workspace {WorkspaceId} and broker {BrokerServer}",
-            workspaceId,
+            "Attempting to fetch collector discovered topics for broker {BrokerServer}",
             brokerServer);
 
         var responses = await _dbContext.QueryAsync<DiscoveredTopicSqlResponse>(
             CollectorChannelQueries.GetDiscoveredTopics,
             new
             {
-                WorkspaceId = workspaceId,
                 BrokerServer = string.IsNullOrWhiteSpace(brokerServer) ? "unknown" : brokerServer.Trim()
             },
             cancellationToken);
@@ -65,13 +63,11 @@ internal sealed class CollectorDiscoveredTopicRepository : IDiscoveredTopicRepos
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug(
-            "Attempting to upsert collector discovered topic {TopicPattern} for workspace {WorkspaceId} and broker {BrokerServer}",
+            "Attempting to upsert collector discovered topic {TopicPattern} for broker {BrokerServer}",
             topicPattern,
-            workspaceId,
             brokerServer);
 
         await _channelResolver.ResolveDiscoveredTopicAsync(
-            workspaceId,
             brokerServer,
             topicPattern,
             region,

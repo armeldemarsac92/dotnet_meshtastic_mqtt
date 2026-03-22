@@ -4,10 +4,6 @@ const DECKGL_SCRIPT_ID = "meshboard-deckgl-script";
 const DECKGL_SCRIPT_URL = "https://unpkg.com/deck.gl@^9.0.0/dist.min.js";
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 const DEM_TILES_URL = "https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png";
-const ACTIVE_COHORT_PREVIEW_LIMIT = 18;
-const MAX_COHORT_PAIRS_PER_CHANNEL = 300;
-const MAX_COHORT_PAIRS_TOTAL = 1000;
-const MAX_COHORT_NEIGHBORS_PER_AXIS = 12;
 const DEFAULT_CENTER = [0, 20];
 const DEFAULT_ZOOM = 2;
 const CONTOUR_SOURCE_ID = "meshboard-contours";
@@ -16,8 +12,6 @@ const CONTOUR_LAYER_ID = "meshboard-contour-lines";
 const NODE_LAYER_ID = "meshboard-node-circles";
 const NODE_LABEL_LAYER_ID = "meshboard-node-labels";
 const RADIO_LINK_LAYER_ID = "meshboard-radio-link-lines";
-const LINK_LAYER_ID = "meshboard-link-lines";
-const PULSE_LAYER_ID = "meshboard-pulse-circles";
 const MINI_NODE_SOURCE_ID = "meshboard-mini-node";
 const MINI_CONTOUR_SOURCE_ID = "meshboard-mini-contours";
 const MINI_NODE_LAYER_ID = "meshboard-mini-node-circle";
@@ -30,10 +24,6 @@ let demSource = null;
 const colorCache = new Map();
 const mapStates = new Map();
 const miniMapStates = new Map();
-const LAYER_VISIBILITY_DEFAULTS = Object.freeze({
-    radioLinks: false,
-    channelCohorts: false
-});
 
 function ensureExternalScript(scriptId, scriptUrl, readyCheck, errorMessage) {
     const existing = document.getElementById(scriptId);
@@ -262,140 +252,6 @@ function buildRenderableRadioLinks(radioLinks) {
     }));
 }
 
-function normalizeLayerVisibility(layerVisibility) {
-    return {
-        radioLinks: Boolean(layerVisibility?.radioLinks),
-        channelCohorts: Boolean(layerVisibility?.channelCohorts)
-    };
-}
-
-function createLinkDatum(source, target, colorHex, width, opacity, distanceMeters = 0) {
-    return {
-        sourceNodeId: source.nodeId,
-        targetNodeId: target.nodeId,
-        sourcePosition: source.position,
-        targetPosition: target.position,
-        color: toRgba(colorHex, Math.round(opacity * 255)),
-        width,
-        distanceMeters
-    };
-}
-
-function buildActiveChannelPreviewLinks(nodes, activeNodeId) {
-    const activeNode = activeNodeId
-        ? nodes.find((node) => node.nodeId === activeNodeId) ?? null
-        : null;
-
-    if (!activeNode || !activeNode.channel) {
-        return [];
-    }
-
-    const closestPeers = [];
-
-    for (const node of nodes) {
-        if (node.nodeId === activeNode.nodeId || !node.channel || node.channel !== activeNode.channel) {
-            continue;
-        }
-
-        const distanceMeters = distanceBetweenNodes(activeNode, node);
-        let insertIndex = closestPeers.findIndex((entry) => distanceMeters < entry.distanceMeters);
-        if (insertIndex === -1) {
-            insertIndex = closestPeers.length;
-        }
-
-        closestPeers.splice(insertIndex, 0, { node, distanceMeters });
-        if (closestPeers.length > ACTIVE_COHORT_PREVIEW_LIMIT) {
-            closestPeers.pop();
-        }
-    }
-
-    return closestPeers.map((entry) =>
-        createLinkDatum(activeNode, entry.node, resolveChannelColorHex(activeNode.channel), 2.5, 0.72, entry.distanceMeters));
-}
-
-function registerCandidatePair(pairMap, source, target, colorHex) {
-    const leftNodeId = source.nodeId < target.nodeId ? source.nodeId : target.nodeId;
-    const rightNodeId = source.nodeId < target.nodeId ? target.nodeId : source.nodeId;
-    const pairKey = `${leftNodeId}|${rightNodeId}`;
-
-    if (pairMap.has(pairKey)) {
-        return;
-    }
-
-    pairMap.set(
-        pairKey,
-        createLinkDatum(source, target, colorHex, 1.25, 0.42, distanceBetweenNodes(source, target))
-    );
-}
-
-function collectAxisNeighborPairs(sortedGroup, pairMap, colorHex) {
-    for (let leftIndex = 0; leftIndex < sortedGroup.length; leftIndex += 1) {
-        const maxRightIndex = Math.min(sortedGroup.length, leftIndex + MAX_COHORT_NEIGHBORS_PER_AXIS + 1);
-        for (let rightIndex = leftIndex + 1; rightIndex < maxRightIndex; rightIndex += 1) {
-            registerCandidatePair(pairMap, sortedGroup[leftIndex], sortedGroup[rightIndex], colorHex);
-        }
-    }
-}
-
-function buildChannelCohortPairs(nodes) {
-    const channelGroups = new Map();
-
-    for (const node of nodes) {
-        if (!node.channel) {
-            continue;
-        }
-
-        const group = channelGroups.get(node.channel) ?? [];
-        group.push(node);
-        channelGroups.set(node.channel, group);
-    }
-
-    const pairs = [];
-
-    for (const [channel, group] of channelGroups.entries()) {
-        if (group.length < 2) {
-            continue;
-        }
-
-        const pairMap = new Map();
-        const colorHex = resolveChannelColorHex(channel);
-        const latitudeSortedGroup = [...group].sort((left, right) =>
-            left.latitude === right.latitude
-                ? left.longitude - right.longitude
-                : left.latitude - right.latitude);
-        const longitudeSortedGroup = [...group].sort((left, right) =>
-            left.longitude === right.longitude
-                ? left.latitude - right.latitude
-                : left.longitude - right.longitude);
-
-        collectAxisNeighborPairs(latitudeSortedGroup, pairMap, colorHex);
-        collectAxisNeighborPairs(longitudeSortedGroup, pairMap, colorHex);
-
-        const channelPairs = Array.from(pairMap.values())
-            .sort((left, right) => left.distanceMeters - right.distanceMeters)
-            .slice(0, MAX_COHORT_PAIRS_PER_CHANNEL);
-
-        pairs.push(...channelPairs);
-    }
-
-    return pairs
-        .sort((left, right) => left.distanceMeters - right.distanceMeters)
-        .slice(0, MAX_COHORT_PAIRS_TOTAL);
-}
-
-function buildNodeGeometryKey(nodes) {
-    if (!Array.isArray(nodes) || nodes.length === 0) {
-        return "0";
-    }
-
-    const parts = [...nodes]
-        .sort((left, right) => left.nodeId.localeCompare(right.nodeId))
-        .map((node) =>
-            `${node.nodeId}|${node.channel ?? ""}|${node.latitude.toFixed(5)}|${node.longitude.toFixed(5)}`);
-
-    return `${parts.length}:${parts.join(";")}`;
-}
-
 function resolveSnrColorHex(snrDb) {
     if (!Number.isFinite(snrDb)) {
         return "#a0a0a0";
@@ -426,24 +282,6 @@ function resolveSnrWidth(snrDb) {
     }
 
     return 3;
-}
-
-function distanceBetweenNodes(source, target) {
-    const latitudeDelta = toRadians(target.latitude - source.latitude);
-    const longitudeDelta = toRadians(target.longitude - source.longitude);
-    const sourceLatitude = toRadians(source.latitude);
-    const targetLatitude = toRadians(target.latitude);
-
-    const haversine =
-        Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
-        Math.cos(sourceLatitude) * Math.cos(targetLatitude) *
-        Math.sin(longitudeDelta / 2) * Math.sin(longitudeDelta / 2);
-
-    return 2 * 6371000 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
-}
-
-function toRadians(value) {
-    return value * Math.PI / 180;
 }
 
 function findFirstLabelLayerId(map) {
@@ -649,64 +487,18 @@ function buildLabelLayer(activeNode) {
     });
 }
 
-function buildPulseLayer(activePulses, now) {
-    if (!Array.isArray(activePulses) || activePulses.length === 0) {
-        return null;
-    }
-
-    const data = activePulses.map((pulse) => {
-        const progress = Math.min(1, (now - pulse.startedAt) / pulse.duration);
-        return {
-            position: pulse.node.position,
-            radius: progress * pulse.maxRadius,
-            color: withAlpha(pulse.baseColor, 0.7 * (1 - progress) * 255)
-        };
-    });
-
-    return new window.deck.ScatterplotLayer({
-        id: PULSE_LAYER_ID,
-        data,
-        pickable: false,
-        stroked: false,
-        filled: true,
-        radiusUnits: "pixels",
-        getPosition: (pulse) => pulse.position,
-        getRadius: (pulse) => pulse.radius,
-        getFillColor: (pulse) => pulse.color,
-        parameters: { depthTest: false }
-    });
-}
-
-function ensureChannelCohortCache(mapState) {
-    if (mapState.cohortPairsCacheKey === mapState.nodeGeometryKey) {
-        return;
-    }
-
-    mapState.cohortPairsCacheKey = mapState.nodeGeometryKey;
-    mapState.cohortPairsCache = buildChannelCohortPairs(mapState.nodes);
-}
-
 function buildStaticDeckLayers(mapState) {
     const activeNodeId = mapState.pinnedNodeId ?? mapState.hoveredNodeId;
     const activeNode = activeNodeId
         ? mapState.nodeDataById.get(activeNodeId) ?? null
         : null;
 
-    let cohortLinks = [];
-    if (mapState.layerVisibility.channelCohorts) {
-        ensureChannelCohortCache(mapState);
-        cohortLinks = mapState.cohortPairsCache;
-    } else if (activeNodeId) {
-        cohortLinks = buildActiveChannelPreviewLinks(mapState.nodes, activeNodeId);
-    }
-
     return {
         backgroundLayers: [
-            buildLineLayer(LINK_LAYER_ID, cohortLinks, cohortLinks.length > 0),
             buildLineLayer(
                 RADIO_LINK_LAYER_ID,
                 mapState.radioLinks,
-                mapState.layerVisibility.radioLinks && mapState.radioLinks.length > 0)
+                mapState.showRadioLinks && mapState.radioLinks.length > 0)
         ].filter(Boolean),
         foregroundLayers: [
             buildNodeLayer(mapState.nodes, activeNodeId),
@@ -715,7 +507,7 @@ function buildStaticDeckLayers(mapState) {
     };
 }
 
-function refreshNodeAppearance(mapState, pulseNow = performance.now(), rebuildStaticLayers = true) {
+function refreshNodeAppearance(mapState, rebuildStaticLayers = true) {
     if (!mapState.deckOverlay) {
         return;
     }
@@ -726,12 +518,9 @@ function refreshNodeAppearance(mapState, pulseNow = performance.now(), rebuildSt
         mapState.staticForegroundLayers = layers.foregroundLayers;
     }
 
-    const pulseLayer = buildPulseLayer(mapState.activePulses, pulseNow);
-
     mapState.deckOverlay.setProps({
         layers: [
             ...(mapState.staticBackgroundLayers ?? []),
-            ...(pulseLayer ? [pulseLayer] : []),
             ...(mapState.staticForegroundLayers ?? [])
         ]
     });
@@ -783,17 +572,12 @@ async function getOrCreateMapState(containerId, dotNetCallbackRef) {
         nodeDataById: new Map(),
         nodes: [],
         radioLinks: [],
-        layerVisibility: { ...LAYER_VISIBILITY_DEFAULTS },
-        nodeGeometryKey: "0",
-        cohortPairsCacheKey: null,
-        cohortPairsCache: [],
+        showRadioLinks: false,
         staticBackgroundLayers: null,
         staticForegroundLayers: null,
         hoveredNodeId: null,
         pinnedNodeId: null,
-        didAutoFrame: false,
-        activePulses: [],
-        rafId: null
+        didAutoFrame: false
     };
 
     mapStates.set(containerId, mapState);
@@ -904,57 +688,6 @@ function maybeFrameCamera(mapState, nodes, fitCameraToNodes) {
     mapState.map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 950 });
 }
 
-function triggerActivityPulses(mapState, activityPulses) {
-    for (const activityPulse of activityPulses ?? []) {
-        const nodeId = activityPulse?.nodeId;
-        if (!nodeId) {
-            continue;
-        }
-
-        const node = mapState.nodeDataById.get(nodeId);
-        if (!node) {
-            continue;
-        }
-
-        triggerActivityPulse(mapState, node);
-    }
-}
-
-function triggerActivityPulse(mapState, node) {
-    mapState.activePulses.push({
-        node,
-        startedAt: performance.now(),
-        duration: 1200,
-        maxRadius: 40,
-        baseColor: node.pulseColor
-    });
-    schedulePulseFrame(mapState);
-}
-
-function schedulePulseFrame(mapState) {
-    if (mapState.rafId !== null) {
-        return;
-    }
-
-    mapState.rafId = requestAnimationFrame((now) => {
-        mapState.rafId = null;
-        updatePulses(mapState, now);
-    });
-}
-
-function updatePulses(mapState, now) {
-    if (!mapStates.has(mapState.containerId)) {
-        return;
-    }
-
-    mapState.activePulses = mapState.activePulses.filter((pulse) => (now - pulse.startedAt) < pulse.duration);
-    refreshNodeAppearance(mapState, now, false);
-
-    if (mapState.activePulses.length > 0) {
-        schedulePulseFrame(mapState);
-    }
-}
-
 // --- Mini map (node details modal) ---
 
 export async function renderMiniMap(containerId, latitude, longitude) {
@@ -1037,11 +770,10 @@ export function disposeMiniMap(containerId) {
 export async function renderNodeMap(
     containerId,
     nodes,
-    activityPulses,
     fitCameraToNodes,
     dotNetCallbackRef,
     radioLinks = [],
-    layerVisibility = null) {
+    showRadioLinks = false) {
     await Promise.all([ensureMapLibre(), ensureDeckGl()]);
 
     const mapState = await getOrCreateMapState(containerId, dotNetCallbackRef);
@@ -1053,8 +785,7 @@ export async function renderNodeMap(
     mapState.nodes = renderableNodes;
     mapState.nodeDataById = new Map(renderableNodes.map((node) => [node.nodeId, node]));
     mapState.radioLinks = buildRenderableRadioLinks(normalizeRadioLinks(radioLinks));
-    mapState.layerVisibility = normalizeLayerVisibility(layerVisibility);
-    mapState.nodeGeometryKey = buildNodeGeometryKey(renderableNodes);
+    mapState.showRadioLinks = Boolean(showRadioLinks);
 
     if (mapState.hoveredNodeId && !mapState.nodeDataById.has(mapState.hoveredNodeId)) {
         mapState.hoveredNodeId = null;
@@ -1066,7 +797,6 @@ export async function renderNodeMap(
 
     refreshNodeAppearance(mapState);
     maybeFrameCamera(mapState, renderableNodes, Boolean(fitCameraToNodes));
-    triggerActivityPulses(mapState, activityPulses);
 }
 
 export function setPinnedNode(containerId, nodeId) {
@@ -1083,11 +813,6 @@ export function disposeNodeMap(containerId) {
     const mapState = mapStates.get(containerId);
     if (!mapState) {
         return;
-    }
-
-    if (mapState.rafId !== null) {
-        cancelAnimationFrame(mapState.rafId);
-        mapState.rafId = null;
     }
 
     if (mapState.deckOverlay) {

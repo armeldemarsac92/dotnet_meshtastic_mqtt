@@ -1,0 +1,572 @@
+@page "/stats"
+@using MeshBoard.Client.Collector
+@using MeshBoard.Client.Services
+@using MeshBoard.Contracts.Collector
+@attribute [Authorize]
+@inject PublicCollectorApiClient PublicCollectorApiClient
+@inject PublicCollectorService PublicCollectorService
+
+<PageTitle>Stats</PageTitle>
+
+<div class="space-y-6">
+    <header class="shell-panel space-y-5 rounded-[2rem] p-6 sm:p-8">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Collector analytics</p>
+                <h1 class="mt-2 font-display text-3xl text-cinder-950 sm:text-4xl">Network stats</h1>
+                <p class="mt-3 max-w-4xl text-sm leading-7 text-cinder-800/82">
+                    Overview, topology, packet rollups, and radio-link analysis all come from the collector read API.
+                    This page is read-only analytics over the Postgres-backed historical buckets and current graph snapshot.
+                </p>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button type="button"
+                        class="shell-button shell-button-accent rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="RefreshAsync"
+                        disabled="@_isLoading">
+                    @(_isLoading ? "Refreshing..." : "Refresh stats")
+                </button>
+                <button type="button"
+                        class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="ResetFiltersAsync"
+                        disabled="@(!_hasActiveFilters)">
+                    Reset filters
+                </button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <p class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_errorMessage</p>
+        }
+
+        <section class="grid gap-4 lg:grid-cols-[1fr_1fr_0.75fr_0.75fr]">
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Server</span>
+                <select class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                        value="@(_selectedServerAddress ?? string.Empty)"
+                        @onchange="HandleServerChangedAsync">
+                    <option value="">All servers</option>
+                    @foreach (var server in _servers)
+                    {
+                        <option value="@server.ServerAddress">@server.ServerAddress</option>
+                    }
+                </select>
+            </label>
+
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Channel</span>
+                <select class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                        value="@(_selectedChannelValue ?? string.Empty)"
+                        @onchange="HandleChannelChangedAsync">
+                    <option value="">All channels</option>
+                    @foreach (var channel in _channels)
+                    {
+                        <option value="@BuildChannelSelectionKey(channel)">
+                            @channel.Region / @channel.ChannelName
+                        </option>
+                    }
+                </select>
+            </label>
+
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active window</span>
+                <select class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                        @bind="_activeWithinHours"
+                        @bind:after="HandleFilterWindowChangedAsync">
+                    <option value="24">24 hours</option>
+                    <option value="72">72 hours</option>
+                    <option value="168">7 days</option>
+                </select>
+            </label>
+
+            <label class="space-y-2">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">History window</span>
+                <select class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                        @bind="_lookbackHours"
+                        @bind:after="HandleFilterWindowChangedAsync">
+                    <option value="24">24 hours</option>
+                    <option value="72">72 hours</option>
+                    <option value="168">7 days</option>
+                    <option value="720">30 days</option>
+                </select>
+            </label>
+        </section>
+    </header>
+
+    <section class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <article class="shell-panel rounded-[1.7rem] p-5">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Servers</p>
+            <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_overview?.ServerCount ?? 0)</p>
+        </article>
+        <article class="shell-panel rounded-[1.7rem] p-5">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Channels</p>
+            <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_overview?.ChannelCount ?? 0)</p>
+        </article>
+        <article class="shell-panel rounded-[1.7rem] p-5">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active nodes</p>
+            <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_overview?.ActiveNodeCount ?? 0)</p>
+        </article>
+        <article class="shell-panel rounded-[1.7rem] p-5">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active links</p>
+            <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_overview?.ActiveLinkCount ?? 0)</p>
+        </article>
+        <article class="shell-panel rounded-[1.7rem] p-5">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packets</p>
+            <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_overview?.PacketCountInLookback ?? 0)</p>
+        </article>
+        <article class="shell-panel rounded-[1.7rem] p-5">
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Neighbor observations</p>
+            <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_overview?.NeighborObservationCountInLookback ?? 0)</p>
+        </article>
+    </section>
+
+    <section class="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <article class="shell-panel rounded-[2rem] p-6">
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Topology</p>
+                    <h2 class="mt-2 font-display text-3xl text-cinder-950">Current graph</h2>
+                </div>
+                <p class="text-sm text-cinder-800/72">@FormatTimestamp(_topology?.GeneratedAtUtc)</p>
+            </div>
+
+            <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <article class="shell-subpanel rounded-[1.4rem] p-4">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Components</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_topology?.ConnectedComponentCount ?? 0)</p>
+                </article>
+                <article class="shell-subpanel rounded-[1.4rem] p-4">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Largest component</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_topology?.LargestConnectedComponentSize ?? 0)</p>
+                </article>
+                <article class="shell-subpanel rounded-[1.4rem] p-4">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Bridge nodes</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_topology?.BridgeNodeCount ?? 0)</p>
+                </article>
+                <article class="shell-subpanel rounded-[1.4rem] p-4">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Isolated nodes</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_topology?.IsolatedNodeCount ?? 0)</p>
+                </article>
+            </div>
+
+            <div class="mt-5 grid gap-4 lg:grid-cols-2">
+                <div class="shell-subpanel rounded-[1.4rem] p-4">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Bridge nodes</p>
+                    @if (_topology?.BridgeNodes.Any() != true)
+                    {
+                        <p class="mt-3 text-sm text-cinder-800/72">No bridge nodes in the current filtered graph.</p>
+                    }
+                    else
+                    {
+                        <ul class="mt-4 space-y-3 text-sm text-cinder-900">
+                            @foreach (var node in _topology.BridgeNodes.Take(6))
+                            {
+                                <li class="flex items-center justify-between gap-4 rounded-2xl border border-sand-100/80 bg-white/60 px-4 py-3">
+                                    <span>@(node.LongName ?? node.ShortName ?? node.NodeId)</span>
+                                    <strong>@node.Degree</strong>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+
+                <div class="shell-subpanel rounded-[1.4rem] p-4">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Strongest links</p>
+                    @if (_topology?.StrongestLinks.Any() != true)
+                    {
+                        <p class="mt-3 text-sm text-cinder-800/72">No active radio links matched the current graph filter.</p>
+                    }
+                    else
+                    {
+                        <ul class="mt-4 space-y-3 text-sm text-cinder-900">
+                            @foreach (var link in _topology.StrongestLinks.Take(6))
+                            {
+                                <li class="rounded-2xl border border-sand-100/80 bg-white/60 px-4 py-3">
+                                    <div class="flex items-center justify-between gap-4">
+                                        <span>@FormatLinkLabel(link)</span>
+                                        <strong>@link.ObservationCount</strong>
+                                    </div>
+                                    <div class="mt-2 flex flex-wrap gap-3 text-xs text-cinder-800/70">
+                                        <span>Avg SNR: @FormatSnr(link.AverageSnrDb)</span>
+                                        <span>Max SNR: @FormatSnr(link.MaxSnrDb)</span>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </article>
+
+        <article class="shell-panel rounded-[2rem] p-6">
+            <div class="flex items-center justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Overview</p>
+                    <h2 class="mt-2 font-display text-3xl text-cinder-950">Servers and channels</h2>
+                </div>
+                <p class="text-sm text-cinder-800/72">@FormatTimestamp(_overview?.GeneratedAtUtc)</p>
+            </div>
+
+            @if (_overviewChannels.Count == 0)
+            {
+                <p class="mt-5 text-sm text-cinder-800/72">No channel overview rows matched the current filter.</p>
+            }
+            else
+            {
+                <div class="mt-5 space-y-3">
+                    @foreach (var channel in _overviewChannels.Take(8))
+                    {
+                        <article class="shell-subpanel rounded-[1.4rem] p-4">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-semibold text-cinder-950">@channel.Region / @channel.ChannelName</p>
+                                    <p class="mt-1 text-xs text-cinder-800/68">@channel.ServerAddress</p>
+                                </div>
+                                <div class="text-right text-xs text-cinder-800/72">
+                                    <p>@channel.ActiveNodeCount active nodes</p>
+                                    <p>@channel.ActiveLinkCount active links</p>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 grid gap-3 text-xs text-cinder-800/76 sm:grid-cols-2 xl:grid-cols-3">
+                                <span>Packets: @channel.PacketCountInLookback</span>
+                                <span>Neighbor observations: @channel.NeighborObservationCountInLookback</span>
+                                <span>Largest component: @channel.LargestConnectedComponentSize</span>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </article>
+    </section>
+
+    <section class="grid gap-6 xl:grid-cols-3">
+        <article class="shell-panel rounded-[2rem] p-6">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Channel packets</p>
+            <h2 class="mt-2 font-display text-3xl text-cinder-950">Hourly channel rollups</h2>
+
+            @if (_channelPacketRows.Count == 0)
+            {
+                <p class="mt-5 text-sm text-cinder-800/72">No channel packet rollups matched the current filter.</p>
+            }
+            else
+            {
+                <ul class="mt-5 space-y-3 text-sm text-cinder-900">
+                    @foreach (var row in _channelPacketRows.Take(8))
+                    {
+                        <li class="shell-subpanel rounded-[1.4rem] p-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="font-medium">@row.PacketType</span>
+                                <strong>@row.PacketCount</strong>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-3 text-xs text-cinder-800/70">
+                                <span>@row.Region / @row.ChannelName</span>
+                                <span>@row.ActiveNodeCount active nodes</span>
+                                <span>@FormatTimestamp(row.BucketStartUtc)</span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </article>
+
+        <article class="shell-panel rounded-[2rem] p-6">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Node packets</p>
+            <h2 class="mt-2 font-display text-3xl text-cinder-950">Hourly node rollups</h2>
+
+            @if (_nodePacketRows.Count == 0)
+            {
+                <p class="mt-5 text-sm text-cinder-800/72">No node packet rollups matched the current filter.</p>
+            }
+            else
+            {
+                <ul class="mt-5 space-y-3 text-sm text-cinder-900">
+                    @foreach (var row in _nodePacketRows.Take(8))
+                    {
+                        <li class="shell-subpanel rounded-[1.4rem] p-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="font-medium">@(row.LongName ?? row.ShortName ?? row.NodeId)</span>
+                                <strong>@row.PacketCount</strong>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-3 text-xs text-cinder-800/70">
+                                <span>@row.PacketType</span>
+                                <span>@row.Region / @row.ChannelName</span>
+                                <span>@FormatTimestamp(row.BucketStartUtc)</span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </article>
+
+        <article class="shell-panel rounded-[2rem] p-6">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Radio links</p>
+            <h2 class="mt-2 font-display text-3xl text-cinder-950">Hourly link rollups</h2>
+
+            @if (_neighborLinkRows.Count == 0)
+            {
+                <p class="mt-5 text-sm text-cinder-800/72">No neighbor-link rollups matched the current filter.</p>
+            }
+            else
+            {
+                <ul class="mt-5 space-y-3 text-sm text-cinder-900">
+                    @foreach (var row in _neighborLinkRows.Take(8))
+                    {
+                        <li class="shell-subpanel rounded-[1.4rem] p-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="font-medium">@FormatLinkLabel(row)</span>
+                                <strong>@row.ObservationCount</strong>
+                            </div>
+                            <div class="mt-2 flex flex-wrap gap-3 text-xs text-cinder-800/70">
+                                <span>@row.Region / @row.ChannelName</span>
+                                <span>Avg SNR: @FormatSnr(row.AverageSnrDb)</span>
+                                <span>@FormatTimestamp(row.BucketStartUtc)</span>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            }
+        </article>
+    </section>
+</div>
+
+@code {
+    private IReadOnlyCollection<CollectorServerSummary> _servers = [];
+    private IReadOnlyCollection<CollectorChannelSummary> _channels = [];
+    private IReadOnlyList<CollectorChannelPacketHourlyRollup> _channelPacketRows = [];
+    private IReadOnlyList<OverviewChannelRow> _overviewChannels = [];
+    private IReadOnlyList<CollectorNeighborLinkHourlyRollup> _neighborLinkRows = [];
+    private IReadOnlyList<CollectorNodePacketHourlyRollup> _nodePacketRows = [];
+    private CollectorOverviewSnapshot? _overview;
+    private CollectorTopologySnapshot? _topology;
+    private bool _isLoading;
+    private int _activeWithinHours = 24;
+    private int _lookbackHours = 24 * 7;
+    private string? _errorMessage;
+    private string? _selectedChannelValue;
+    private string? _selectedServerAddress;
+
+    private bool _hasActiveFilters =>
+        !string.IsNullOrWhiteSpace(_selectedServerAddress) ||
+        !string.IsNullOrWhiteSpace(_selectedChannelValue) ||
+        _activeWithinHours != 24 ||
+        _lookbackHours != 24 * 7;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadObservedServersAsync();
+        await LoadObservedChannelsAsync();
+        await RefreshAsync();
+    }
+
+    private async Task HandleServerChangedAsync(ChangeEventArgs args)
+    {
+        _selectedServerAddress = NormalizeNullable(args.Value?.ToString());
+        _selectedChannelValue = null;
+        await LoadObservedChannelsAsync();
+        await RefreshAsync();
+    }
+
+    private async Task HandleChannelChangedAsync(ChangeEventArgs args)
+    {
+        _selectedChannelValue = NormalizeNullable(args.Value?.ToString());
+        await RefreshAsync();
+    }
+
+    private async Task HandleFilterWindowChangedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        _selectedServerAddress = null;
+        _selectedChannelValue = null;
+        _activeWithinHours = 24;
+        _lookbackHours = 24 * 7;
+
+        await LoadObservedChannelsAsync();
+        await RefreshAsync();
+    }
+
+    private async Task LoadObservedServersAsync()
+    {
+        _servers = await PublicCollectorApiClient.GetObservedServersAsync();
+    }
+
+    private async Task LoadObservedChannelsAsync()
+    {
+        _channels = await PublicCollectorApiClient.GetObservedChannelsAsync(
+            new CollectorMapQuery
+            {
+                ServerAddress = _selectedServerAddress
+            });
+
+        if (!string.IsNullOrWhiteSpace(_selectedChannelValue) &&
+            !_channels.Any(channel => string.Equals(BuildChannelSelectionKey(channel), _selectedChannelValue, StringComparison.Ordinal)))
+        {
+            _selectedChannelValue = null;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var selectedChannel = ResolveSelectedChannel();
+            var overviewTask = PublicCollectorService.LoadOverviewAsync(
+                new CollectorOverviewQuery
+                {
+                    ServerAddress = _selectedServerAddress,
+                    Region = selectedChannel?.Region,
+                    ChannelName = selectedChannel?.ChannelName,
+                    ActiveWithinHours = _activeWithinHours,
+                    LookbackHours = _lookbackHours,
+                    MaxChannels = 24,
+                    TopPacketTypes = 4
+                });
+            var topologyTask = PublicCollectorService.LoadTopologyAsync(
+                new CollectorTopologyQuery
+                {
+                    ServerAddress = _selectedServerAddress,
+                    Region = selectedChannel?.Region,
+                    ChannelName = selectedChannel?.ChannelName,
+                    ActiveWithinHours = _activeWithinHours,
+                    TopCount = 8
+                });
+            var channelPacketTask = PublicCollectorApiClient.GetChannelPacketStatsAsync(
+                new CollectorPacketStatsQuery
+                {
+                    ServerAddress = _selectedServerAddress,
+                    Region = selectedChannel?.Region,
+                    ChannelName = selectedChannel?.ChannelName,
+                    LookbackHours = _lookbackHours,
+                    MaxRows = 120
+                });
+            var nodePacketTask = PublicCollectorApiClient.GetNodePacketStatsAsync(
+                new CollectorPacketStatsQuery
+                {
+                    ServerAddress = _selectedServerAddress,
+                    Region = selectedChannel?.Region,
+                    ChannelName = selectedChannel?.ChannelName,
+                    LookbackHours = _lookbackHours,
+                    MaxRows = 120
+                });
+            var neighborTask = PublicCollectorApiClient.GetNeighborLinkStatsAsync(
+                new CollectorNeighborLinkStatsQuery
+                {
+                    ServerAddress = _selectedServerAddress,
+                    Region = selectedChannel?.Region,
+                    ChannelName = selectedChannel?.ChannelName,
+                    LookbackHours = _lookbackHours,
+                    MaxRows = 120
+                });
+
+            await Task.WhenAll(overviewTask, topologyTask, channelPacketTask, nodePacketTask, neighborTask);
+
+            _overview = await overviewTask;
+            _topology = await topologyTask;
+            _channelPacketRows = (await channelPacketTask).Rollups
+                .OrderByDescending(row => row.BucketStartUtc)
+                .ThenByDescending(row => row.PacketCount)
+                .ToArray();
+            _nodePacketRows = (await nodePacketTask).Rollups
+                .OrderByDescending(row => row.BucketStartUtc)
+                .ThenByDescending(row => row.PacketCount)
+                .ToArray();
+            _neighborLinkRows = (await neighborTask).Rollups
+                .OrderByDescending(row => row.BucketStartUtc)
+                .ThenByDescending(row => row.ObservationCount)
+                .ToArray();
+            _overviewChannels = FlattenOverviewChannels(_overview);
+        }
+        catch (Exception exception)
+        {
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private CollectorChannelSummary? ResolveSelectedChannel()
+    {
+        return string.IsNullOrWhiteSpace(_selectedChannelValue)
+            ? null
+            : _channels.FirstOrDefault(channel =>
+                string.Equals(BuildChannelSelectionKey(channel), _selectedChannelValue, StringComparison.Ordinal));
+    }
+
+    private static IReadOnlyList<OverviewChannelRow> FlattenOverviewChannels(CollectorOverviewSnapshot? overview)
+    {
+        return overview?.Servers
+            .SelectMany(server => server.Channels.Select(channel => new OverviewChannelRow(
+                server.ServerAddress,
+                channel.Region,
+                channel.ChannelName,
+                channel.ActiveNodeCount,
+                channel.ActiveLinkCount,
+                channel.LargestConnectedComponentSize,
+                channel.PacketCountInLookback,
+                channel.NeighborObservationCountInLookback)))
+            .OrderByDescending(channel => channel.PacketCountInLookback)
+            .ThenByDescending(channel => channel.ActiveNodeCount)
+            .ThenBy(channel => channel.ServerAddress, StringComparer.OrdinalIgnoreCase)
+            .ToArray()
+            ?? [];
+    }
+
+    private static string BuildChannelSelectionKey(CollectorChannelSummary channel)
+    {
+        return $"{channel.ServerAddress}||{channel.Region}/{channel.ChannelName}";
+    }
+
+    private static string? NormalizeNullable(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Unknown";
+    }
+
+    private static string FormatSnr(float? value)
+    {
+        return value.HasValue
+            ? FormattableString.Invariant($"{value.Value:F1} dB")
+            : "Unknown";
+    }
+
+    private static string FormatLinkLabel(CollectorTopologyLinkSummary link)
+    {
+        var source = link.SourceLongName ?? link.SourceShortName ?? link.SourceNodeId;
+        var target = link.TargetLongName ?? link.TargetShortName ?? link.TargetNodeId;
+        return $"{source} → {target}";
+    }
+
+    private static string FormatLinkLabel(CollectorNeighborLinkHourlyRollup link)
+    {
+        var source = link.SourceLongName ?? link.SourceShortName ?? link.SourceNodeId;
+        var target = link.TargetLongName ?? link.TargetShortName ?? link.TargetNodeId;
+        return $"{source} → {target}";
+    }
+
+    private sealed record OverviewChannelRow(
+        string ServerAddress,
+        string Region,
+        string ChannelName,
+        int ActiveNodeCount,
+        int ActiveLinkCount,
+        int LargestConnectedComponentSize,
+        int PacketCountInLookback,
+        int NeighborObservationCountInLookback);
+}

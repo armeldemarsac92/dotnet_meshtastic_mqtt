@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Text;
 using Dapper;
 using MeshBoard.Application.Abstractions.Persistence;
-using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Collector;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
@@ -41,8 +40,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         INNER JOIN collector_servers s
             ON s.id = c.server_id
         LEFT JOIN collector_nodes n
-            ON n.workspace_id = m.workspace_id
-           AND n.channel_id = m.channel_id
+            ON n.server_id = s.id
            AND n.node_id = m.from_node_id
         """;
 
@@ -50,17 +48,14 @@ internal sealed class CollectorMessageRepository : IMessageRepository
     private readonly ICollectorPacketRollupRepository _collectorPacketRollupRepository;
     private readonly IDbContext _dbContext;
     private readonly ILogger<CollectorMessageRepository> _logger;
-    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public CollectorMessageRepository(
         IDbContext dbContext,
-        IWorkspaceContextAccessor workspaceContextAccessor,
         CollectorChannelResolver channelResolver,
         ICollectorPacketRollupRepository collectorPacketRollupRepository,
         ILogger<CollectorMessageRepository> logger)
     {
         _dbContext = dbContext;
-        _workspaceContextAccessor = workspaceContextAccessor;
         _channelResolver = channelResolver;
         _collectorPacketRollupRepository = collectorPacketRollupRepository;
         _logger = logger;
@@ -70,9 +65,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
     {
         _logger.LogDebug("Attempting to add collector observed message from node: {NodeId}", request.FromNodeId);
 
-        var workspaceId = ResolveWorkspaceId(request.WorkspaceId);
-        var channelId = await _channelResolver.ResolveFromTopicAsync(
-            workspaceId,
+        var resolvedChannel = await _channelResolver.ResolveFromTopicAsync(
             request.BrokerServer,
             request.Topic,
             request.ReceivedAtUtc,
@@ -82,7 +75,6 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             """
             INSERT INTO collector_messages (
                 id,
-                workspace_id,
                 channel_id,
                 message_key,
                 topic,
@@ -94,7 +86,6 @@ internal sealed class CollectorMessageRepository : IMessageRepository
                 received_at_utc)
             VALUES (
                 @Id,
-                @WorkspaceId,
                 @ChannelId,
                 @MessageKey,
                 @Topic,
@@ -104,13 +95,12 @@ internal sealed class CollectorMessageRepository : IMessageRepository
                 @PayloadPreview,
                 @IsPrivate,
                 @ReceivedAtUtc)
-            ON CONFLICT(workspace_id, message_key) DO NOTHING;
+            ON CONFLICT(message_key) DO NOTHING;
             """,
             new
             {
                 Id = Guid.NewGuid(),
-                WorkspaceId = workspaceId,
-                ChannelId = channelId,
+                ChannelId = resolvedChannel.ChannelId,
                 request.MessageKey,
                 request.Topic,
                 request.PacketType,
@@ -127,8 +117,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             await _collectorPacketRollupRepository.RecordObservedMessageAsync(
                 new CollectorObservedPacketRollupRequest
                 {
-                    WorkspaceId = workspaceId,
-                    ChannelId = channelId,
+                    ChannelId = resolvedChannel.ChannelId,
                     NodeId = request.FromNodeId,
                     PacketType = request.PacketType,
                     ObservedAtUtc = request.ReceivedAtUtc
@@ -170,14 +159,9 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             """
             SELECT COUNT(1)
             FROM collector_messages
-            WHERE workspace_id = @WorkspaceId
-              AND from_node_id = @SenderNodeId;
+            WHERE from_node_id = @SenderNodeId;
             """,
-            new
-            {
-                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
-                SenderNodeId = senderNodeId
-            },
+            new { SenderNodeId = senderNodeId },
             cancellationToken);
     }
 
@@ -211,15 +195,11 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var responses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             $"{SelectColumns}{Environment.NewLine}{BaseFromClause}{Environment.NewLine}" +
             """
-            WHERE m.workspace_id = @WorkspaceId
+            WHERE 1 = 1
             ORDER BY m.received_at_utc DESC, m.id DESC
             LIMIT @Take;
             """,
-            new
-            {
-                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
-                Take = take
-            },
+            new { Take = take },
             cancellationToken);
 
         return responses.MapToMessages();
@@ -233,14 +213,12 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var responses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             $"{SelectColumns}{Environment.NewLine}{BaseFromClause}{Environment.NewLine}" +
             """
-            WHERE m.workspace_id = @WorkspaceId
-              AND s.server_address = @BrokerServer
+            WHERE s.server_address = @BrokerServer
             ORDER BY m.received_at_utc DESC, m.id DESC
             LIMIT @Take;
             """,
             new
             {
-                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 BrokerServer = brokerServer.Trim(),
                 Take = take
             },
@@ -271,13 +249,11 @@ internal sealed class CollectorMessageRepository : IMessageRepository
                 ON c.id = m.channel_id
             INNER JOIN collector_servers s
                 ON s.id = c.server_id
-            WHERE m.workspace_id = @WorkspaceId
-              AND c.region = @Region
+            WHERE c.region = @Region
               AND c.channel_name = @ChannelName;
             """,
             new
             {
-                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 Region = region.Trim(),
                 ChannelName = channel.Trim(),
                 OpaquePacketTypes
@@ -310,8 +286,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             FROM collector_messages m
             INNER JOIN collector_channels c
                 ON c.id = m.channel_id
-            WHERE m.workspace_id = @WorkspaceId
-              AND c.region = @Region
+            WHERE c.region = @Region
               AND c.channel_name = @ChannelName;
             """,
             CreateChannelQueryParameters(region, channel),
@@ -334,11 +309,9 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             INNER JOIN collector_channels c
                 ON c.id = m.channel_id
             LEFT JOIN collector_nodes n
-                ON n.workspace_id = m.workspace_id
-               AND n.channel_id = m.channel_id
+                ON n.server_id = c.server_id
                AND n.node_id = m.from_node_id
-            WHERE m.workspace_id = @WorkspaceId
-              AND c.region = @Region
+            WHERE c.region = @Region
               AND c.channel_name = @ChannelName
             GROUP BY
                 m.from_node_id,
@@ -371,8 +344,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var responses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             $"{SelectColumns}{Environment.NewLine}{BaseFromClause}{Environment.NewLine}" +
             """
-            WHERE m.workspace_id = @WorkspaceId
-              AND c.region = @Region
+            WHERE c.region = @Region
               AND c.channel_name = @ChannelName
             ORDER BY m.received_at_utc DESC, m.id DESC
             LIMIT @Take OFFSET @Offset;
@@ -392,8 +364,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var responses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             $"{SelectColumns}{Environment.NewLine}{BaseFromClause}{Environment.NewLine}" +
             """
-            WHERE m.workspace_id = @WorkspaceId
-              AND c.region = @Region
+            WHERE c.region = @Region
               AND c.channel_name = @ChannelName
             ORDER BY m.received_at_utc DESC, m.id DESC
             LIMIT @Take;
@@ -412,14 +383,12 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var responses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             $"{SelectColumns}{Environment.NewLine}{BaseFromClause}{Environment.NewLine}" +
             """
-            WHERE m.workspace_id = @WorkspaceId
-              AND m.from_node_id = @SenderNodeId
+            WHERE m.from_node_id = @SenderNodeId
             ORDER BY m.received_at_utc DESC, m.id DESC
             LIMIT @Take;
             """,
             new
             {
-                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 SenderNodeId = senderNodeId,
                 Take = take
             },
@@ -437,14 +406,12 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var responses = await _dbContext.QueryAsync<MessageSummarySqlResponse>(
             $"{SelectColumns}{Environment.NewLine}{BaseFromClause}{Environment.NewLine}" +
             """
-            WHERE m.workspace_id = @WorkspaceId
-              AND m.from_node_id = @SenderNodeId
+            WHERE m.from_node_id = @SenderNodeId
             ORDER BY m.received_at_utc DESC, m.id DESC
             LIMIT @Take OFFSET @Offset;
             """,
             new
             {
-                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
                 SenderNodeId = senderNodeId,
                 Offset = offset,
                 Take = take
@@ -458,7 +425,6 @@ internal sealed class CollectorMessageRepository : IMessageRepository
     {
         return new
         {
-            WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
             Region = region.Trim(),
             ChannelName = channel.Trim(),
             Take = take
@@ -469,7 +435,6 @@ internal sealed class CollectorMessageRepository : IMessageRepository
     {
         return new
         {
-            WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
             Region = region.Trim(),
             ChannelName = channel.Trim(),
             Take = take,
@@ -512,7 +477,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var sqlBuilder = new StringBuilder(selectClause)
             .AppendLine()
             .AppendLine(BaseFromClause)
-            .AppendLine("WHERE m.workspace_id = @WorkspaceId");
+            .AppendLine("WHERE 1 = 1");
 
         if (!string.IsNullOrWhiteSpace(query.BrokerServer))
         {
@@ -570,18 +535,10 @@ internal sealed class CollectorMessageRepository : IMessageRepository
         var parameters = new DynamicParameters();
         var normalizedSearchText = query.SearchText.Trim();
 
-        parameters.Add("WorkspaceId", _workspaceContextAccessor.GetWorkspaceId());
         parameters.Add("BrokerServer", query.BrokerServer.Trim());
         parameters.Add("PacketType", query.PacketType.Trim());
         parameters.Add("SearchPattern", $"%{normalizedSearchText}%");
         parameters.Add("OpaquePacketTypes", OpaquePacketTypes.ToArray());
         return parameters;
-    }
-
-    private string ResolveWorkspaceId(string? workspaceId)
-    {
-        return string.IsNullOrWhiteSpace(workspaceId)
-            ? _workspaceContextAccessor.GetWorkspaceId()
-            : workspaceId.Trim();
     }
 }

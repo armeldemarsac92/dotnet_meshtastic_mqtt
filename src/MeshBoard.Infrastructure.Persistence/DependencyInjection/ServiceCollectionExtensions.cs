@@ -38,7 +38,6 @@ public static class ServiceCollectionExtensions
         var provider = GetProvider(configuration);
         EnsurePostgreSqlProvider(provider, "collector");
         EnsureSharedPostgreSqlInfrastructure(services);
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPersistenceInitializer, PostgresDatabaseInitializer>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IPersistenceInitializer, PostgresCollectorSchemaInitializer>());
         RegisterCollectorPersistenceRepositories(services);
         EnsurePersistenceInitializationHostedService(services);
@@ -84,7 +83,7 @@ public static class ServiceCollectionExtensions
     private static void RegisterCollectorPersistenceRepositories(IServiceCollection services)
     {
         services.AddScoped<CollectorChannelResolver>();
-        services.AddScoped<IBrokerServerProfileRepository, ProductBrokerServerProfileRepository>();
+        services.AddScoped<IBrokerServerProfileRepository, CollectorBrokerServerProfileRepository>();
         services.AddScoped<ICollectorPacketRollupRepository, CollectorPacketRollupRepository>();
         services.AddScoped<IDiscoveredTopicRepository, CollectorDiscoveredTopicRepository>();
         services.AddScoped<IMessageRepository, CollectorMessageRepository>();

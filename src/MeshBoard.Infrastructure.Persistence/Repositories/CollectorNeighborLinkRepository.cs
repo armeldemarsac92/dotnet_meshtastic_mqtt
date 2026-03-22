@@ -25,15 +25,13 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
         IReadOnlyList<NeighborLinkRecord> links,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(workspaceId) || links.Count == 0)
+        if (links.Count == 0)
         {
             return;
         }
 
-        var normalizedWorkspaceId = workspaceId.Trim();
         var observedAtUtc = links.Max(link => link.LastSeenAtUtc);
-        var channelId = await _channelResolver.ResolveFromChannelKeyAsync(
-            normalizedWorkspaceId,
+        var resolvedChannel = await _channelResolver.ResolveFromChannelKeyAsync(
             brokerServer,
             channelKey,
             observedAtUtc,
@@ -44,20 +42,18 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
             await _dbContext.ExecuteAsync(
                 """
                 INSERT INTO collector_neighbor_links (
-                    workspace_id,
                     channel_id,
                     source_node_id,
                     target_node_id,
                     snr_db,
                     last_seen_at_utc)
                 VALUES (
-                    @WorkspaceId,
                     @ChannelId,
                     @SourceNodeId,
                     @TargetNodeId,
                     @SnrDb,
                     @LastSeenAtUtc)
-                ON CONFLICT(workspace_id, channel_id, source_node_id, target_node_id) DO UPDATE SET
+                ON CONFLICT(channel_id, source_node_id, target_node_id) DO UPDATE SET
                     snr_db = CASE
                         WHEN EXCLUDED.last_seen_at_utc >= collector_neighbor_links.last_seen_at_utc
                             THEN COALESCE(EXCLUDED.snr_db, collector_neighbor_links.snr_db)
@@ -71,8 +67,7 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
                 """,
                 new
                 {
-                    WorkspaceId = normalizedWorkspaceId,
-                    ChannelId = channelId,
+                    ChannelId = resolvedChannel.ChannelId,
                     link.SourceNodeId,
                     link.TargetNodeId,
                     link.SnrDb,
@@ -80,7 +75,7 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
                 },
                 cancellationToken);
 
-            await RecordHourlyRollupAsync(normalizedWorkspaceId, channelId, link, cancellationToken);
+            await RecordHourlyRollupAsync(resolvedChannel.ChannelId, link, cancellationToken);
         }
     }
 
@@ -89,11 +84,6 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
         DateTimeOffset notBeforeUtc,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(workspaceId))
-        {
-            return [];
-        }
-
         var responses = await _dbContext.QueryAsync<NeighborLinkSqlResponse>(
             """
             SELECT
@@ -102,17 +92,12 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
                 snr_db AS SnrDb,
                 last_seen_at_utc::text AS LastSeenAtUtc
             FROM collector_neighbor_links
-            WHERE workspace_id = @WorkspaceId
-              AND last_seen_at_utc >= @NotBeforeUtc
+            WHERE last_seen_at_utc >= @NotBeforeUtc
             ORDER BY last_seen_at_utc DESC,
                      source_node_id ASC,
                      target_node_id ASC;
             """,
-            new
-            {
-                WorkspaceId = workspaceId.Trim(),
-                NotBeforeUtc = notBeforeUtc
-            },
+            new { NotBeforeUtc = notBeforeUtc },
             cancellationToken);
 
         return responses
@@ -175,7 +160,6 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
     }
 
     private async Task RecordHourlyRollupAsync(
-        string workspaceId,
         long channelId,
         NeighborLinkRecord link,
         CancellationToken cancellationToken)
@@ -187,7 +171,6 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
         await _dbContext.ExecuteAsync(
             """
             INSERT INTO collector_neighbor_link_hourly_rollups (
-                workspace_id,
                 channel_id,
                 bucket_start_utc,
                 source_node_id,
@@ -200,7 +183,6 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
                 first_seen_at_utc,
                 last_seen_at_utc)
             VALUES (
-                @WorkspaceId,
                 @ChannelId,
                 @BucketStartUtc,
                 @SourceNodeId,
@@ -212,7 +194,7 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
                 @LastSnrDb,
                 @ObservedAtUtc,
                 @ObservedAtUtc)
-            ON CONFLICT(workspace_id, channel_id, bucket_start_utc, source_node_id, target_node_id) DO UPDATE SET
+            ON CONFLICT(channel_id, bucket_start_utc, source_node_id, target_node_id) DO UPDATE SET
                 observation_count = collector_neighbor_link_hourly_rollups.observation_count + 1,
                 snr_sample_count = collector_neighbor_link_hourly_rollups.snr_sample_count + EXCLUDED.snr_sample_count,
                 snr_sum_db = collector_neighbor_link_hourly_rollups.snr_sum_db + EXCLUDED.snr_sum_db,
@@ -235,7 +217,6 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
             """,
             new
             {
-                WorkspaceId = workspaceId,
                 ChannelId = channelId,
                 BucketStartUtc = bucketStartUtc,
                 link.SourceNodeId,

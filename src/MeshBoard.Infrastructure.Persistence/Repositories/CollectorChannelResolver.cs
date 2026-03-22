@@ -17,30 +17,27 @@ internal sealed class CollectorChannelResolver
         _dbContext = dbContext;
     }
 
-    public Task<long> ResolveFromTopicAsync(
-        string workspaceId,
+    public Task<CollectorResolvedChannel> ResolveFromTopicAsync(
         string serverAddress,
         string topic,
         DateTimeOffset observedAtUtc,
         CancellationToken cancellationToken = default)
     {
         var identity = ParseTopicIdentity(topic);
-        return ResolveAsync(workspaceId, serverAddress, identity, observedAtUtc, cancellationToken);
+        return ResolveAsync(serverAddress, identity, observedAtUtc, cancellationToken);
     }
 
-    public Task<long> ResolveFromChannelKeyAsync(
-        string workspaceId,
+    public Task<CollectorResolvedChannel> ResolveFromChannelKeyAsync(
         string serverAddress,
         string? channelKey,
         DateTimeOffset observedAtUtc,
         CancellationToken cancellationToken = default)
     {
         var identity = ParseChannelIdentity(channelKey);
-        return ResolveAsync(workspaceId, serverAddress, identity, observedAtUtc, cancellationToken);
+        return ResolveAsync(serverAddress, identity, observedAtUtc, cancellationToken);
     }
 
-    public Task<long> ResolveDiscoveredTopicAsync(
-        string workspaceId,
+    public Task<CollectorResolvedChannel> ResolveDiscoveredTopicAsync(
         string serverAddress,
         string topicPattern,
         string region,
@@ -58,7 +55,7 @@ internal sealed class CollectorChannelResolver
                 ? BuildTopicPattern(normalizedRegion, DefaultMeshVersion, normalizedChannelName)
                 : topicPattern.Trim());
 
-        return ResolveAsync(workspaceId, serverAddress, identity, observedAtUtc, cancellationToken);
+        return ResolveAsync(serverAddress, identity, observedAtUtc, cancellationToken);
     }
 
     public static string FormatChannelDisplayName(string region, string channelName)
@@ -66,30 +63,26 @@ internal sealed class CollectorChannelResolver
         return $"{region}/{channelName}";
     }
 
-    private async Task<long> ResolveAsync(
-        string workspaceId,
+    private async Task<CollectorResolvedChannel> ResolveAsync(
         string serverAddress,
         CollectorChannelIdentity identity,
         DateTimeOffset observedAtUtc,
         CancellationToken cancellationToken)
     {
-        var normalizedWorkspaceId = workspaceId.Trim();
         var normalizedServerAddress = NormalizeSegment(serverAddress, UnknownServerAddress);
         var serverId = await _dbContext.QueryFirstOrDefaultAsync<long>(
             CollectorChannelQueries.UpsertServer,
             new
             {
-                WorkspaceId = normalizedWorkspaceId,
                 ServerAddress = normalizedServerAddress,
                 ObservedAtUtc = observedAtUtc
             },
             cancellationToken);
 
-        return await _dbContext.QueryFirstOrDefaultAsync<long>(
+        var channelId = await _dbContext.QueryFirstOrDefaultAsync<long>(
             CollectorChannelQueries.UpsertChannel,
             new
             {
-                WorkspaceId = normalizedWorkspaceId,
                 ServerId = serverId,
                 identity.Region,
                 MeshVersion = identity.MeshVersion,
@@ -98,6 +91,8 @@ internal sealed class CollectorChannelResolver
                 ObservedAtUtc = observedAtUtc
             },
             cancellationToken);
+
+        return new CollectorResolvedChannel(serverId, channelId);
     }
 
     private static CollectorChannelIdentity ParseTopicIdentity(string topic)
@@ -170,4 +165,8 @@ internal sealed class CollectorChannelResolver
         string MeshVersion,
         string ChannelName,
         string TopicPattern);
+
+    internal readonly record struct CollectorResolvedChannel(
+        long ServerId,
+        long ChannelId);
 }

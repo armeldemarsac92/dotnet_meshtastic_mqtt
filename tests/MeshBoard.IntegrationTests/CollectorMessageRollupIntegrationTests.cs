@@ -41,7 +41,6 @@ public sealed class CollectorMessageRollupIntegrationTests
                     await repository.AddAsync(
                         new SaveObservedMessageRequest
                         {
-                            WorkspaceId = "default",
                             BrokerServer = "mqtt.world.example:1883",
                             Topic = "msh/US/2/e/LongFast/!alpha",
                             PacketType = "Position Update",
@@ -56,7 +55,6 @@ public sealed class CollectorMessageRollupIntegrationTests
                     await repository.AddAsync(
                         new SaveObservedMessageRequest
                         {
-                            WorkspaceId = "default",
                             BrokerServer = "mqtt.world.example:1883",
                             Topic = "msh/US/2/e/LongFast/!alpha",
                             PacketType = "Position Update",
@@ -75,8 +73,7 @@ public sealed class CollectorMessageRollupIntegrationTests
                 """
                 SELECT packet_count
                 FROM collector_channel_packet_hourly_rollups
-                WHERE workspace_id = 'default'
-                  AND packet_type = 'Position Update';
+                WHERE packet_type = 'Position Update';
                 """,
                 connection);
             var channelPacketCount = Convert.ToInt32(await channelCommand.ExecuteScalarAsync());
@@ -85,8 +82,7 @@ public sealed class CollectorMessageRollupIntegrationTests
                 """
                 SELECT packet_count
                 FROM collector_node_packet_hourly_rollups
-                WHERE workspace_id = 'default'
-                  AND node_id = '!alpha'
+                WHERE node_id = '!alpha'
                   AND packet_type = 'Position Update';
                 """,
                 connection);

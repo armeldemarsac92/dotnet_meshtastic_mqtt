@@ -180,6 +180,10 @@
                             </article>
                         </section>
 
+                        <CollectorChannelStatsPanel ServerAddress="@_channel?.BrokerServer"
+                                                    Region="@_region"
+                                                    ChannelName="@_channelName" />
+
                         @if (_channel is not null)
                         {
                             <section class="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">

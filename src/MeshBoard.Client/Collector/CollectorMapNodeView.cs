@@ -1,6 +1,6 @@
-namespace MeshBoard.Client.Maps;
+namespace MeshBoard.Client.Collector;
 
-public sealed record MapProjectionEnvelope
+public sealed record CollectorMapNodeView
 {
     public string NodeId { get; init; } = string.Empty;
 
@@ -10,7 +10,7 @@ public sealed record MapProjectionEnvelope
 
     public string? LongName { get; init; }
 
-    public string? Channel { get; init; }
+    public string? ChannelKey { get; init; }
 
     public double Latitude { get; init; }
 
@@ -19,12 +19,6 @@ public sealed record MapProjectionEnvelope
     public int? BatteryLevelPercent { get; init; }
 
     public DateTimeOffset? LastHeardAtUtc { get; init; }
-
-    public string? LastPacketType { get; init; }
-
-    public string? LastPayloadPreview { get; init; }
-
-    public int ObservedPacketCount { get; init; }
 
     public string DisplayName => LongName ?? ShortName ?? NodeId;
 }

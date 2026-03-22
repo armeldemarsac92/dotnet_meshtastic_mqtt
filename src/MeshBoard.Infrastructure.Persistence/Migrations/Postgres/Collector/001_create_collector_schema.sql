@@ -6,8 +6,18 @@ CREATE TABLE IF NOT EXISTS collector_servers (
     last_observed_at_utc TIMESTAMPTZ NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_servers_workspace_address
-    ON collector_servers(workspace_id, server_address);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'collector_servers'
+          AND column_name = 'workspace_id') THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_servers_workspace_address
+            ON collector_servers(workspace_id, server_address);
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS collector_channels (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -21,11 +31,21 @@ CREATE TABLE IF NOT EXISTS collector_channels (
     last_observed_at_utc TIMESTAMPTZ NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_channels_workspace_server_scope
-    ON collector_channels(workspace_id, server_id, region, mesh_version, channel_name);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'collector_channels'
+          AND column_name = 'workspace_id') THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_channels_workspace_server_scope
+            ON collector_channels(workspace_id, server_id, region, mesh_version, channel_name);
 
-CREATE INDEX IF NOT EXISTS ix_collector_channels_workspace_server_seen
-    ON collector_channels(workspace_id, server_id, last_observed_at_utc DESC);
+        CREATE INDEX IF NOT EXISTS ix_collector_channels_workspace_server_seen
+            ON collector_channels(workspace_id, server_id, last_observed_at_utc DESC);
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS collector_nodes (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -48,15 +68,25 @@ CREATE TABLE IF NOT EXISTS collector_nodes (
     barometric_pressure DOUBLE PRECISION NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_nodes_workspace_channel_node
-    ON collector_nodes(workspace_id, channel_id, node_id);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'collector_nodes'
+          AND column_name = 'workspace_id') THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_nodes_workspace_channel_node
+            ON collector_nodes(workspace_id, channel_id, node_id);
 
-CREATE INDEX IF NOT EXISTS ix_collector_nodes_workspace_last_heard
-    ON collector_nodes(workspace_id, last_heard_at_utc DESC NULLS LAST);
+        CREATE INDEX IF NOT EXISTS ix_collector_nodes_workspace_last_heard
+            ON collector_nodes(workspace_id, last_heard_at_utc DESC NULLS LAST);
 
-CREATE INDEX IF NOT EXISTS ix_collector_nodes_workspace_position
-    ON collector_nodes(workspace_id, channel_id)
-    WHERE last_known_latitude IS NOT NULL AND last_known_longitude IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS ix_collector_nodes_workspace_position
+            ON collector_nodes(workspace_id, channel_id)
+            WHERE last_known_latitude IS NOT NULL AND last_known_longitude IS NOT NULL;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS collector_messages (
     id UUID NOT NULL PRIMARY KEY,
@@ -72,17 +102,27 @@ CREATE TABLE IF NOT EXISTS collector_messages (
     received_at_utc TIMESTAMPTZ NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_messages_workspace_message_key
-    ON collector_messages(workspace_id, message_key);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'collector_messages'
+          AND column_name = 'workspace_id') THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_messages_workspace_message_key
+            ON collector_messages(workspace_id, message_key);
 
-CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_received
-    ON collector_messages(workspace_id, received_at_utc DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_received
+            ON collector_messages(workspace_id, received_at_utc DESC, id DESC);
 
-CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_channel_received
-    ON collector_messages(workspace_id, channel_id, received_at_utc DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_channel_received
+            ON collector_messages(workspace_id, channel_id, received_at_utc DESC, id DESC);
 
-CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_sender_received
-    ON collector_messages(workspace_id, from_node_id, received_at_utc DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_sender_received
+            ON collector_messages(workspace_id, from_node_id, received_at_utc DESC, id DESC);
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS collector_neighbor_links (
     workspace_id TEXT NOT NULL,
@@ -94,5 +134,15 @@ CREATE TABLE IF NOT EXISTS collector_neighbor_links (
     PRIMARY KEY (workspace_id, channel_id, source_node_id, target_node_id)
 );
 
-CREATE INDEX IF NOT EXISTS ix_collector_neighbor_links_workspace_seen
-    ON collector_neighbor_links(workspace_id, last_seen_at_utc DESC);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'collector_neighbor_links'
+          AND column_name = 'workspace_id') THEN
+        CREATE INDEX IF NOT EXISTS ix_collector_neighbor_links_workspace_seen
+            ON collector_neighbor_links(workspace_id, last_seen_at_utc DESC);
+    END IF;
+END $$;

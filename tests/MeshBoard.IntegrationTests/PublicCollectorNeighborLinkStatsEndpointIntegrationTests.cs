@@ -49,12 +49,10 @@ public sealed class PublicCollectorNeighborLinkStatsEndpointIntegrationTests
         await using var serverCommand = new NpgsqlCommand(
             """
             INSERT INTO collector_servers (
-                workspace_id,
                 server_address,
                 first_observed_at_utc,
                 last_observed_at_utc)
             VALUES (
-                'default',
                 'mqtt.world.example:1883',
                 @ObservedAtUtc,
                 @ObservedAtUtc)
@@ -67,7 +65,6 @@ public sealed class PublicCollectorNeighborLinkStatsEndpointIntegrationTests
         await using var channelCommand = new NpgsqlCommand(
             """
             INSERT INTO collector_channels (
-                workspace_id,
                 server_id,
                 region,
                 mesh_version,
@@ -76,7 +73,6 @@ public sealed class PublicCollectorNeighborLinkStatsEndpointIntegrationTests
                 first_observed_at_utc,
                 last_observed_at_utc)
             VALUES (
-                'default',
                 @ServerId,
                 'US',
                 '2',
@@ -91,13 +87,12 @@ public sealed class PublicCollectorNeighborLinkStatsEndpointIntegrationTests
         channelCommand.Parameters.AddWithValue("ObservedAtUtc", observedAtUtc);
         var channelId = (long)(await channelCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Missing channel id."));
 
-        await InsertNodeAsync(connection, channelId, "!alpha", "ALP", "Alpha", observedAtUtc);
-        await InsertNodeAsync(connection, channelId, "!bravo", "BRV", "Bravo", observedAtUtc);
+        await InsertNodeAsync(connection, serverId, channelId, "!alpha", "ALP", "Alpha", observedAtUtc);
+        await InsertNodeAsync(connection, serverId, channelId, "!bravo", "BRV", "Bravo", observedAtUtc);
 
         await using var rollupCommand = new NpgsqlCommand(
             """
             INSERT INTO collector_neighbor_link_hourly_rollups (
-                workspace_id,
                 channel_id,
                 bucket_start_utc,
                 source_node_id,
@@ -110,7 +105,6 @@ public sealed class PublicCollectorNeighborLinkStatsEndpointIntegrationTests
                 first_seen_at_utc,
                 last_seen_at_utc)
             VALUES (
-                'default',
                 @ChannelId,
                 @BucketStartUtc,
                 '!alpha',
@@ -133,6 +127,7 @@ public sealed class PublicCollectorNeighborLinkStatsEndpointIntegrationTests
 
     private static async Task InsertNodeAsync(
         NpgsqlConnection connection,
+        long serverId,
         long channelId,
         string nodeId,
         string shortName,
@@ -142,21 +137,22 @@ public sealed class PublicCollectorNeighborLinkStatsEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_nodes (
-                workspace_id,
-                channel_id,
+                server_id,
                 node_id,
                 short_name,
                 long_name,
+                last_heard_channel_id,
                 last_heard_at_utc)
             VALUES (
-                'default',
-                @ChannelId,
+                @ServerId,
                 @NodeId,
                 @ShortName,
                 @LongName,
+                @ChannelId,
                 @ObservedAtUtc);
             """,
             connection);
+        command.Parameters.AddWithValue("ServerId", serverId);
         command.Parameters.AddWithValue("ChannelId", channelId);
         command.Parameters.AddWithValue("NodeId", nodeId);
         command.Parameters.AddWithValue("ShortName", shortName);

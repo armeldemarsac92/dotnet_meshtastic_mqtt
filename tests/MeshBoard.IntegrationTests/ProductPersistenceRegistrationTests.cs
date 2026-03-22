@@ -66,9 +66,6 @@ public sealed class ProductPersistenceRegistrationTests
         var expectedConnectionFactoryType = persistenceAssembly.GetType(
             "MeshBoard.Infrastructure.Persistence.Context.PostgresPersistenceConnectionFactory",
             throwOnError: true)!;
-        var productInitializerType = persistenceAssembly.GetType(
-            "MeshBoard.Infrastructure.Persistence.Initialization.PostgresDatabaseInitializer",
-            throwOnError: true)!;
         var collectorInitializerType = persistenceAssembly.GetType(
             "MeshBoard.Infrastructure.Persistence.Initialization.PostgresCollectorSchemaInitializer",
             throwOnError: true)!;
@@ -79,10 +76,6 @@ public sealed class ProductPersistenceRegistrationTests
             services,
             descriptor => descriptor.ServiceType == connectionFactoryServiceType &&
                 descriptor.ImplementationType == expectedConnectionFactoryType);
-        Assert.Contains(
-            services,
-            descriptor => descriptor.ServiceType == initializerServiceType &&
-                descriptor.ImplementationType == productInitializerType);
         Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == initializerServiceType &&
@@ -98,7 +91,7 @@ public sealed class ProductPersistenceRegistrationTests
         Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == typeof(IBrokerServerProfileRepository) &&
-                descriptor.ImplementationType?.Name == "ProductBrokerServerProfileRepository");
+                descriptor.ImplementationType?.Name == "CollectorBrokerServerProfileRepository");
         Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == typeof(IMessageRepository) &&

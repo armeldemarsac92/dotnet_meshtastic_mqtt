@@ -1,7 +1,6 @@
 using System.Text;
 using Dapper;
 using MeshBoard.Application.Abstractions.Persistence;
-using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Nodes;
 using MeshBoard.Infrastructure.Persistence.Context;
 using MeshBoard.Infrastructure.Persistence.Mapping;
@@ -15,13 +14,16 @@ internal sealed class CollectorNodeRepository : INodeRepository
     private const string LatestNodesCte =
         """
         WITH latest_nodes AS (
-            SELECT DISTINCT ON (n.node_id)
+            SELECT
                 n.node_id AS NodeId,
                 s.server_address AS BrokerServer,
                 n.short_name AS ShortName,
                 n.long_name AS LongName,
                 n.last_heard_at_utc::text AS LastHeardAtUtc,
-                CONCAT(c.region, '/', c.channel_name) AS LastHeardChannel,
+                CASE
+                    WHEN c.id IS NULL THEN NULL
+                    ELSE CONCAT(c.region, '/', c.channel_name)
+                END AS LastHeardChannel,
                 n.last_text_message_at_utc::text AS LastTextMessageAtUtc,
                 n.last_known_latitude AS LastKnownLatitude,
                 n.last_known_longitude AS LastKnownLongitude,
@@ -34,18 +36,17 @@ internal sealed class CollectorNodeRepository : INodeRepository
                 n.relative_humidity AS RelativeHumidity,
                 n.barometric_pressure AS BarometricPressure
             FROM collector_nodes n
-            INNER JOIN collector_channels c
-                ON c.id = n.channel_id
             INNER JOIN collector_servers s
-                ON s.id = c.server_id
-            WHERE n.workspace_id = @WorkspaceId
-              AND NOT @OnlyFavorites
+                ON s.id = n.server_id
+            LEFT JOIN collector_channels c
+                ON c.id = n.last_heard_channel_id
+            WHERE NOT @OnlyFavorites
               AND (
                   @SearchText = '' OR
                   n.node_id ILIKE @SearchPattern OR
                   COALESCE(n.short_name, '') ILIKE @SearchPattern OR
                   COALESCE(n.long_name, '') ILIKE @SearchPattern OR
-                  CONCAT(c.region, '/', c.channel_name) ILIKE @SearchPattern
+                  COALESCE(CONCAT(c.region, '/', c.channel_name), '') ILIKE @SearchPattern
               )
               AND (
                   NOT @OnlyWithLocation OR
@@ -62,25 +63,19 @@ internal sealed class CollectorNodeRepository : INodeRepository
                   n.relative_humidity IS NOT NULL OR
                   n.barometric_pressure IS NOT NULL
               )
-            ORDER BY n.node_id,
-                     COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) DESC NULLS LAST,
-                     n.id DESC
         )
         """;
 
     private readonly CollectorChannelResolver _channelResolver;
     private readonly IDbContext _dbContext;
     private readonly ILogger<CollectorNodeRepository> _logger;
-    private readonly IWorkspaceContextAccessor _workspaceContextAccessor;
 
     public CollectorNodeRepository(
         IDbContext dbContext,
-        IWorkspaceContextAccessor workspaceContextAccessor,
         CollectorChannelResolver channelResolver,
         ILogger<CollectorNodeRepository> logger)
     {
         _dbContext = dbContext;
-        _workspaceContextAccessor = workspaceContextAccessor;
         _channelResolver = channelResolver;
         _logger = logger;
     }
@@ -91,7 +86,7 @@ internal sealed class CollectorNodeRepository : INodeRepository
 
         return _dbContext.QueryFirstOrDefaultAsync<int>(
             $"{LatestNodesCte}{Environment.NewLine}SELECT COUNT(1) FROM latest_nodes;",
-            CreateQueryParameters(query, _workspaceContextAccessor.GetWorkspaceId()),
+            CreateQueryParameters(query),
             cancellationToken);
     }
 
@@ -122,21 +117,16 @@ internal sealed class CollectorNodeRepository : INodeRepository
                 n.relative_humidity AS RelativeHumidity,
                 n.barometric_pressure AS BarometricPressure
             FROM collector_nodes n
-            INNER JOIN collector_channels c
-                ON c.id = n.channel_id
             INNER JOIN collector_servers s
-                ON s.id = c.server_id
-            WHERE n.workspace_id = @WorkspaceId
-              AND n.node_id = @NodeId
+                ON s.id = n.server_id
+            LEFT JOIN collector_channels c
+                ON c.id = n.last_heard_channel_id
+            WHERE n.node_id = @NodeId
             ORDER BY COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) DESC NULLS LAST,
                      n.id DESC
             LIMIT 1;
             """,
-            new
-            {
-                WorkspaceId = _workspaceContextAccessor.GetWorkspaceId(),
-                NodeId = nodeId.Trim()
-            },
+            new { NodeId = nodeId.Trim() },
             cancellationToken);
 
         return responses.MapToNodes().FirstOrDefault();
@@ -154,7 +144,7 @@ internal sealed class CollectorNodeRepository : INodeRepository
             SearchText = searchText ?? string.Empty,
             OnlyWithLocation = true
         };
-        var parameters = CreateQueryParameters(query, _workspaceContextAccessor.GetWorkspaceId());
+        var parameters = CreateQueryParameters(query);
         parameters.Add("Take", take);
 
         var responses = await _dbContext.QueryAsync<NodeSqlResponse>(
@@ -188,7 +178,7 @@ internal sealed class CollectorNodeRepository : INodeRepository
             .AppendLine(GetOrderByClause(query.SortBy))
             .AppendLine("LIMIT @Take OFFSET @Offset;");
 
-        var parameters = CreateQueryParameters(query, _workspaceContextAccessor.GetWorkspaceId());
+        var parameters = CreateQueryParameters(query);
         parameters.Add("Take", take);
         parameters.Add("Offset", offset);
 
@@ -204,12 +194,10 @@ internal sealed class CollectorNodeRepository : INodeRepository
     {
         _logger.LogDebug("Attempting to upsert collector observed node: {NodeId}", request.NodeId);
 
-        var workspaceId = ResolveWorkspaceId(request.WorkspaceId);
         var observedAtUtc = request.LastHeardAtUtc
             ?? request.LastTextMessageAtUtc
             ?? DateTimeOffset.UtcNow;
-        var channelId = await _channelResolver.ResolveFromChannelKeyAsync(
-            workspaceId,
+        var resolvedChannel = await _channelResolver.ResolveFromChannelKeyAsync(
             request.BrokerServer,
             request.LastHeardChannel,
             observedAtUtc,
@@ -218,11 +206,11 @@ internal sealed class CollectorNodeRepository : INodeRepository
         await _dbContext.ExecuteAsync(
             """
             INSERT INTO collector_nodes (
-                workspace_id,
-                channel_id,
+                server_id,
                 node_id,
                 short_name,
                 long_name,
+                last_heard_channel_id,
                 last_heard_at_utc,
                 last_text_message_at_utc,
                 last_known_latitude,
@@ -236,11 +224,11 @@ internal sealed class CollectorNodeRepository : INodeRepository
                 relative_humidity,
                 barometric_pressure)
             VALUES (
-                @WorkspaceId,
-                @ChannelId,
+                @ServerId,
                 @NodeId,
                 @ShortName,
                 @LongName,
+                @LastHeardChannelId,
                 @LastHeardAtUtc,
                 @LastTextMessageAtUtc,
                 @LastKnownLatitude,
@@ -253,9 +241,10 @@ internal sealed class CollectorNodeRepository : INodeRepository
                 @TemperatureCelsius,
                 @RelativeHumidity,
                 @BarometricPressure)
-            ON CONFLICT(workspace_id, channel_id, node_id) DO UPDATE SET
+            ON CONFLICT(server_id, node_id) DO UPDATE SET
                 short_name = COALESCE(EXCLUDED.short_name, collector_nodes.short_name),
                 long_name = COALESCE(EXCLUDED.long_name, collector_nodes.long_name),
+                last_heard_channel_id = COALESCE(EXCLUDED.last_heard_channel_id, collector_nodes.last_heard_channel_id),
                 last_heard_at_utc = COALESCE(EXCLUDED.last_heard_at_utc, collector_nodes.last_heard_at_utc),
                 last_text_message_at_utc = COALESCE(EXCLUDED.last_text_message_at_utc, collector_nodes.last_text_message_at_utc),
                 last_known_latitude = COALESCE(EXCLUDED.last_known_latitude, collector_nodes.last_known_latitude),
@@ -271,8 +260,8 @@ internal sealed class CollectorNodeRepository : INodeRepository
             """,
             new
             {
-                WorkspaceId = workspaceId,
-                ChannelId = channelId,
+                ServerId = resolvedChannel.ServerId,
+                LastHeardChannelId = resolvedChannel.ChannelId,
                 request.NodeId,
                 request.ShortName,
                 request.LongName,
@@ -292,12 +281,11 @@ internal sealed class CollectorNodeRepository : INodeRepository
             cancellationToken);
     }
 
-    private static DynamicParameters CreateQueryParameters(NodeQuery query, string workspaceId)
+    private static DynamicParameters CreateQueryParameters(NodeQuery query)
     {
         var parameters = new DynamicParameters();
         var normalizedSearchText = query.SearchText.Trim();
 
-        parameters.Add("WorkspaceId", workspaceId);
         parameters.Add("SearchText", normalizedSearchText);
         parameters.Add("SearchPattern", $"%{normalizedSearchText}%");
         parameters.Add("OnlyFavorites", query.OnlyFavorites);
@@ -328,10 +316,4 @@ internal sealed class CollectorNodeRepository : INodeRepository
         };
     }
 
-    private string ResolveWorkspaceId(string? workspaceId)
-    {
-        return string.IsNullOrWhiteSpace(workspaceId)
-            ? _workspaceContextAccessor.GetWorkspaceId()
-            : workspaceId.Trim();
-    }
 }

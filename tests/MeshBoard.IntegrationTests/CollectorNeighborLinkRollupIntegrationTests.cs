@@ -73,8 +73,7 @@ public sealed class CollectorNeighborLinkRollupIntegrationTests
                 """
                 SELECT observation_count, snr_sample_count, snr_sum_db, max_snr_db, last_snr_db
                 FROM collector_neighbor_link_hourly_rollups
-                WHERE workspace_id = 'default'
-                  AND source_node_id = '!alpha'
+                WHERE source_node_id = '!alpha'
                   AND target_node_id = '!bravo';
                 """,
                 connection);

@@ -40,7 +40,7 @@ public sealed class PublicCollectorEndpointIntegrationTests
 
         var snapshot = await snapshotResponse.Content.ReadFromJsonAsync<CollectorMapSnapshot>();
         Assert.NotNull(snapshot);
-        Assert.Equal("default", snapshot!.WorkspaceId);
+        Assert.NotNull(snapshot);
         Assert.Equal(1, snapshot.ServerCount);
         Assert.Equal(1, snapshot.ChannelCount);
         Assert.Equal(2, snapshot.NodeCount);
@@ -67,12 +67,10 @@ public sealed class PublicCollectorEndpointIntegrationTests
         await using var serverCommand = new NpgsqlCommand(
             """
             INSERT INTO collector_servers (
-                workspace_id,
                 server_address,
                 first_observed_at_utc,
                 last_observed_at_utc)
             VALUES (
-                'default',
                 'mqtt.world.example:1883',
                 @ObservedAtUtc,
                 @ObservedAtUtc)
@@ -85,7 +83,6 @@ public sealed class PublicCollectorEndpointIntegrationTests
         await using var channelCommand = new NpgsqlCommand(
             """
             INSERT INTO collector_channels (
-                workspace_id,
                 server_id,
                 region,
                 mesh_version,
@@ -94,7 +91,6 @@ public sealed class PublicCollectorEndpointIntegrationTests
                 first_observed_at_utc,
                 last_observed_at_utc)
             VALUES (
-                'default',
                 @ServerId,
                 'US',
                 '2',
@@ -109,20 +105,18 @@ public sealed class PublicCollectorEndpointIntegrationTests
         channelCommand.Parameters.AddWithValue("ObservedAtUtc", observedAtUtc);
         var channelId = (long)(await channelCommand.ExecuteScalarAsync() ?? throw new InvalidOperationException("Missing channel id."));
 
-        await InsertNodeAsync(connection, channelId, "!alpha", "ALP", "Alpha", 48.8566, 2.3522, observedAtUtc);
-        await InsertNodeAsync(connection, channelId, "!bravo", "BRV", "Bravo", 45.7640, 4.8357, observedAtUtc.AddMinutes(-5));
+        await InsertNodeAsync(connection, serverId, channelId, "!alpha", "ALP", "Alpha", 48.8566, 2.3522, observedAtUtc);
+        await InsertNodeAsync(connection, serverId, channelId, "!bravo", "BRV", "Bravo", 45.7640, 4.8357, observedAtUtc.AddMinutes(-5));
 
         await using var linkCommand = new NpgsqlCommand(
             """
             INSERT INTO collector_neighbor_links (
-                workspace_id,
                 channel_id,
                 source_node_id,
                 target_node_id,
                 snr_db,
                 last_seen_at_utc)
             VALUES (
-                'default',
                 @ChannelId,
                 '!alpha',
                 '!bravo',
@@ -137,6 +131,7 @@ public sealed class PublicCollectorEndpointIntegrationTests
 
     private static async Task InsertNodeAsync(
         NpgsqlConnection connection,
+        long serverId,
         long channelId,
         string nodeId,
         string shortName,
@@ -148,27 +143,28 @@ public sealed class PublicCollectorEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_nodes (
-                workspace_id,
-                channel_id,
+                server_id,
                 node_id,
                 short_name,
                 long_name,
+                last_heard_channel_id,
                 last_heard_at_utc,
                 last_text_message_at_utc,
                 last_known_latitude,
                 last_known_longitude)
             VALUES (
-                'default',
-                @ChannelId,
+                @ServerId,
                 @NodeId,
                 @ShortName,
                 @LongName,
+                @ChannelId,
                 @ObservedAtUtc,
                 @ObservedAtUtc,
                 @Latitude,
                 @Longitude);
             """,
             connection);
+        command.Parameters.AddWithValue("ServerId", serverId);
         command.Parameters.AddWithValue("ChannelId", channelId);
         command.Parameters.AddWithValue("NodeId", nodeId);
         command.Parameters.AddWithValue("ShortName", shortName);

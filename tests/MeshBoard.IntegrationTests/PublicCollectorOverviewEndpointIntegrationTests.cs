@@ -95,12 +95,12 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
         var longFastChannelId = await InsertChannelAsync(connection, serverId, "US", "LongFast", observedAtUtc);
         var longSlowChannelId = await InsertChannelAsync(connection, serverId, "EU", "LongSlow", observedAtUtc.AddMinutes(-5));
 
-        await InsertNodeAsync(connection, longFastChannelId, "!alpha", "ALP", "Alpha", 48.8566, 2.3522, observedAtUtc);
-        await InsertNodeAsync(connection, longFastChannelId, "!bravo", "BRV", "Bravo", 45.7640, 4.8357, observedAtUtc.AddMinutes(-1));
-        await InsertNodeAsync(connection, longFastChannelId, "!charlie", "CHR", "Charlie", null, null, observedAtUtc.AddMinutes(-2));
+        await InsertNodeAsync(connection, serverId, longFastChannelId, "!alpha", "ALP", "Alpha", 48.8566, 2.3522, observedAtUtc);
+        await InsertNodeAsync(connection, serverId, longFastChannelId, "!bravo", "BRV", "Bravo", 45.7640, 4.8357, observedAtUtc.AddMinutes(-1));
+        await InsertNodeAsync(connection, serverId, longFastChannelId, "!charlie", "CHR", "Charlie", null, null, observedAtUtc.AddMinutes(-2));
 
-        await InsertNodeAsync(connection, longSlowChannelId, "!delta", "DLT", "Delta", 51.5074, -0.1278, observedAtUtc.AddMinutes(-3));
-        await InsertNodeAsync(connection, longSlowChannelId, "!echo", "ECH", "Echo", null, null, observedAtUtc.AddMinutes(-4));
+        await InsertNodeAsync(connection, serverId, longSlowChannelId, "!delta", "DLT", "Delta", 51.5074, -0.1278, observedAtUtc.AddMinutes(-3));
+        await InsertNodeAsync(connection, serverId, longSlowChannelId, "!echo", "ECH", "Echo", null, null, observedAtUtc.AddMinutes(-4));
 
         await InsertCurrentLinkAsync(connection, longFastChannelId, "!alpha", "!bravo", 6.5f, observedAtUtc);
         await InsertCurrentLinkAsync(connection, longFastChannelId, "!bravo", "!charlie", 4.0f, observedAtUtc.AddMinutes(-1));
@@ -120,12 +120,10 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_servers (
-                workspace_id,
                 server_address,
                 first_observed_at_utc,
                 last_observed_at_utc)
             VALUES (
-                'default',
                 'mqtt.world.example:1883',
                 @ObservedAtUtc,
                 @ObservedAtUtc)
@@ -146,7 +144,6 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_channels (
-                workspace_id,
                 server_id,
                 region,
                 mesh_version,
@@ -155,7 +152,6 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
                 first_observed_at_utc,
                 last_observed_at_utc)
             VALUES (
-                'default',
                 @ServerId,
                 @Region,
                 '2',
@@ -176,6 +172,7 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
 
     private static async Task InsertNodeAsync(
         NpgsqlConnection connection,
+        long serverId,
         long channelId,
         string nodeId,
         string shortName,
@@ -187,27 +184,28 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_nodes (
-                workspace_id,
-                channel_id,
+                server_id,
                 node_id,
                 short_name,
                 long_name,
+                last_heard_channel_id,
                 last_heard_at_utc,
                 last_text_message_at_utc,
                 last_known_latitude,
                 last_known_longitude)
             VALUES (
-                'default',
-                @ChannelId,
+                @ServerId,
                 @NodeId,
                 @ShortName,
                 @LongName,
+                @ChannelId,
                 @ObservedAtUtc,
                 @ObservedAtUtc,
                 @Latitude,
                 @Longitude);
             """,
             connection);
+        command.Parameters.AddWithValue("ServerId", serverId);
         command.Parameters.AddWithValue("ChannelId", channelId);
         command.Parameters.AddWithValue("NodeId", nodeId);
         command.Parameters.AddWithValue("ShortName", shortName);
@@ -229,14 +227,12 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_neighbor_links (
-                workspace_id,
                 channel_id,
                 source_node_id,
                 target_node_id,
                 snr_db,
                 last_seen_at_utc)
             VALUES (
-                'default',
                 @ChannelId,
                 @SourceNodeId,
                 @TargetNodeId,
@@ -264,7 +260,6 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_channel_packet_hourly_rollups (
-                workspace_id,
                 channel_id,
                 bucket_start_utc,
                 packet_type,
@@ -272,7 +267,6 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
                 first_seen_at_utc,
                 last_seen_at_utc)
             VALUES (
-                'default',
                 @ChannelId,
                 @BucketStartUtc,
                 @PacketType,
@@ -306,7 +300,6 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO collector_neighbor_link_hourly_rollups (
-                workspace_id,
                 channel_id,
                 bucket_start_utc,
                 source_node_id,
@@ -319,7 +312,6 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
                 first_seen_at_utc,
                 last_seen_at_utc)
             VALUES (
-                'default',
                 @ChannelId,
                 @BucketStartUtc,
                 @SourceNodeId,

@@ -137,7 +137,6 @@ public sealed class CollectorReadService : ICollectorReadService
         return new CollectorMapSnapshot
         {
             GeneratedAtUtc = generatedAtUtc,
-            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
             ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
             Region = NullIfEmpty(sanitizedQuery.Region),
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
@@ -179,7 +178,6 @@ public sealed class CollectorReadService : ICollectorReadService
         return new CollectorChannelPacketStatsSnapshot
         {
             GeneratedAtUtc = generatedAtUtc,
-            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
             ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
             Region = NullIfEmpty(sanitizedQuery.Region),
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
@@ -216,7 +214,6 @@ public sealed class CollectorReadService : ICollectorReadService
         return new CollectorNodePacketStatsSnapshot
         {
             GeneratedAtUtc = generatedAtUtc,
-            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
             ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
             Region = NullIfEmpty(sanitizedQuery.Region),
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
@@ -254,7 +251,6 @@ public sealed class CollectorReadService : ICollectorReadService
         return new CollectorNeighborLinkStatsSnapshot
         {
             GeneratedAtUtc = generatedAtUtc,
-            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
             ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
             Region = NullIfEmpty(sanitizedQuery.Region),
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
@@ -314,7 +310,6 @@ public sealed class CollectorReadService : ICollectorReadService
         return new CollectorTopologySnapshot
         {
             GeneratedAtUtc = generatedAtUtc,
-            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
             ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
             Region = NullIfEmpty(sanitizedQuery.Region),
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
@@ -407,7 +402,6 @@ public sealed class CollectorReadService : ICollectorReadService
             return new CollectorOverviewSnapshot
             {
                 GeneratedAtUtc = generatedAtUtc,
-                WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
                 ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
                 Region = NullIfEmpty(sanitizedQuery.Region),
                 ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
@@ -422,15 +416,18 @@ public sealed class CollectorReadService : ICollectorReadService
             };
         }
 
-        var channelTasks = selectedChannels
-            .Select(channel => BuildOverviewChannelAsync(channel, sanitizedQuery, activeNotBeforeUtc, lookbackNotBeforeUtc, cancellationToken))
-            .ToArray();
+        var channelContexts = new List<OverviewChannelContext>(selectedChannels.Length);
 
-        await Task.WhenAll(channelTasks);
-
-        var channelContexts = channelTasks
-            .Select(task => task.Result)
-            .ToArray();
+        foreach (var channel in selectedChannels)
+        {
+            channelContexts.Add(
+                await BuildOverviewChannelAsync(
+                    channel,
+                    sanitizedQuery,
+                    activeNotBeforeUtc,
+                    lookbackNotBeforeUtc,
+                    cancellationToken));
+        }
 
         var serverSummaries = channelContexts
             .GroupBy(context => context.Channel.ServerAddress, StringComparer.Ordinal)
@@ -466,14 +463,13 @@ public sealed class CollectorReadService : ICollectorReadService
         return new CollectorOverviewSnapshot
         {
             GeneratedAtUtc = generatedAtUtc,
-            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
             ServerAddress = NullIfEmpty(sanitizedQuery.ServerAddress),
             Region = NullIfEmpty(sanitizedQuery.Region),
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
             ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
             LookbackHours = sanitizedQuery.LookbackHours,
             ServerCount = serverSummaries.Length,
-            ChannelCount = channelContexts.Length,
+            ChannelCount = channelContexts.Count,
             ActiveNodeCount = serverSummaries.Sum(summary => summary.ActiveNodeCount),
             ActiveLinkCount = serverSummaries.Sum(summary => summary.ActiveLinkCount),
             PacketCountInLookback = serverSummaries.Sum(summary => summary.PacketCountInLookback),
@@ -518,34 +514,28 @@ public sealed class CollectorReadService : ICollectorReadService
             MaxRows = MaxStatsRows
         };
 
-        var nodesTask = _collectorReadRepository.GetTopologyNodesAsync(
+        var nodes = await _collectorReadRepository.GetTopologyNodesAsync(
             WorkspaceConstants.DefaultWorkspaceId,
             topologyQuery,
             activeNotBeforeUtc,
             cancellationToken);
-        var linksTask = _collectorReadRepository.GetTopologyLinksAsync(
+        var links = await _collectorReadRepository.GetTopologyLinksAsync(
             WorkspaceConstants.DefaultWorkspaceId,
             topologyQuery,
             activeNotBeforeUtc,
             cancellationToken);
-        var packetTypeTotalsTask = _collectorReadRepository.GetChannelPacketTypeTotalsAsync(
+        var packetTypeTotals = await _collectorReadRepository.GetChannelPacketTypeTotalsAsync(
             WorkspaceConstants.DefaultWorkspaceId,
             packetStatsQuery,
             lookbackNotBeforeUtc,
             cancellationToken);
-        var neighborObservationCountTask = _collectorReadRepository.GetNeighborObservationCountAsync(
+        var neighborObservationCount = await _collectorReadRepository.GetNeighborObservationCountAsync(
             WorkspaceConstants.DefaultWorkspaceId,
             neighborLinkQuery,
             lookbackNotBeforeUtc,
             cancellationToken);
 
-        await Task.WhenAll(nodesTask, linksTask, packetTypeTotalsTask, neighborObservationCountTask);
-
-        var nodes = await nodesTask;
-        var links = await linksTask;
         var analysis = AnalyzeTopology(nodes, links, Array.Empty<CollectorNeighborLinkHourlyRollup>(), 0);
-        var packetTypeTotals = await packetTypeTotalsTask;
-        var neighborObservationCount = await neighborObservationCountTask;
 
         return new OverviewChannelContext(
             channel,

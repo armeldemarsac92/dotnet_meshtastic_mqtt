@@ -4,8 +4,6 @@ public sealed class CollectorNeighborLinkStatsSnapshot
 {
     public DateTimeOffset GeneratedAtUtc { get; set; }
 
-    public string WorkspaceId { get; set; } = string.Empty;
-
     public string? ServerAddress { get; set; }
 
     public string? Region { get; set; }

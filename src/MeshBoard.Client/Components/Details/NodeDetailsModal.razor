@@ -1,3 +1,4 @@
+@using MeshBoard.Client.Collector
 @using MeshBoard.Client.Messages
 @using MeshBoard.Client.Nodes
 @using MeshBoard.Contracts.Nodes
@@ -5,6 +6,7 @@
 @inject DecryptedMessageStore DecryptedMessageStore
 @inject IJSRuntime JS
 @inject NodeProjectionStore NodeProjectionStore
+@inject PublicCollectorService PublicCollectorService
 
 @if (IsOpen)
 {
@@ -25,12 +27,12 @@
             </header>
 
             <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4">
-                @if (_node is null)
+                @if (!HasNodeData)
                 {
                     <div class="space-y-2">
                         <h2 class="font-display text-3xl text-cinder-950">Node not found</h2>
                         <p class="text-sm leading-7 text-cinder-800/80">
-                            No locally projected node currently matches
+                            No live node projection or collector-backed map snapshot currently matches
                             <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@NodeId</code>.
                         </p>
                     </div>
@@ -40,27 +42,34 @@
                     <div class="flex h-full min-h-0 flex-col gap-6">
                         <header class="space-y-3">
                             <div>
-                                <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@_node.DisplayName</h2>
+                                <h2 class="font-display text-4xl text-cinder-950 sm:text-5xl">@EffectiveDisplayName</h2>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
-                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_node.NodeId</code>
-                                @if (!string.IsNullOrWhiteSpace(_node.LastHeardChannel))
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@NodeId</code>
+                                @if (!string.IsNullOrWhiteSpace(EffectiveChannelKey))
                                 {
                                     <button type="button"
                                             class="shell-button shell-button-accent rounded-full px-3 py-1 text-xs font-semibold"
-                                            @onclick="() => OpenChannelAsync(_node.LastHeardChannel!)">
-                                        @_node.LastHeardChannel
+                                            @onclick="() => OpenChannelAsync(EffectiveChannelKey!)">
+                                        @EffectiveChannelKey
                                     </button>
                                 }
-                                <span class="rounded-full bg-white/75 px-3 py-1 text-xs text-cinder-800/78">@_node.ObservedPacketCount observed packets</span>
+                                @if (_node is not null)
+                                {
+                                    <span class="rounded-full bg-white/75 px-3 py-1 text-xs text-cinder-800/78">@_node.ObservedPacketCount observed packets</span>
+                                }
+                                @if (_collectorNode is not null && _node is null)
+                                {
+                                    <span class="rounded-full bg-white/75 px-3 py-1 text-xs text-cinder-800/78">Collector-backed snapshot</span>
+                                }
                             </div>
                         </header>
 
-                        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                             <article class="shell-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Observed packets</p>
-                                <strong class="mt-2 block text-3xl text-cinder-950">@_node.ObservedPacketCount</strong>
+                                <strong class="mt-2 block text-3xl text-cinder-950">@(_node?.ObservedPacketCount ?? 0)</strong>
                             </article>
                             <article class="shell-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Buffered messages</p>
@@ -68,19 +77,25 @@
                             </article>
                             <article class="shell-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Last heard</p>
-                                <strong class="mt-2 block text-sm text-cinder-950">@FormatTimestamp(_node.LastHeardAtUtc)</strong>
+                                <strong class="mt-2 block text-sm text-cinder-950">@FormatTimestamp(EffectiveLastHeardAtUtc)</strong>
+                            </article>
+                            <article class="shell-subpanel rounded-[1.4rem] p-5">
+                                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Broker</p>
+                                <strong class="mt-2 block text-sm text-cinder-950">@EffectiveBrokerServer</strong>
                             </article>
                             <article class="shell-subpanel rounded-[1.4rem] p-5">
                                 <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Position</p>
-                                <strong class="mt-2 block text-sm text-cinder-950">@FormatPosition(_node)</strong>
+                                <strong class="mt-2 block text-sm text-cinder-950">@FormatPosition()</strong>
                             </article>
                         </section>
+
+                        <CollectorNodeStatsPanel NodeId="@NodeId" />
 
                         <section class="grid gap-4 xl:grid-cols-2">
                             <article class="shell-panel rounded-[1.6rem] px-6 pt-7 pb-6">
                                 <h3 class="font-display text-3xl text-cinder-950">Device telemetry</h3>
                                 <dl class="mt-5 grid gap-3 text-sm text-cinder-900">
-                                    @foreach (var item in GetDeviceTelemetryItems(_node))
+                                    @foreach (var item in GetDeviceTelemetryItems())
                                     {
                                         <div class="flex items-center justify-between gap-4 rounded-2xl border border-sand-100/80 bg-white/55 px-4 py-3">
                                             <dt class="text-cinder-800/68">@item.Label</dt>
@@ -93,7 +108,7 @@
                             <article class="shell-panel rounded-[1.6rem] px-6 pt-7 pb-6">
                                 <h3 class="font-display text-3xl text-cinder-950">Environment telemetry</h3>
                                 <dl class="mt-5 grid gap-3 text-sm text-cinder-900">
-                                    @foreach (var item in GetEnvironmentTelemetryItems(_node))
+                                    @foreach (var item in GetEnvironmentTelemetryItems())
                                     {
                                         <div class="flex items-center justify-between gap-4 rounded-2xl border border-sand-100/80 bg-white/55 px-4 py-3">
                                             <dt class="text-cinder-800/68">@item.Label</dt>
@@ -139,7 +154,7 @@
                             <article class="shell-panel flex min-h-[20rem] flex-col overflow-hidden rounded-[1.6rem] px-6 pt-7 pb-6">
                                 <h3 class="font-display text-3xl text-cinder-950">Map</h3>
 
-                                @if (_node.LastKnownLatitude.HasValue && _node.LastKnownLongitude.HasValue)
+                                @if (EffectiveLatitude.HasValue && EffectiveLongitude.HasValue)
                                 {
                                     <div id="@MiniMapElementId"
                                          class="mt-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-sand-200/80"></div>
@@ -149,10 +164,10 @@
                                     <p class="mt-4 text-sm leading-7 text-cinder-800/78">No coordinates are available for this node yet.</p>
                                 }
 
-                                @if (!string.IsNullOrWhiteSpace(_node.LastPayloadPreview))
+                                @if (!string.IsNullOrWhiteSpace(_node?.LastPayloadPreview))
                                 {
                                     <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-7 text-cinder-900">
-                                        @_node.LastPayloadPreview
+                                        @_node!.LastPayloadPreview
                                     </div>
                                 }
                             </article>
@@ -177,6 +192,21 @@
     [Parameter]
     public EventCallback<string> OnOpenChannel { get; set; }
 
+    private bool HasNodeData => _node is not null || _collectorNode is not null;
+
+    private string EffectiveBrokerServer => _node?.BrokerServer ?? _collectorNode?.BrokerServer ?? "Unknown";
+
+    private string? EffectiveChannelKey => _node?.LastHeardChannel ?? _collectorNode?.LastHeardChannel;
+
+    private string EffectiveDisplayName => _node?.DisplayName ?? _collectorNode?.LongName ?? _collectorNode?.ShortName ?? NodeId;
+
+    private DateTimeOffset? EffectiveLastHeardAtUtc => _node?.LastHeardAtUtc ?? _collectorNode?.LastHeardAtUtc;
+
+    private double? EffectiveLatitude => _node?.LastKnownLatitude ?? _collectorNode?.LastKnownLatitude;
+
+    private double? EffectiveLongitude => _node?.LastKnownLongitude ?? _collectorNode?.LastKnownLongitude;
+
+    private NodeSummary? _collectorNode;
     private const string MiniMapElementId = "meshboard-node-detail-mini-map";
     private NodeProjectionEnvelope? _node;
     private IReadOnlyList<DecryptedMessageEnvelope> _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
@@ -189,6 +219,7 @@
     {
         NodeProjectionStore.Changed += HandleStoreChanged;
         DecryptedMessageStore.Changed += HandleStoreChanged;
+        PublicCollectorService.Changed += HandleStoreChanged;
     }
 
     protected override async Task OnParametersSetAsync()
@@ -204,7 +235,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!IsOpen || _node?.LastKnownLatitude is null || _node?.LastKnownLongitude is null)
+        if (!IsOpen || EffectiveLatitude is null || EffectiveLongitude is null)
         {
             return;
         }
@@ -217,7 +248,7 @@
         try
         {
             var module = await GetMapModuleAsync();
-            await module.InvokeVoidAsync("renderMiniMap", MiniMapElementId, _node.LastKnownLatitude.Value, _node.LastKnownLongitude.Value);
+            await module.InvokeVoidAsync("renderMiniMap", MiniMapElementId, EffectiveLatitude.Value, EffectiveLongitude.Value);
             _miniMapRendered = true;
             _lastMiniMapNodeId = NodeId;
         }
@@ -230,6 +261,7 @@
     {
         NodeProjectionStore.Changed -= HandleStoreChanged;
         DecryptedMessageStore.Changed -= HandleStoreChanged;
+        PublicCollectorService.Changed -= HandleStoreChanged;
 
         if (_scrollLocked)
         {
@@ -313,11 +345,14 @@
         if (!IsOpen || string.IsNullOrWhiteSpace(NodeId))
         {
             _node = null;
+            _collectorNode = null;
             _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
             return;
         }
 
         _node = NodeProjectionStore.Current.Nodes
+            .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
+        _collectorNode = PublicCollectorService.State.MapSnapshot?.Nodes
             .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
 
         if (_node is null || !ProjectionDetailsSupport.TryParseNodeNumber(_node.NodeId, out var nodeNumber))
@@ -349,33 +384,33 @@
         await OnOpenChannel.InvokeAsync(channelKey);
     }
 
-    private static IReadOnlyList<DetailItem> GetDeviceTelemetryItems(NodeProjectionEnvelope node)
+    private IReadOnlyList<DetailItem> GetDeviceTelemetryItems()
     {
         var items = new List<DetailItem>();
 
-        if (node.BatteryLevelPercent.HasValue)
+        if ((_node?.BatteryLevelPercent ?? _collectorNode?.BatteryLevelPercent) is { } batteryLevelPercent)
         {
-            items.Add(new DetailItem("Battery", $"{node.BatteryLevelPercent.Value}%"));
+            items.Add(new DetailItem("Battery", $"{batteryLevelPercent}%"));
         }
 
-        if (node.Voltage.HasValue)
+        if ((_node?.Voltage ?? _collectorNode?.Voltage) is { } voltage)
         {
-            items.Add(new DetailItem("Voltage", FormattableString.Invariant($"{node.Voltage.Value:F2}V")));
+            items.Add(new DetailItem("Voltage", FormattableString.Invariant($"{voltage:F2}V")));
         }
 
-        if (node.ChannelUtilization.HasValue)
+        if ((_node?.ChannelUtilization ?? _collectorNode?.ChannelUtilization) is { } channelUtilization)
         {
-            items.Add(new DetailItem("Channel utilization", FormattableString.Invariant($"{node.ChannelUtilization.Value:F1}%")));
+            items.Add(new DetailItem("Channel utilization", FormattableString.Invariant($"{channelUtilization:F1}%")));
         }
 
-        if (node.AirUtilTx.HasValue)
+        if ((_node?.AirUtilTx ?? _collectorNode?.AirUtilTx) is { } airUtilTx)
         {
-            items.Add(new DetailItem("Air utilization TX", FormattableString.Invariant($"{node.AirUtilTx.Value:F1}%")));
+            items.Add(new DetailItem("Air utilization TX", FormattableString.Invariant($"{airUtilTx:F1}%")));
         }
 
-        if (node.UptimeSeconds.HasValue)
+        if ((_node?.UptimeSeconds ?? _collectorNode?.UptimeSeconds) is { } uptimeSeconds)
         {
-            items.Add(new DetailItem("Uptime", FormatDuration(node.UptimeSeconds.Value)));
+            items.Add(new DetailItem("Uptime", FormatDuration(uptimeSeconds)));
         }
 
         if (items.Count == 0)
@@ -386,23 +421,23 @@
         return items;
     }
 
-    private static IReadOnlyList<DetailItem> GetEnvironmentTelemetryItems(NodeProjectionEnvelope node)
+    private IReadOnlyList<DetailItem> GetEnvironmentTelemetryItems()
     {
         var items = new List<DetailItem>();
 
-        if (node.TemperatureCelsius.HasValue)
+        if ((_node?.TemperatureCelsius ?? _collectorNode?.TemperatureCelsius) is { } temperatureCelsius)
         {
-            items.Add(new DetailItem("Temperature", FormattableString.Invariant($"{node.TemperatureCelsius.Value:F1}C")));
+            items.Add(new DetailItem("Temperature", FormattableString.Invariant($"{temperatureCelsius:F1}C")));
         }
 
-        if (node.RelativeHumidity.HasValue)
+        if ((_node?.RelativeHumidity ?? _collectorNode?.RelativeHumidity) is { } relativeHumidity)
         {
-            items.Add(new DetailItem("Humidity", FormattableString.Invariant($"{node.RelativeHumidity.Value:F1}% RH")));
+            items.Add(new DetailItem("Humidity", FormattableString.Invariant($"{relativeHumidity:F1}% RH")));
         }
 
-        if (node.BarometricPressure.HasValue)
+        if ((_node?.BarometricPressure ?? _collectorNode?.BarometricPressure) is { } barometricPressure)
         {
-            items.Add(new DetailItem("Pressure", FormattableString.Invariant($"{node.BarometricPressure.Value:F1} hPa")));
+            items.Add(new DetailItem("Pressure", FormattableString.Invariant($"{barometricPressure:F1} hPa")));
         }
 
         if (items.Count == 0)
@@ -432,10 +467,10 @@
             : payloadPreview.Trim();
     }
 
-    private static string FormatPosition(NodeProjectionEnvelope node)
+    private string FormatPosition()
     {
-        return node.LastKnownLatitude.HasValue && node.LastKnownLongitude.HasValue
-            ? FormattableString.Invariant($"{node.LastKnownLatitude.Value:F5}, {node.LastKnownLongitude.Value:F5}")
+        return EffectiveLatitude.HasValue && EffectiveLongitude.HasValue
+            ? FormattableString.Invariant($"{EffectiveLatitude.Value:F5}, {EffectiveLongitude.Value:F5}")
             : "No position yet";
     }
 

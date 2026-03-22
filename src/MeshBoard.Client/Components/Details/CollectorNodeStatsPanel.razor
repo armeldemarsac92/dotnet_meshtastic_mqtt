@@ -1,0 +1,260 @@
+@using MeshBoard.Client.Services
+@using MeshBoard.Contracts.Collector
+@inject PublicCollectorApiClient PublicCollectorApiClient
+
+@if (!string.IsNullOrWhiteSpace(NodeId))
+{
+    <section class="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <article class="shell-panel rounded-[1.6rem] px-6 pt-7 pb-6">
+            <div class="flex items-center justify-between gap-3">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Collector stats</p>
+                    <h3 class="mt-2 font-display text-3xl text-cinder-950">Node activity</h3>
+                </div>
+                <span class="rounded-full bg-sand-100 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-cinder-900">7 days</span>
+            </div>
+
+            @if (_isLoading)
+            {
+                <p class="mt-5 text-sm text-cinder-800/72">Loading collector stats...</p>
+            }
+            else if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_errorMessage</p>
+            }
+            else
+            {
+                <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <article class="shell-subpanel rounded-[1.4rem] p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packets</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@GetPacketCount()</p>
+                    </article>
+                    <article class="shell-subpanel rounded-[1.4rem] p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packet types</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@GetPacketTypeCount()</p>
+                    </article>
+                    <article class="shell-subpanel rounded-[1.4rem] p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Reported links</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@GetNeighborObservationCount()</p>
+                    </article>
+                    <article class="shell-subpanel rounded-[1.4rem] p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last collector activity</p>
+                        <p class="mt-3 text-sm font-semibold text-cinder-950">@FormatTimestamp(GetLastCollectorActivity())</p>
+                    </article>
+                </div>
+
+                <div class="mt-5 grid gap-4 lg:grid-cols-2">
+                    <div class="shell-subpanel rounded-[1.4rem] p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packet mix</p>
+                        @if (_packetTypeSummaries.Count == 0)
+                        {
+                            <p class="mt-3 text-sm text-cinder-800/72">No collector packet rollups matched this node.</p>
+                        }
+                        else
+                        {
+                            <ul class="mt-4 space-y-3 text-sm text-cinder-900">
+                                @foreach (var summary in _packetTypeSummaries)
+                                {
+                                    <li class="flex items-center justify-between gap-4 rounded-2xl border border-sand-100/80 bg-white/60 px-4 py-3">
+                                        <span>@summary.PacketType</span>
+                                        <strong>@summary.PacketCount</strong>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+
+                    <div class="shell-subpanel rounded-[1.4rem] p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Reported radio links</p>
+                        @if (_neighborSummaries.Count == 0)
+                        {
+                            <p class="mt-3 text-sm text-cinder-800/72">No collector NeighborInfo rollups currently report outbound links from this node.</p>
+                        }
+                        else
+                        {
+                            <ul class="mt-4 space-y-3 text-sm text-cinder-900">
+                                @foreach (var summary in _neighborSummaries)
+                                {
+                                    <li class="rounded-2xl border border-sand-100/80 bg-white/60 px-4 py-3">
+                                        <div class="flex items-center justify-between gap-4">
+                                            <span class="font-medium">@(summary.DisplayName ?? summary.TargetNodeId)</span>
+                                            <strong>@summary.ObservationCount</strong>
+                                        </div>
+                                        <div class="mt-2 flex flex-wrap gap-3 text-xs text-cinder-800/70">
+                                            <span>@summary.TargetNodeId</span>
+                                            <span>Avg SNR: @FormatSnr(summary.AverageSnrDb)</span>
+                                            <span>Last seen: @FormatTimestamp(summary.LastSeenAtUtc)</span>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+            }
+        </article>
+    </section>
+}
+
+@code {
+    private const int LookbackHours = 24 * 7;
+    private CollectorNeighborLinkStatsSnapshot? _neighborStats;
+    private CollectorNodePacketStatsSnapshot? _nodeStats;
+    private string? _errorMessage;
+    private bool _isLoading;
+    private string? _lastLoadedNodeId;
+    private IReadOnlyList<NeighborSummary> _neighborSummaries = Array.Empty<NeighborSummary>();
+    private IReadOnlyList<PacketTypeSummary> _packetTypeSummaries = Array.Empty<PacketTypeSummary>();
+
+    [Parameter]
+    public string NodeId { get; set; } = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(NodeId))
+        {
+            _lastLoadedNodeId = null;
+            _nodeStats = null;
+            _neighborStats = null;
+            _packetTypeSummaries = Array.Empty<PacketTypeSummary>();
+            _neighborSummaries = Array.Empty<NeighborSummary>();
+            _errorMessage = null;
+            _isLoading = false;
+            return;
+        }
+
+        if (string.Equals(_lastLoadedNodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var nodeId = NodeId.Trim();
+            var nodeStatsTask = PublicCollectorApiClient.GetNodePacketStatsAsync(
+                new CollectorPacketStatsQuery
+                {
+                    NodeId = nodeId,
+                    LookbackHours = LookbackHours,
+                    MaxRows = 240
+                });
+            var neighborStatsTask = PublicCollectorApiClient.GetNeighborLinkStatsAsync(
+                new CollectorNeighborLinkStatsQuery
+                {
+                    SourceNodeId = nodeId,
+                    LookbackHours = LookbackHours,
+                    MaxRows = 120
+                });
+
+            await Task.WhenAll(nodeStatsTask, neighborStatsTask);
+
+            _nodeStats = await nodeStatsTask;
+            _neighborStats = await neighborStatsTask;
+            _packetTypeSummaries = BuildPacketTypeSummaries(_nodeStats);
+            _neighborSummaries = BuildNeighborSummaries(_neighborStats);
+            _lastLoadedNodeId = nodeId;
+        }
+        catch (Exception exception)
+        {
+            _nodeStats = null;
+            _neighborStats = null;
+            _packetTypeSummaries = Array.Empty<PacketTypeSummary>();
+            _neighborSummaries = Array.Empty<NeighborSummary>();
+            _errorMessage = exception.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private int GetPacketCount() => _packetTypeSummaries.Sum(summary => summary.PacketCount);
+
+    private int GetPacketTypeCount() => _packetTypeSummaries.Count;
+
+    private int GetNeighborObservationCount() => _neighborSummaries.Sum(summary => summary.ObservationCount);
+
+    private DateTimeOffset? GetLastCollectorActivity()
+    {
+        var packetLastSeen = _nodeStats?.Rollups.Max(rollup => (DateTimeOffset?)rollup.LastSeenAtUtc);
+        var neighborLastSeen = _neighborStats?.Rollups.Max(rollup => (DateTimeOffset?)rollup.LastSeenAtUtc);
+
+        if (packetLastSeen.HasValue && neighborLastSeen.HasValue)
+        {
+            return packetLastSeen >= neighborLastSeen ? packetLastSeen : neighborLastSeen;
+        }
+
+        return packetLastSeen ?? neighborLastSeen;
+    }
+
+    private static IReadOnlyList<PacketTypeSummary> BuildPacketTypeSummaries(CollectorNodePacketStatsSnapshot? snapshot)
+    {
+        return snapshot?.Rollups
+            .GroupBy(rollup => rollup.PacketType, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new PacketTypeSummary(group.Key, group.Sum(rollup => rollup.PacketCount)))
+            .OrderByDescending(summary => summary.PacketCount)
+            .ThenBy(summary => summary.PacketType, StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToArray()
+            ?? [];
+    }
+
+    private static IReadOnlyList<NeighborSummary> BuildNeighborSummaries(CollectorNeighborLinkStatsSnapshot? snapshot)
+    {
+        return snapshot?.Rollups
+            .GroupBy(rollup => rollup.TargetNodeId, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var latest = group
+                    .OrderByDescending(entry => entry.LastSeenAtUtc)
+                    .First();
+                var snrSamples = group
+                    .Where(entry => entry.AverageSnrDb.HasValue)
+                    .Select(entry => entry.AverageSnrDb!.Value)
+                    .ToArray();
+
+                return new NeighborSummary(
+                    latest.TargetNodeId,
+                    latest.TargetLongName ?? latest.TargetShortName,
+                    group.Sum(entry => entry.ObservationCount),
+                    snrSamples.Length == 0 ? null : snrSamples.Average(),
+                    group.Max(entry => entry.LastSeenAtUtc));
+            })
+            .OrderByDescending(summary => summary.ObservationCount)
+            .ThenBy(summary => summary.DisplayName ?? summary.TargetNodeId, StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToArray()
+            ?? [];
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Unknown";
+    }
+
+    private static string FormatSnr(double? value)
+    {
+        return value.HasValue
+            ? FormattableString.Invariant($"{value.Value:F1} dB")
+            : "Unknown";
+    }
+
+    private sealed record PacketTypeSummary(string PacketType, int PacketCount);
+
+    private sealed record NeighborSummary(
+        string TargetNodeId,
+        string? DisplayName,
+        int ObservationCount,
+        double? AverageSnrDb,
+        DateTimeOffset LastSeenAtUtc);
+}
