@@ -59,6 +59,7 @@ public class Program
         builder.Services.AddScoped<RealtimePacketWorkerClient>();
         builder.Services.AddScoped<RealtimeSessionApiClient>();
         builder.Services.AddScoped<PublicCollectorApiClient>();
+        builder.Services.AddScoped<ViewModePreferenceService>();
         builder.Services.AddScoped<VaultSessionState>();
         builder.Services.AddMeshBoardApiSdk(apiBaseAddress);
 

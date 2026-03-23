@@ -100,7 +100,6 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
                 [
                     new KeyValuePair<string, string?>("Persistence:Provider", "PostgreSQL"),
                     new KeyValuePair<string, string?>("Persistence:ConnectionString", _connectionString),
-                    new KeyValuePair<string, string?>("Persistence:MessageRetentionDays", "30"),
                     new KeyValuePair<string, string?>("RealtimeSession:BrokerUrl", RealtimeBrokerUrl),
                     new KeyValuePair<string, string?>("RealtimeSession:UseRequestOriginBrokerUrl", _useRequestOriginBrokerUrl.ToString()),
                     new KeyValuePair<string, string?>("RealtimeSession:BrokerPath", "/mqtt"),

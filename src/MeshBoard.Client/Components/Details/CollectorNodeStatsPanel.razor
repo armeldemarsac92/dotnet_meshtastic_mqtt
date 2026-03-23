@@ -43,6 +43,39 @@
                     </article>
                 </div>
 
+                @if (_neighborSummaries.Count > 0)
+                {
+                    var svgData = BuildRadioLinkSvgData();
+                    <div class="shell-subpanel rounded-[1.4rem] p-4">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Reported radio links</p>
+                        <svg viewBox="0 0 500 320" class="w-full mt-4" xmlns="http://www.w3.org/2000/svg">
+                            @foreach (var link in svgData)
+                            {
+                                <line x1="@link.LineX1" y1="@link.LineY1"
+                                      x2="@link.LineX2" y2="@link.LineY2"
+                                      stroke="@link.SnrColor" stroke-width="2" />
+                                <svg:text x="@link.LabelX" y="@link.LabelY"
+                                      text-anchor="middle" dominant-baseline="middle"
+                                      font-size="10" fill="@link.SnrColor">@link.SnrLabel</svg:text>
+                            }
+
+                            @{
+                                var centralShortName = GetShortLabel(NodeId);
+                            }
+                            <circle cx="250" cy="160" r="38" fill="#f1ede8" stroke="#7c6f5e" stroke-width="2" />
+                            <svg:text x="250" y="160" text-anchor="middle" dominant-baseline="middle"
+                                  font-size="13" font-weight="600" fill="#1c1917">@centralShortName</svg:text>
+
+                            @foreach (var link in svgData)
+                            {
+                                <circle cx="@link.Cx" cy="@link.Cy" r="30" fill="#ffffff" stroke="@link.SnrColor" stroke-width="2" />
+                                <svg:text x="@link.Cx" y="@link.Cy" text-anchor="middle" dominant-baseline="middle"
+                                      font-size="10" font-weight="500" fill="#1c1917">@link.NeighborLabel</svg:text>
+                            }
+                        </svg>
+                    </div>
+                }
+
                 <div class="mt-5 grid gap-4 lg:grid-cols-2">
                     <div class="shell-subpanel rounded-[1.4rem] p-4">
                         <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Packet mix</p>
@@ -235,6 +268,82 @@
             ?? [];
     }
 
+    private IReadOnlyList<RadioLinkVisual> BuildRadioLinkSvgData()
+    {
+        const double centerX = 250;
+        const double centerY = 160;
+        const double orbitRadius = 130;
+        const double centerR = 38;
+        const double neighborR = 30;
+
+        var count = _neighborSummaries.Count;
+        var result = new List<RadioLinkVisual>(count);
+
+        for (var i = 0; i < count; i++)
+        {
+            var summary = _neighborSummaries[i];
+            var angle = (double)i / count * 2 * Math.PI - Math.PI / 2;
+
+            var cx = centerX + orbitRadius * Math.Cos(angle);
+            var cy = centerY + orbitRadius * Math.Sin(angle);
+
+            var dx = cx - centerX;
+            var dy = cy - centerY;
+            var dist = Math.Sqrt(dx * dx + dy * dy);
+
+            var lineX1 = centerX + dx / dist * centerR;
+            var lineY1 = centerY + dy / dist * centerR;
+            var lineX2 = cx - dx / dist * neighborR;
+            var lineY2 = cy - dy / dist * neighborR;
+
+            var midX = (lineX1 + lineX2) / 2;
+            var midY = (lineY1 + lineY2) / 2;
+
+            var perpX = -dy / dist * 10;
+            var perpY = dx / dist * 10;
+
+            var snrColor = GetSnrColor(summary.AverageSnrDb);
+            var snrLabel = summary.AverageSnrDb.HasValue
+                ? FormattableString.Invariant($"{summary.AverageSnrDb.Value:F1} dB")
+                : "?";
+
+            var neighborLabel = summary.DisplayName is { Length: > 0 } name
+                ? name.Length > 6 ? name[..6] : name
+                : summary.TargetNodeId.Length >= 4
+                    ? summary.TargetNodeId[^4..]
+                    : summary.TargetNodeId;
+
+            result.Add(new RadioLinkVisual(
+                Cx: FormattableString.Invariant($"{cx:F1}"),
+                Cy: FormattableString.Invariant($"{cy:F1}"),
+                LineX1: FormattableString.Invariant($"{lineX1:F1}"),
+                LineY1: FormattableString.Invariant($"{lineY1:F1}"),
+                LineX2: FormattableString.Invariant($"{lineX2:F1}"),
+                LineY2: FormattableString.Invariant($"{lineY2:F1}"),
+                LabelX: FormattableString.Invariant($"{midX + perpX:F1}"),
+                LabelY: FormattableString.Invariant($"{midY + perpY:F1}"),
+                SnrColor: snrColor,
+                SnrLabel: snrLabel,
+                NeighborLabel: neighborLabel));
+        }
+
+        return result;
+    }
+
+    private static string GetSnrColor(double? snr) => snr switch
+    {
+        >= 5.0 => "#16a34a",
+        >= 0.0 => "#ca8a04",
+        _ => "#dc2626"
+    };
+
+    private static string GetShortLabel(string nodeId)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId)) return "?";
+        var trimmed = nodeId.TrimStart('!');
+        return trimmed.Length >= 4 ? trimmed[^4..] : trimmed;
+    }
+
     private static string FormatTimestamp(DateTimeOffset? value)
     {
         return value.HasValue
@@ -248,6 +357,19 @@
             ? FormattableString.Invariant($"{value.Value:F1} dB")
             : "Unknown";
     }
+
+    private sealed record RadioLinkVisual(
+        string Cx,
+        string Cy,
+        string LineX1,
+        string LineY1,
+        string LineX2,
+        string LineY2,
+        string LabelX,
+        string LabelY,
+        string SnrColor,
+        string SnrLabel,
+        string NeighborLabel);
 
     private sealed record PacketTypeSummary(string PacketType, int PacketCount);
 

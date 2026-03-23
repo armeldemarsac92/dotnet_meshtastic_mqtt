@@ -132,6 +132,50 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
+            "/nodes",
+            async Task<IResult> (
+                [FromQuery] string? searchText,
+                [FromQuery] CollectorNodeSortOption? sortBy,
+                [FromQuery] int? page,
+                [FromQuery] int? pageSize,
+                ICollectorReadService collectorReadService,
+                CancellationToken cancellationToken) =>
+            {
+                var result = await collectorReadService.GetNodePage(
+                    new CollectorNodePageQuery
+                    {
+                        SearchText = searchText,
+                        SortBy = sortBy ?? CollectorNodeSortOption.LastHeardDesc,
+                        Page = page ?? 1,
+                        PageSize = pageSize ?? 50
+                    },
+                    cancellationToken);
+                return Results.Ok(result);
+            });
+
+        group.MapGet(
+            "/channels-page",
+            async Task<IResult> (
+                [FromQuery] string? searchText,
+                [FromQuery] CollectorChannelSortOption? sortBy,
+                [FromQuery] int? page,
+                [FromQuery] int? pageSize,
+                ICollectorReadService collectorReadService,
+                CancellationToken cancellationToken) =>
+            {
+                var result = await collectorReadService.GetChannelPage(
+                    new CollectorChannelPageQuery
+                    {
+                        SearchText = searchText,
+                        SortBy = sortBy ?? CollectorChannelSortOption.LastObservedDesc,
+                        Page = page ?? 1,
+                        PageSize = pageSize ?? 50
+                    },
+                    cancellationToken);
+                return Results.Ok(result);
+            });
+
+        group.MapGet(
             "/topology",
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,

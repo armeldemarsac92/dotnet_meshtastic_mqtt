@@ -11,13 +11,13 @@ The collector schema is separate from product preferences/auth persistence.
 Its goals are:
 
 - normalize broker server and channel metadata instead of repeating them on every row
-- keep messages and nodes attached to a channel
+- keep channels and links normalized without repeating server metadata
+- keep nodes server-scoped with their last heard channel as metadata
 - keep radio links attached to the channel that reported them
-- add bounded hourly rollups for packet-type analytics without forcing raw-history retention decisions
+- write directly into bounded hourly rollups for packet-type analytics
 
 Current policy:
 
-- `collector_messages` are retained for 12 months by the collector host
 - `collector_nodes` and `collector_neighbor_links` are current-state tables and are not expired automatically
 - hourly rollup tables are the long-run aggregate layer and are not expired automatically
 
@@ -65,13 +65,13 @@ Uniqueness:
 
 ### `collector_nodes`
 
-Latest channel-scoped node snapshot.
+Latest server-scoped node snapshot.
 
 Key columns:
 
 - `id`
-- `workspace_id`
-- `channel_id`
+- `server_id`
+- `last_heard_channel_id`
 - `node_id`
 - `short_name`
 - `long_name`
@@ -83,42 +83,12 @@ Key columns:
 
 Relationships:
 
-- `channel_id -> collector_channels.id`
+- `server_id -> collector_servers.id`
+- `last_heard_channel_id -> collector_channels.id`
 
 Uniqueness:
 
-- `(workspace_id, channel_id, node_id)`
-
-Notes:
-
-- the same node id can exist on multiple channels
-- read models that want one row per node should collapse to the latest channel-scoped row
-
-### `collector_messages`
-
-Observed packet/message history with channel ownership.
-
-Key columns:
-
-- `id`
-- `workspace_id`
-- `channel_id`
-- `message_key`
-- `topic`
-- `packet_type`
-- `from_node_id`
-- `to_node_id`
-- `payload_preview`
-- `is_private`
-- `received_at_utc`
-
-Relationships:
-
-- `channel_id -> collector_channels.id`
-
-Uniqueness:
-
-- `(workspace_id, message_key)`
+- `(server_id, node_id)`
 
 ### `collector_neighbor_links`
 
@@ -150,11 +120,9 @@ Notes:
 
 Collector retention is intentionally split by data shape:
 
-- raw `collector_messages` history is pruned by the collector host using `Persistence:MessageRetentionDays`
+- the collector does not persist raw per-message history
 - the current-state node and link tables are not pruned automatically
 - hourly rollups are retained as the durable analytical history
-
-The current collector default is 365 days for raw message history.
 
 ### `collector_channel_packet_hourly_rollups`
 

@@ -1,48 +1,116 @@
 @page "/channels"
 @attribute [Authorize]
 @using MeshBoard.Client.Channels
+@using MeshBoard.Client.Components
 @using MeshBoard.Client.Components.Details
+@using MeshBoard.Client.Services
+@using MeshBoard.Contracts.Collector
 @implements IDisposable
 @inject ChannelProjectionStore ChannelProjectionStore
+@inject PublicCollectorApiClient PublicCollectorApiClient
+@inject ViewModePreferenceService ViewModePreferenceService
 
 <PageTitle>Channels</PageTitle>
 
-<div class="grid gap-6">
-    <section class="shell-panel rounded-[2rem] p-8">
-        <div class="flex flex-wrap items-center justify-between gap-4">
+<div class="space-y-5">
+    <header class="shell-panel rounded-[2rem] p-6 sm:p-8">
+        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Live projections</p>
-                <h2 class="mt-2 font-display text-3xl text-cinder-950">Observed channels</h2>
-                <p class="mt-3 text-sm leading-7 text-cinder-800/82">
-                    These summaries are built locally from the browser realtime stream and reset on logout or explicit clear.
-                    Open a channel card to inspect its modal detail view.
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">@(_historyMode ? "Public history" : "Live projections")</p>
+                <h1 class="mt-2 font-display text-3xl text-cinder-950 sm:text-4xl">Observed channels</h1>
+                <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
+                    @if (_historyMode)
+                    {
+                        <span>Channels are fetched from the collector API with search and sort options.</span>
+                    }
+                    else
+                    {
+                        <span>These summaries are built locally from the browser realtime stream and reset on logout or explicit clear.</span>
+                    }
                 </p>
             </div>
 
-            <div class="flex flex-wrap gap-3">
-                <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                        @onclick="ClearLiveChannels"
-                        disabled="@(_liveSnapshot.Channels.Count == 0)">
-                    Clear live cache
-                </button>
+            <div class="flex flex-wrap items-center gap-3">
+                <ViewModeToggle Value="@_historyMode" ValueChanged="OnModeToggled" />
+
+                @if (!_historyMode)
+                {
+                    <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ClearLiveChannels"
+                            disabled="@(_liveSnapshot.Channels.Count == 0)">
+                        Clear live cache
+                    </button>
+                }
             </div>
         </div>
 
-        <div class="mt-6 grid gap-4 md:grid-cols-3">
-            <article class="shell-subpanel rounded-[1.6rem] p-5">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Projected channels</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FilteredChannels.Count</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Total live projection events: @_liveSnapshot.TotalProjected</p>
-            </article>
+        @if (!_historyMode)
+        {
+            <div class="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3">
+                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Projected channels</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@FilteredLiveChannels.Count</p>
+                    <p class="mt-2 text-sm text-cinder-800/72">Total live projection events: @_liveSnapshot.TotalProjected</p>
+                </article>
 
-            <article class="shell-subpanel rounded-[1.6rem] p-5">
-                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last projection</p>
-                <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_liveSnapshot.LastProjectedAtUtc)</p>
-                <p class="mt-2 text-sm text-cinder-800/72">Memory only in wave 1.</p>
-            </article>
-        </div>
+                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last projection</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@FormatTimestamp(_liveSnapshot.LastProjectedAtUtc)</p>
+                    <p class="mt-2 text-sm text-cinder-800/72">Memory only in wave 1.</p>
+                </article>
+            </div>
+        }
+        else
+        {
+            <div class="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3">
+                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Total channels</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_historyPage?.TotalCount ?? 0)</p>
+                    <p class="mt-2 text-sm text-cinder-800/72">Page @(_historyPage?.Page ?? 1) of @TotalHistoryPages</p>
+                </article>
+            </div>
+        }
+    </header>
 
-        <section class="mt-6 shell-subpanel rounded-[1.7rem] p-5">
+    <section class="shell-panel rounded-[2rem] p-5">
+        @if (_historyMode)
+        {
+            <div class="grid gap-4 sm:grid-cols-[1fr_auto_auto]">
+                <label class="space-y-2">
+                    <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search</span>
+                    <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                           @bind="_historyQuery.SearchText"
+                           @bind:event="oninput"
+                           @bind:after="OnHistoryQueryChanged"
+                           placeholder="Region, channel, server" />
+                </label>
+
+                <label class="space-y-2">
+                    <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Sort</span>
+                    <select class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                            @bind="_historyQuery.SortBy"
+                            @bind:after="OnHistoryQueryChanged">
+                        <option value="@CollectorChannelSortOption.LastObservedDesc">Last observed</option>
+                        <option value="@CollectorChannelSortOption.NameAsc">Name</option>
+                        <option value="@CollectorChannelSortOption.NodeCountDesc">Node count</option>
+                        <option value="@CollectorChannelSortOption.MessageCountDesc">Message count</option>
+                    </select>
+                </label>
+
+                <label class="space-y-2">
+                    <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Per page</span>
+                    <select class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
+                            @bind="_historyQuery.PageSize"
+                            @bind:after="OnHistoryQueryChanged">
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+            </div>
+        }
+        else
+        {
             <label class="space-y-2">
                 <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search live channels</span>
                 <input class="w-full rounded-2xl border border-sand-200 bg-white px-4 py-3 text-sm text-cinder-950 shadow-sm"
@@ -50,78 +118,71 @@
                        @bind:event="oninput"
                        placeholder="Region, channel, topic, packet type" />
             </label>
-        </section>
+        }
+    </section>
 
-        @if (FilteredChannels.Count == 0)
+    @if (!string.IsNullOrWhiteSpace(_historyError))
+    {
+        <div class="shell-panel rounded-2xl px-6 py-4 text-sm text-rose-700">@_historyError</div>
+    }
+
+    @if (_historyMode)
+    {
+        @if (_isLoadingHistory)
         {
-            <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
-                No live channel summaries match the current view yet. Keep the realtime connection open and wait for
-                Meshtastic traffic to arrive.
+            <div class="shell-panel rounded-[2rem] p-8 text-center text-sm text-cinder-800/60">Loading channels...</div>
+        }
+        else if (_historyPage == null || _historyPage.Items.Count == 0)
+        {
+            <div class="shell-panel rounded-[2rem] p-8 text-center">
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">No channels found</p>
+                <p class="mt-3 text-sm leading-7 text-cinder-800/78">
+                    No channels match the current search in the collector database.
+                </p>
             </div>
         }
         else
         {
-            <div class="mt-6 grid gap-4">
-                @foreach (var channel in FilteredChannels)
-                {
-                    <article class="shell-subpanel rounded-[1.7rem] p-5">
-                        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                            <div class="space-y-2">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@channel.Region</p>
-                                </div>
-                                <button type="button"
-                                        class="text-left"
-                                        @onclick="() => OpenChannelDetails(channel.ChannelKey)">
-                                    <h3 class="font-display text-3xl text-cinder-950">@channel.ChannelName</h3>
-                                </button>
-                                <p class="text-sm text-cinder-800/80">@channel.ChannelKey</p>
-                            </div>
+            <ChannelTable Channels="@HistoryChannels" OnOpenChannel="OpenChannelDetailsAsync" />
 
-                            <div class="grid gap-2 text-sm text-cinder-800/78 sm:text-right">
-                                <span>Observed @channel.ObservedPacketCount packets</span>
-                                <span>@channel.DistinctNodeCount distinct nodes</span>
-                                <span>@FormatTimestamp(channel.LastObservedAtUtc)</span>
-                            </div>
-                        </div>
+            @if (TotalHistoryPages > 1)
+            {
+                <div class="flex flex-wrap items-center justify-center gap-2">
+                    <button class="shell-button rounded-full px-4 py-2 text-xs font-semibold"
+                            disabled="@(_historyQuery.Page <= 1)"
+                            @onclick="PreviousHistoryPage">
+                        Previous
+                    </button>
 
-                        <div class="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-                            <div class="space-y-3">
-                                <div>
-                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last packet</p>
-                                    <p class="mt-2 text-sm text-cinder-900">@channel.LastPacketType</p>
-                                </div>
+                    <span class="px-3 text-sm text-cinder-800/72">
+                        Page @_historyQuery.Page of @TotalHistoryPages
+                    </span>
 
-                                <div>
-                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Latest topic</p>
-                                    <code class="mt-2 block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">
-                                        @channel.LatestSourceTopic
-                                    </code>
-                                </div>
-                            </div>
-
-                            <div class="flex flex-col gap-4">
-                                <div>
-                                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Latest payload preview</p>
-                                    <div class="mt-2 rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-7 text-cinder-900">
-                                        @(string.IsNullOrWhiteSpace(channel.LastPayloadPreview) ? "No decoded payload preview captured for the latest packet." : channel.LastPayloadPreview)
-                                    </div>
-                                </div>
-
-                                <div class="flex justify-end">
-                                    <button type="button"
-                                            class="shell-button shell-button-accent rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
-                                            @onclick="() => OpenChannelDetails(channel.ChannelKey)">
-                                        Open details
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </article>
-                }
+                    <button class="shell-button rounded-full px-4 py-2 text-xs font-semibold"
+                            disabled="@(_historyQuery.Page >= TotalHistoryPages)"
+                            @onclick="NextHistoryPage">
+                        Next
+                    </button>
+                </div>
+            }
+        }
+    }
+    else
+    {
+        @if (FilteredLiveChannels.Count == 0)
+        {
+            <div class="shell-panel rounded-[2rem] p-8 text-center">
+                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">No channels yet</p>
+                <p class="mt-3 text-sm leading-7 text-cinder-800/78">
+                    Keep the realtime connection open and wait for Meshtastic traffic to arrive.
+                </p>
             </div>
         }
-    </section>
+        else
+        {
+            <ChannelTable Channels="@LiveChannels" OnOpenChannel="OpenChannelDetailsAsync" />
+        }
+    }
 </div>
 
 <ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedChannelKey))"
@@ -140,11 +201,23 @@
     private string? _selectedChannelKey;
     private string? _selectedNodeId;
 
-    protected override Task OnInitializedAsync()
+    private bool _historyMode;
+    private bool _isLoadingHistory;
+    private string? _historyError;
+    private CollectorChannelPage? _historyPage;
+    private readonly CollectorChannelPageQuery _historyQuery = new();
+
+    private int TotalHistoryPages =>
+        _historyPage == null || _historyPage.TotalCount == 0
+            ? 1
+            : (int)Math.Ceiling((double)_historyPage.TotalCount / _historyQuery.PageSize);
+
+    protected override async Task OnInitializedAsync()
     {
         _liveSnapshot = ChannelProjectionStore.Current;
         ChannelProjectionStore.Changed += HandleLiveChannelsChanged;
-        return Task.CompletedTask;
+        _historyMode = ViewModePreferenceService.ChannelsHistoryMode;
+        if (_historyMode) await LoadHistoryPageAsync();
     }
 
     public void Dispose()
@@ -152,17 +225,71 @@
         ChannelProjectionStore.Changed -= HandleLiveChannelsChanged;
     }
 
-    private IReadOnlyList<ChannelProjectionEnvelope> FilteredChannels =>
+    private IReadOnlyList<ChannelProjectionEnvelope> FilteredLiveChannels =>
         _liveSnapshot.Channels
             .Where(MatchesSearchText)
             .OrderBy(c => c.ChannelName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+    private IReadOnlyList<ChannelRowViewModel> LiveChannels =>
+        FilteredLiveChannels.Select(ChannelRowViewModel.From).ToArray();
+
+    private IReadOnlyList<ChannelRowViewModel> HistoryChannels =>
+        _historyPage?.Items.Select(ChannelRowViewModel.From).ToArray() ?? Array.Empty<ChannelRowViewModel>();
+
+    private async Task OnModeToggled(bool historyMode)
+    {
+        _historyMode = historyMode;
+        ViewModePreferenceService.SetChannelsMode(historyMode);
+        if (historyMode)
+            await LoadHistoryPageAsync();
+        else
+            _historyError = null;
+    }
 
     private void ClearLiveChannels()
     {
         ChannelProjectionStore.Clear();
         _selectedChannelKey = null;
         _selectedNodeId = null;
+    }
+
+    private async Task OnHistoryQueryChanged()
+    {
+        _historyQuery.Page = 1;
+        await LoadHistoryPageAsync();
+    }
+
+    private async Task PreviousHistoryPage()
+    {
+        _historyQuery.Page = Math.Max(1, _historyQuery.Page - 1);
+        await LoadHistoryPageAsync();
+    }
+
+    private async Task NextHistoryPage()
+    {
+        _historyQuery.Page = Math.Min(TotalHistoryPages, _historyQuery.Page + 1);
+        await LoadHistoryPageAsync();
+    }
+
+    private async Task LoadHistoryPageAsync()
+    {
+        _isLoadingHistory = true;
+        _historyError = null;
+        StateHasChanged();
+
+        try
+        {
+            _historyPage = await PublicCollectorApiClient.GetChannelPageAsync(_historyQuery);
+        }
+        catch (Exception exception)
+        {
+            _historyError = exception.Message;
+        }
+        finally
+        {
+            _isLoadingHistory = false;
+        }
     }
 
     private void HandleLiveChannelsChanged()

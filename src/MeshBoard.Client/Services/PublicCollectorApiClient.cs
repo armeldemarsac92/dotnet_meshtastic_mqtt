@@ -127,4 +127,34 @@ public sealed class PublicCollectorApiClient
         return response.Content
             ?? throw new InvalidOperationException("The API returned an empty collector overview payload.");
     }
+
+    public async Task<CollectorNodePage> GetNodePageAsync(
+        CollectorNodePageQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _publicCollectorApi.GetNodePageAsync(query ?? new CollectorNodePageQuery(), cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Loading public collector nodes failed."));
+        }
+
+        return response.Content
+            ?? throw new InvalidOperationException("The API returned an empty collector node page payload.");
+    }
+
+    public async Task<CollectorChannelPage> GetChannelPageAsync(
+        CollectorChannelPageQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _publicCollectorApi.GetChannelPageAsync(query ?? new CollectorChannelPageQuery(), cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                ApiProblemDetailsParser.GetMessage(response, "Loading public collector channels failed."));
+        }
+
+        return response.Content
+            ?? throw new InvalidOperationException("The API returned an empty collector channel page payload.");
+    }
 }

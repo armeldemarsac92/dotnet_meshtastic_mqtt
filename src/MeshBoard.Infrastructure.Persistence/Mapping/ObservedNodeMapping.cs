@@ -9,7 +9,7 @@ internal static class ObservedNodeMapping
     {
         return new UpsertObservedNodeSqlRequest
         {
-            WorkspaceId = request.WorkspaceId,
+            WorkspaceId = string.Empty,
             NodeId = request.NodeId,
             BrokerServer = request.BrokerServer,
             ShortName = request.ShortName,

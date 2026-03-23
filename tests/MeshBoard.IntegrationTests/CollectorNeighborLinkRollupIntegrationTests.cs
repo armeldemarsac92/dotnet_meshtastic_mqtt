@@ -38,7 +38,6 @@ public sealed class CollectorNeighborLinkRollupIntegrationTests
                 var baseSeenAtUtc = DateTimeOffset.Parse("2026-03-21T13:05:00Z");
 
                 await repository.UpsertAsync(
-                    "default",
                     "mqtt.world.example:1883",
                     "US/LongFast",
                     [
@@ -52,7 +51,6 @@ public sealed class CollectorNeighborLinkRollupIntegrationTests
                     ]);
 
                 await repository.UpsertAsync(
-                    "default",
                     "mqtt.world.example:1883",
                     "US/LongFast",
                     [

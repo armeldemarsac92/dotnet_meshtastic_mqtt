@@ -244,7 +244,11 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
 
         var typeToken = TryGetString(root, "type", "packetType", "packet_type");
         envelope.PacketType = MapJsonTypeToPacketType(typeToken);
-        envelope.PayloadPreview = BuildJsonPayloadPreview(envelope.PacketType, root, payloadLength);
+        envelope.PayloadPreview = envelope.PacketType switch
+        {
+            "Neighbor Info" => DecodeJsonNeighborInfoPayload(envelope, root, payloadLength),
+            _ => BuildJsonPayloadPreview(envelope.PacketType, root, payloadLength)
+        };
 
         return envelope;
     }
@@ -318,6 +322,63 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             "Routing" => BuildJsonRoutingPayloadPreview(root, payloadLength),
             _ => $"JSON {packetType.ToLowerInvariant()} payload ({payloadLength} bytes)"
         };
+    }
+
+    private string DecodeJsonNeighborInfoPayload(MeshtasticEnvelope envelope, JsonElement root, int payloadLength)
+    {
+        if (!TryGetProperty(root, out var payloadElement, "payload"))
+        {
+            return $"JSON neighbor info payload ({payloadLength} bytes)";
+        }
+
+        if (payloadElement.ValueKind == JsonValueKind.String)
+        {
+            var payloadText = payloadElement.GetString() ?? string.Empty;
+
+            if (TryDecodeBase64(payloadText, out var decodedBytes))
+            {
+                return DecodeNeighborInfoPayload(envelope, ByteString.CopyFrom(decodedBytes));
+            }
+
+            return $"JSON neighbor info payload ({payloadLength} bytes)";
+        }
+
+        if (payloadElement.ValueKind != JsonValueKind.Object)
+        {
+            return $"JSON neighbor info payload ({payloadLength} bytes)";
+        }
+
+        if (string.IsNullOrWhiteSpace(envelope.FromNodeId))
+        {
+            envelope.FromNodeId = TryGetNodeId(
+                payloadElement,
+                "reportingNodeId",
+                "reporting_node_id",
+                "nodeId",
+                "node_id");
+        }
+
+        var neighbors = new List<MeshtasticNeighborEntry>();
+
+        if (TryGetProperty(payloadElement, out var neighborsElement, "neighbors") &&
+            neighborsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var neighborElement in neighborsElement.EnumerateArray())
+            {
+                var neighbor = TryMapJsonNeighborEntry(neighborElement);
+
+                if (neighbor is not null)
+                {
+                    neighbors.Add(neighbor);
+                }
+            }
+        }
+
+        envelope.Neighbors = neighbors;
+
+        var neighborCount = neighbors.Count;
+        var suffix = neighborCount == 1 ? "neighbor" : "neighbors";
+        return $"Neighbor info: {neighborCount} {suffix} reported";
     }
 
     private static string BuildJsonTextPayloadPreview(JsonElement root, int payloadLength)
@@ -868,6 +929,84 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         }
 
         return valueElement.ValueKind == JsonValueKind.String ? valueElement.GetString() : null;
+    }
+
+    private static float? TryGetSingle(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var valueElement, propertyNames))
+        {
+            return null;
+        }
+
+        if (valueElement.ValueKind == JsonValueKind.Number && valueElement.TryGetSingle(out var floatValue))
+        {
+            return float.IsFinite(floatValue) ? floatValue : null;
+        }
+
+        if (valueElement.ValueKind == JsonValueKind.String &&
+            float.TryParse(valueElement.GetString(), NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out floatValue))
+        {
+            return float.IsFinite(floatValue) ? floatValue : null;
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? TryGetTimestamp(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var valueElement, propertyNames))
+        {
+            return null;
+        }
+
+        if (valueElement.ValueKind == JsonValueKind.Number && valueElement.TryGetInt64(out var unixSeconds))
+        {
+            return unixSeconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(unixSeconds) : null;
+        }
+
+        if (valueElement.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var timestampText = valueElement.GetString();
+
+        if (long.TryParse(timestampText, NumberStyles.Integer, CultureInfo.InvariantCulture, out unixSeconds))
+        {
+            return unixSeconds > 0 ? DateTimeOffset.FromUnixTimeSeconds(unixSeconds) : null;
+        }
+
+        return DateTimeOffset.TryParse(
+            timestampText,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out var parsedTimestamp)
+            ? parsedTimestamp
+            : null;
+    }
+
+    private static MeshtasticNeighborEntry? TryMapJsonNeighborEntry(JsonElement neighborElement)
+    {
+        var nodeId = TryGetNodeId(neighborElement, "nodeId", "node_id", "id");
+
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return null;
+        }
+
+        return new MeshtasticNeighborEntry
+        {
+            NodeId = nodeId,
+            SnrDb = TryGetSingle(neighborElement, "snrDb", "snr_db", "snr"),
+            LastRxAtUtc = TryGetTimestamp(
+                neighborElement,
+                "lastRxAtUtc",
+                "last_rx_at_utc",
+                "lastRxAt",
+                "last_rx_at",
+                "lastRxTime",
+                "last_rx_time")
+        };
     }
 
     private static string BuildJsonRoutingPayloadPreview(JsonElement root, int payloadLength)

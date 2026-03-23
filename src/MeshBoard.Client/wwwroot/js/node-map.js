@@ -3,24 +3,18 @@ const MAPLIBRE_SCRIPT_URL = "https://unpkg.com/maplibre-gl@^5/dist/maplibre-gl.j
 const DECKGL_SCRIPT_ID = "meshboard-deckgl-script";
 const DECKGL_SCRIPT_URL = "https://unpkg.com/deck.gl@^9.0.0/dist.min.js";
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
-const DEM_TILES_URL = "https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png";
 const DEFAULT_CENTER = [0, 20];
 const DEFAULT_ZOOM = 2;
-const CONTOUR_SOURCE_ID = "meshboard-contours";
 const BUILDINGS_LAYER_ID = "meshboard-buildings";
-const CONTOUR_LAYER_ID = "meshboard-contour-lines";
 const NODE_LAYER_ID = "meshboard-node-circles";
 const NODE_LABEL_LAYER_ID = "meshboard-node-labels";
 const RADIO_LINK_LAYER_ID = "meshboard-radio-link-lines";
 const MINI_NODE_SOURCE_ID = "meshboard-mini-node";
-const MINI_CONTOUR_SOURCE_ID = "meshboard-mini-contours";
 const MINI_NODE_LAYER_ID = "meshboard-mini-node-circle";
 const MINI_BUILDINGS_LAYER_ID = "meshboard-mini-buildings";
-const MINI_CONTOUR_LAYER_ID = "meshboard-mini-contour-lines";
 
 let maplibreLoadPromise = null;
 let deckGlLoadPromise = null;
-let demSource = null;
 const colorCache = new Map();
 const mapStates = new Map();
 const miniMapStates = new Map();
@@ -66,24 +60,12 @@ function ensureDeckGlScript() {
 }
 
 async function ensureMapLibre() {
-    if (window.maplibregl && demSource) {
+    if (window.maplibregl) {
         return;
     }
 
     if (!maplibreLoadPromise) {
-        maplibreLoadPromise = (async () => {
-            await ensureMapLibreScript();
-
-            if (!demSource && window.mlcontour) {
-                demSource = new window.mlcontour.DemSource({
-                    url: DEM_TILES_URL,
-                    encoding: "mapbox",
-                    maxzoom: 12,
-                    worker: true
-                });
-                demSource.setupMaplibre(window.maplibregl);
-            }
-        })();
+        maplibreLoadPromise = ensureMapLibreScript();
     }
 
     await maplibreLoadPromise;
@@ -325,52 +307,6 @@ function addBuildingsLayer(map, layerId) {
     );
 }
 
-function buildContourSourceData() {
-    if (!demSource) {
-        return null;
-    }
-
-    return {
-        type: "vector",
-        tiles: [
-            demSource.contourProtocolUrl({
-                multiplier: 1,
-                overzoom: 1,
-                thresholds: {
-                    11: [200, 1000],
-                    12: [100, 500],
-                    13: [50, 200],
-                    14: [20, 100],
-                    15: [10, 50]
-                },
-                elevationKey: "ele",
-                levelKey: "level",
-                contourLayer: "contours"
-            })
-        ],
-        maxzoom: 15
-    };
-}
-
-function addContourLayers(map, sourceId, layerId) {
-    const labelLayerId = findFirstLabelLayerId(map);
-
-    map.addLayer(
-        {
-            id: layerId,
-            type: "line",
-            source: sourceId,
-            "source-layer": "contours",
-            paint: {
-                "line-color": "#b8a896",
-                "line-opacity": ["match", ["get", "level"], 1, 0.6, 0.3],
-                "line-width": ["match", ["get", "level"], 1, 1, 0.5]
-            }
-        },
-        labelLayerId
-    );
-}
-
 function createMap(container, center, zoom) {
     const map = new window.maplibregl.Map({
         container,
@@ -386,19 +322,8 @@ function createMap(container, center, zoom) {
     return map;
 }
 
-function addMapSources(map) {
-    const contourSourceData = buildContourSourceData();
-    if (contourSourceData) {
-        map.addSource(CONTOUR_SOURCE_ID, contourSourceData);
-    }
-}
-
 function addMapLayers(map) {
     addBuildingsLayer(map, BUILDINGS_LAYER_ID);
-
-    if (map.getSource(CONTOUR_SOURCE_ID)) {
-        addContourLayers(map, CONTOUR_SOURCE_ID, CONTOUR_LAYER_ID);
-    }
 }
 
 function addDeckOverlay(mapState) {
@@ -582,10 +507,20 @@ async function getOrCreateMapState(containerId, dotNetCallbackRef) {
 
     mapStates.set(containerId, mapState);
 
-    await new Promise((resolve) => {
+    await new Promise((resolve, reject) => {
+        map.once("error", (event) => {
+            mapStates.delete(containerId);
+            map.remove();
+            reject(new Error(event?.error?.message ?? "MapLibre failed to initialize."));
+        });
+
         map.once("load", () => {
-            addMapSources(map);
-            addMapLayers(map);
+            try {
+                addMapLayers(map);
+            } catch {
+                // Non-critical: base map layers (buildings) are optional.
+            }
+
             addDeckOverlay(mapState);
             setCanvasCursor(mapState, "grab");
             wireInteractions(mapState);
@@ -719,12 +654,6 @@ export async function renderMiniMap(containerId, latitude, longitude) {
     await new Promise((resolve) => {
         map.once("load", () => {
             addBuildingsLayer(map, MINI_BUILDINGS_LAYER_ID);
-
-            const contourSourceData = buildContourSourceData();
-            if (contourSourceData) {
-                map.addSource(MINI_CONTOUR_SOURCE_ID, contourSourceData);
-                addContourLayers(map, MINI_CONTOUR_SOURCE_ID, MINI_CONTOUR_LAYER_ID);
-            }
 
             map.addSource(MINI_NODE_SOURCE_ID, {
                 type: "geojson",

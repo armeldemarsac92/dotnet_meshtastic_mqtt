@@ -277,6 +277,42 @@ public sealed class MeshtasticEnvelopeReaderTests
     }
 
     [Fact]
+    public async Task Read_ShouldDecodeNeighborInfo_FromJsonTypePayload()
+    {
+        var reader = CreateReader();
+        var jsonPayload = """
+                          {
+                            "type": "neighborinfo",
+                            "fromId": "!11223344",
+                            "payload": {
+                              "node_id": "!11223344",
+                              "neighbors": [
+                                {
+                                  "node_id": "!55667788",
+                                  "snr": 3.25,
+                                  "last_rx_time": 1762112400
+                                }
+                              ]
+                            },
+                            "timestamp": 1762112400
+                          }
+                          """;
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/json/LongFast/!11223344", Encoding.UTF8.GetBytes(jsonPayload));
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Neighbor Info", envelope.PacketType);
+        Assert.Equal("!11223344", envelope.FromNodeId);
+        Assert.Null(envelope.ToNodeId);
+        Assert.Equal("Neighbor info: 1 neighbor reported", envelope.PayloadPreview);
+        Assert.NotNull(envelope.Neighbors);
+        Assert.Single(envelope.Neighbors);
+        Assert.Equal("!55667788", envelope.Neighbors[0].NodeId);
+        Assert.Equal(3.25f, envelope.Neighbors[0].SnrDb);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1762112400), envelope.Neighbors[0].LastRxAtUtc);
+    }
+
+    [Fact]
     public async Task Read_ShouldDecodeRouting_FromJsonTypePayload()
     {
         var reader = CreateReader();

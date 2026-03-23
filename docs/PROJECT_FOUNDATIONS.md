@@ -131,9 +131,9 @@ Collector persistence:
 
 - owned by `MeshBoard.Collector`
 - PostgreSQL-backed
-- normalized around `collector_servers -> collector_channels -> collector_nodes/messages`
+- normalized around `collector_servers -> collector_channels -> collector_nodes`
 - includes hourly packet rollups for collector-side analytics
-- prunes raw `collector_messages` history after 365 days by default
+- does not persist per-message history
 - keeps current node/link state and hourly rollups as the long-run public-map model
 - first read-only public collector APIs are exposed from `MeshBoard.Api`
 - those public collector endpoints are mirrored in `MeshBoard.Api.SDK` through Refit

@@ -88,42 +88,6 @@ BEGIN
     END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS collector_messages (
-    id UUID NOT NULL PRIMARY KEY,
-    workspace_id TEXT NOT NULL,
-    channel_id BIGINT NOT NULL REFERENCES collector_channels(id) ON DELETE CASCADE,
-    message_key TEXT NOT NULL,
-    topic TEXT NOT NULL,
-    packet_type TEXT NOT NULL,
-    from_node_id TEXT NOT NULL,
-    to_node_id TEXT NULL,
-    payload_preview TEXT NOT NULL,
-    is_private BOOLEAN NOT NULL,
-    received_at_utc TIMESTAMPTZ NOT NULL
-);
-
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'collector_messages'
-          AND column_name = 'workspace_id') THEN
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_messages_workspace_message_key
-            ON collector_messages(workspace_id, message_key);
-
-        CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_received
-            ON collector_messages(workspace_id, received_at_utc DESC, id DESC);
-
-        CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_channel_received
-            ON collector_messages(workspace_id, channel_id, received_at_utc DESC, id DESC);
-
-        CREATE INDEX IF NOT EXISTS ix_collector_messages_workspace_sender_received
-            ON collector_messages(workspace_id, from_node_id, received_at_utc DESC, id DESC);
-    END IF;
-END $$;
-
 CREATE TABLE IF NOT EXISTS collector_neighbor_links (
     workspace_id TEXT NOT NULL,
     channel_id BIGINT NOT NULL REFERENCES collector_channels(id) ON DELETE CASCADE,

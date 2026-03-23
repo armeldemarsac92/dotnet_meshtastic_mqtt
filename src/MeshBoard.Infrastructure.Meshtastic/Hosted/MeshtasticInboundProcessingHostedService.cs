@@ -79,18 +79,10 @@ internal sealed class MeshtasticInboundProcessingHostedService : BackgroundServi
         if (timeInQueue > TimeSpan.FromSeconds(5))
         {
             _logger.LogWarning(
-                "Meshtastic inbound message for workspace {WorkspaceId} spent {QueueDelayMs} ms in queue before processing on worker {WorkerId}",
-                inboundMessage.WorkspaceId,
+                "Meshtastic inbound message for topic {Topic} spent {QueueDelayMs} ms in queue before processing on worker {WorkerId}",
+                inboundMessage.Topic,
                 timeInQueue.TotalMilliseconds,
                 workerId);
-        }
-
-        if (string.IsNullOrWhiteSpace(inboundMessage.WorkspaceId))
-        {
-            _logger.LogWarning(
-                "Dropping Meshtastic inbound message for topic {Topic} because it does not specify a workspace ID",
-                inboundMessage.Topic);
-            return;
         }
 
         var envelope = await _envelopeReader.Read(

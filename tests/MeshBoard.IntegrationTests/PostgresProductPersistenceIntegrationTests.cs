@@ -32,8 +32,7 @@ public sealed class PostgresProductPersistenceIntegrationTests
                 new Dictionary<string, string?>
                 {
                     [$"{PersistenceOptions.SectionName}:Provider"] = "PostgreSQL",
-                    [$"{PersistenceOptions.SectionName}:ConnectionString"] = connectionString,
-                    [$"{PersistenceOptions.SectionName}:MessageRetentionDays"] = "30"
+                    [$"{PersistenceOptions.SectionName}:ConnectionString"] = connectionString
                 })
             .Build();
 

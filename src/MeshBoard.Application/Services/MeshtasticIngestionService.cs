@@ -41,7 +41,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     public async Task IngestEnvelope(MeshtasticEnvelope envelope, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Attempting to ingest Meshtastic envelope from topic: {Topic}", envelope.Topic);
-        var workspaceId = RequireWorkspaceId(envelope);
         var messageKey = BuildMessageKey(envelope);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -51,7 +50,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             var messageInserted = await _messageRepository.AddAsync(
                 new SaveObservedMessageRequest
                 {
-                    WorkspaceId = workspaceId,
                     BrokerServer = envelope.BrokerServer,
                     Topic = envelope.Topic,
                     PacketType = envelope.PacketType,
@@ -79,7 +77,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 envelope.Topic,
                 envelope.ReceivedAtUtc,
                 envelope.BrokerServer,
-                workspaceId,
+                string.Empty,
                 cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
@@ -87,7 +85,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 await _nodeRepository.UpsertAsync(
                     new UpsertObservedNodeRequest
                     {
-                        WorkspaceId = workspaceId,
                         NodeId = envelope.FromNodeId,
                         BrokerServer = envelope.BrokerServer,
                         ShortName = envelope.ShortName,
@@ -118,7 +115,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 if (neighborLinks.Count > 0)
                 {
                     await _neighborLinkRepository.UpsertAsync(
-                        workspaceId,
                         envelope.BrokerServer,
                         envelope.LastHeardChannel,
                         neighborLinks,
@@ -133,16 +129,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
         }
-    }
-
-    private static string RequireWorkspaceId(MeshtasticEnvelope envelope)
-    {
-        if (string.IsNullOrWhiteSpace(envelope.WorkspaceId))
-        {
-            throw new InvalidOperationException("A workspace ID is required to ingest Meshtastic envelopes.");
-        }
-
-        return envelope.WorkspaceId.Trim();
     }
 
     private static string BuildMessageKey(MeshtasticEnvelope envelope)

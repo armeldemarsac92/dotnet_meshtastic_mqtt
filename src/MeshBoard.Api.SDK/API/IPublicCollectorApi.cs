@@ -42,4 +42,14 @@ public interface IPublicCollectorApi
     Task<IApiResponse<CollectorOverviewSnapshot>> GetOverviewAsync(
         [Query] CollectorOverviewQuery query,
         CancellationToken cancellationToken = default);
+
+    [Get("/api/public/collector/nodes")]
+    Task<IApiResponse<CollectorNodePage>> GetNodePageAsync(
+        [Query] CollectorNodePageQuery query,
+        CancellationToken cancellationToken = default);
+
+    [Get("/api/public/collector/channels-page")]
+    Task<IApiResponse<CollectorChannelPage>> GetChannelPageAsync(
+        [Query] CollectorChannelPageQuery query,
+        CancellationToken cancellationToken = default);
 }

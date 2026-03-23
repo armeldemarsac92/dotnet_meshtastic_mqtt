@@ -34,8 +34,9 @@ Completed on 2026-03-21:
   - `collector_servers`
   - `collector_channels`
   - `collector_nodes`
-  - `collector_messages`
   - `collector_neighbor_links`
+  - `collector_channel_packet_hourly_rollups`
+  - `collector_node_packet_hourly_rollups`
 - removed the dead queued-runtime branch:
   - deleted `AddMeshtasticQueuedRuntimeInfrastructure()`
   - deleted the queued runtime command service and processor hosted service

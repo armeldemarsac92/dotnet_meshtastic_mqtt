@@ -633,7 +633,7 @@
     private Task<IJSObjectReference> GetMapModuleAsync()
     {
         _moduleTask ??= new Lazy<Task<IJSObjectReference>>(
-            () => JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=6").AsTask());
+            () => JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=8").AsTask());
         return _moduleTask.Value;
     }
 

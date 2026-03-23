@@ -1,11 +1,14 @@
 @using MeshBoard.Client.Collector
 @using MeshBoard.Client.Messages
 @using MeshBoard.Client.Nodes
+@using MeshBoard.Client.Services
+@using MeshBoard.Contracts.Collector
 @using MeshBoard.Contracts.Nodes
 @implements IAsyncDisposable
 @inject DecryptedMessageStore DecryptedMessageStore
 @inject IJSRuntime JS
 @inject NodeProjectionStore NodeProjectionStore
+@inject PublicCollectorApiClient PublicCollectorApiClient
 @inject PublicCollectorService PublicCollectorService
 
 @if (IsOpen)
@@ -27,12 +30,16 @@
             </header>
 
             <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4">
-                @if (!HasNodeData)
+                @if (_isLoadingCollectorNode && !HasNodeData)
+                {
+                    <p class="text-sm text-cinder-800/72">Loading node data...</p>
+                }
+                else if (!HasNodeData)
                 {
                     <div class="space-y-2">
                         <h2 class="font-display text-3xl text-cinder-950">Node not found</h2>
                         <p class="text-sm leading-7 text-cinder-800/80">
-                            No live node projection or collector-backed map snapshot currently matches
+                            No live node projection or collector-backed data currently matches
                             <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@NodeId</code>.
                         </p>
                     </div>
@@ -207,6 +214,9 @@
     private double? EffectiveLongitude => _node?.LastKnownLongitude ?? _collectorNode?.LastKnownLongitude;
 
     private NodeSummary? _collectorNode;
+    private NodeSummary? _apiNode;
+    private string? _lastApiNodeId;
+    private bool _isLoadingCollectorNode;
     private const string MiniMapElementId = "meshboard-node-detail-mini-map";
     private NodeProjectionEnvelope? _node;
     private IReadOnlyList<DecryptedMessageEnvelope> _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
@@ -346,16 +356,37 @@
         {
             _node = null;
             _collectorNode = null;
+            _apiNode = null;
+            _lastApiNodeId = null;
+            _isLoadingCollectorNode = false;
             _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
             return;
         }
 
+        // Clear cached API node if NodeId changed
+        if (!string.Equals(_lastApiNodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+        {
+            _apiNode = null;
+        }
+
         _node = NodeProjectionStore.Current.Nodes
             .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
-        _collectorNode = PublicCollectorService.State.MapSnapshot?.Nodes
-            .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
 
-        if (_node is null || !ProjectionDetailsSupport.TryParseNodeNumber(_node.NodeId, out var nodeNumber))
+        // Prefer map snapshot; fall back to previously fetched API node
+        _collectorNode = PublicCollectorService.State.MapSnapshot?.Nodes
+            .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+            ?? _apiNode;
+
+        // Kick off API fetch when neither live nor snapshot has the node
+        if (_node is null && _collectorNode is null
+            && !_isLoadingCollectorNode
+            && !string.Equals(_lastApiNodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+        {
+            _ = LoadCollectorNodeAsync(NodeId);
+        }
+
+        var effectiveNodeId = _node?.NodeId ?? _collectorNode?.NodeId;
+        if (effectiveNodeId is null || !ProjectionDetailsSupport.TryParseNodeNumber(effectiveNodeId, out var nodeNumber))
         {
             _relatedMessages = Array.Empty<DecryptedMessageEnvelope>();
             return;
@@ -366,6 +397,43 @@
             .OrderByDescending(message => message.ReceivedAtUtc)
             .Take(40)
             .ToArray();
+    }
+
+    private async Task LoadCollectorNodeAsync(string nodeId)
+    {
+        _isLoadingCollectorNode = true;
+        _lastApiNodeId = nodeId;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var page = await PublicCollectorApiClient.GetNodePageAsync(new CollectorNodePageQuery
+            {
+                SearchText = nodeId,
+                PageSize = 10
+            });
+
+            // Verify NodeId hasn't changed while we were fetching
+            if (!string.Equals(nodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _apiNode = page.Items.FirstOrDefault(n =>
+                string.Equals(n.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+            _collectorNode = PublicCollectorService.State.MapSnapshot?.Nodes
+                .FirstOrDefault(n => string.Equals(n.NodeId, nodeId, StringComparison.OrdinalIgnoreCase))
+                ?? _apiNode;
+        }
+        catch
+        {
+            // Silently fail — "node not found" state will display
+        }
+        finally
+        {
+            _isLoadingCollectorNode = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task CloseAsync()

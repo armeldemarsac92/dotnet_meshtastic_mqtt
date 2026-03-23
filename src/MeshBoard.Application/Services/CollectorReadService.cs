@@ -37,6 +37,14 @@ public interface ICollectorReadService
     Task<CollectorOverviewSnapshot> GetOverviewSnapshot(
         CollectorOverviewQuery? query = null,
         CancellationToken cancellationToken = default);
+
+    Task<CollectorNodePage> GetNodePage(
+        CollectorNodePageQuery? query = null,
+        CancellationToken cancellationToken = default);
+
+    Task<CollectorChannelPage> GetChannelPage(
+        CollectorChannelPageQuery? query = null,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class CollectorReadService : ICollectorReadService
@@ -416,49 +424,43 @@ public sealed class CollectorReadService : ICollectorReadService
             };
         }
 
-        var channelContexts = new List<OverviewChannelContext>(selectedChannels.Length);
+        var channelContexts = await Task.WhenAll(
+            selectedChannels.Select(channel => BuildOverviewChannelAsync(
+                channel,
+                sanitizedQuery,
+                activeNotBeforeUtc,
+                lookbackNotBeforeUtc,
+                cancellationToken)));
 
-        foreach (var channel in selectedChannels)
+        var selectedChannelContextsByServer = channelContexts
+            .GroupBy(context => context.Channel.ServerAddress, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyCollection<OverviewChannelContext>)group
+                    .OrderByDescending(context => context.Channel.LastObservedAtUtc)
+                    .ThenBy(context => context.Channel.Region, StringComparer.Ordinal)
+                    .ThenBy(context => context.Channel.ChannelName, StringComparer.Ordinal)
+                    .ToArray(),
+                StringComparer.Ordinal);
+
+        var serverSummaries = new List<CollectorOverviewServerSummary>();
+
+        foreach (var serverGroup in channels
+                     .GroupBy(channel => channel.ServerAddress, StringComparer.Ordinal)
+                     .OrderBy(group => group.Key, StringComparer.Ordinal))
         {
-            channelContexts.Add(
-                await BuildOverviewChannelAsync(
-                    channel,
+            selectedChannelContextsByServer.TryGetValue(serverGroup.Key, out var selectedServerChannels);
+
+            serverSummaries.Add(
+                await BuildOverviewServerAsync(
+                    serverGroup.Key,
+                    serverGroup.ToArray(),
+                    selectedServerChannels ?? Array.Empty<OverviewChannelContext>(),
                     sanitizedQuery,
                     activeNotBeforeUtc,
                     lookbackNotBeforeUtc,
                     cancellationToken));
         }
-
-        var serverSummaries = channelContexts
-            .GroupBy(context => context.Channel.ServerAddress, StringComparer.Ordinal)
-            .OrderBy(group => group.Key, StringComparer.Ordinal)
-            .Select(group =>
-            {
-                var groupedChannels = group
-                    .OrderByDescending(context => context.Channel.LastObservedAtUtc)
-                    .ThenBy(context => context.Channel.Region, StringComparer.Ordinal)
-                    .ThenBy(context => context.Channel.ChannelName, StringComparer.Ordinal)
-                    .ToArray();
-
-                return new CollectorOverviewServerSummary
-                {
-                    ServerAddress = group.Key,
-                    FirstObservedAtUtc = groupedChannels.Min(context => context.Channel.FirstObservedAtUtc),
-                    LastObservedAtUtc = groupedChannels.Max(context => context.Channel.LastObservedAtUtc),
-                    ChannelCount = groupedChannels.Length,
-                    ActiveNodeCount = groupedChannels
-                        .SelectMany(context => context.Nodes.Select(node => node.NodeId))
-                        .Distinct(StringComparer.Ordinal)
-                        .Count(),
-                    ActiveLinkCount = groupedChannels.Sum(context => context.Summary.ActiveLinkCount),
-                    PacketCountInLookback = groupedChannels.Sum(context => context.Summary.PacketCountInLookback),
-                    NeighborObservationCountInLookback = groupedChannels.Sum(context => context.Summary.NeighborObservationCountInLookback),
-                    Channels = groupedChannels
-                        .Select(context => context.Summary)
-                        .ToArray()
-                };
-            })
-            .ToArray();
 
         return new CollectorOverviewSnapshot
         {
@@ -468,13 +470,91 @@ public sealed class CollectorReadService : ICollectorReadService
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
             ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
             LookbackHours = sanitizedQuery.LookbackHours,
-            ServerCount = serverSummaries.Length,
-            ChannelCount = channelContexts.Count,
+            ServerCount = channels
+                .Select(channel => channel.ServerAddress)
+                .Distinct(StringComparer.Ordinal)
+                .Count(),
+            ChannelCount = channels.Count,
             ActiveNodeCount = serverSummaries.Sum(summary => summary.ActiveNodeCount),
             ActiveLinkCount = serverSummaries.Sum(summary => summary.ActiveLinkCount),
             PacketCountInLookback = serverSummaries.Sum(summary => summary.PacketCountInLookback),
             NeighborObservationCountInLookback = serverSummaries.Sum(summary => summary.NeighborObservationCountInLookback),
-            Servers = serverSummaries
+            Servers = serverSummaries.ToArray()
+        };
+    }
+
+    private async Task<CollectorOverviewServerSummary> BuildOverviewServerAsync(
+        string serverAddress,
+        IReadOnlyCollection<CollectorChannelSummary> channels,
+        IReadOnlyCollection<OverviewChannelContext> selectedChannelContexts,
+        CollectorOverviewQuery query,
+        DateTimeOffset activeNotBeforeUtc,
+        DateTimeOffset lookbackNotBeforeUtc,
+        CancellationToken cancellationToken)
+    {
+        var topologyQuery = new CollectorTopologyQuery
+        {
+            ServerAddress = serverAddress,
+            Region = query.Region,
+            ChannelName = query.ChannelName,
+            ActiveWithinHours = query.ActiveWithinHours,
+            MaxNodes = MaxNodes,
+            MaxLinks = MaxLinks,
+            TopCount = DefaultTopologyTopCount
+        };
+
+        var packetStatsQuery = new CollectorPacketStatsQuery
+        {
+            ServerAddress = serverAddress,
+            Region = query.Region,
+            ChannelName = query.ChannelName,
+            LookbackHours = query.LookbackHours,
+            MaxRows = MaxStatsRows
+        };
+
+        var neighborLinkQuery = new CollectorNeighborLinkStatsQuery
+        {
+            ServerAddress = serverAddress,
+            Region = query.Region,
+            ChannelName = query.ChannelName,
+            LookbackHours = query.LookbackHours,
+            MaxRows = MaxStatsRows
+        };
+
+        var nodes = await _collectorReadRepository.GetTopologyNodesAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            topologyQuery,
+            activeNotBeforeUtc,
+            cancellationToken);
+        var links = await _collectorReadRepository.GetTopologyLinksAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            topologyQuery,
+            activeNotBeforeUtc,
+            cancellationToken);
+        var packetTypeTotals = await _collectorReadRepository.GetChannelPacketTypeTotalsAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            packetStatsQuery,
+            lookbackNotBeforeUtc,
+            cancellationToken);
+        var neighborObservationCount = await _collectorReadRepository.GetNeighborObservationCountAsync(
+            WorkspaceConstants.DefaultWorkspaceId,
+            neighborLinkQuery,
+            lookbackNotBeforeUtc,
+            cancellationToken);
+
+        return new CollectorOverviewServerSummary
+        {
+            ServerAddress = serverAddress,
+            FirstObservedAtUtc = channels.Min(channel => channel.FirstObservedAtUtc),
+            LastObservedAtUtc = channels.Max(channel => channel.LastObservedAtUtc),
+            ChannelCount = channels.Count,
+            ActiveNodeCount = nodes.Count,
+            ActiveLinkCount = links.Count,
+            PacketCountInLookback = packetTypeTotals.Sum(total => total.PacketCount),
+            NeighborObservationCountInLookback = neighborObservationCount,
+            Channels = selectedChannelContexts
+                .Select(context => context.Summary)
+                .ToArray()
         };
     }
 
@@ -563,6 +643,36 @@ public sealed class CollectorReadService : ICollectorReadService
                     .Take(query.TopPacketTypes)
                     .ToArray()
             });
+    }
+
+    public Task<CollectorNodePage> GetNodePage(
+        CollectorNodePageQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sanitized = new CollectorNodePageQuery
+        {
+            SearchText = Normalize(query?.SearchText),
+            SortBy = query?.SortBy ?? CollectorNodeSortOption.LastHeardDesc,
+            Page = Math.Max(1, query?.Page ?? 1),
+            PageSize = Clamp(query?.PageSize ?? 50, 1, 200)
+        };
+
+        return _collectorReadRepository.GetNodePageAsync(sanitized, cancellationToken);
+    }
+
+    public Task<CollectorChannelPage> GetChannelPage(
+        CollectorChannelPageQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var sanitized = new CollectorChannelPageQuery
+        {
+            SearchText = Normalize(query?.SearchText),
+            SortBy = query?.SortBy ?? CollectorChannelSortOption.LastObservedDesc,
+            Page = Math.Max(1, query?.Page ?? 1),
+            PageSize = Clamp(query?.PageSize ?? 50, 1, 200)
+        };
+
+        return _collectorReadRepository.GetChannelPageAsync(sanitized, cancellationToken);
     }
 
     private static CollectorMapQuery SanitizeQuery(CollectorMapQuery? query)

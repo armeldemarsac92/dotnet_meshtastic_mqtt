@@ -30,7 +30,6 @@ public sealed class MeshtasticIngestionServiceTests
         await service.IngestEnvelope(
             new MeshtasticEnvelope
             {
-                WorkspaceId = "workspace-tests",
                 BrokerServer = "broker.meshboard.test",
                 Topic = "msh/US/2/e/LongFast/!00005678",
                 PacketType = "Neighbor Info",
@@ -90,7 +89,6 @@ public sealed class MeshtasticIngestionServiceTests
         await service.IngestEnvelope(
             new MeshtasticEnvelope
             {
-                WorkspaceId = "workspace-tests",
                 BrokerServer = "broker.meshboard.test",
                 Topic = "msh/US/2/e/LongFast/!00005678",
                 PacketType = "Neighbor Info",
@@ -196,7 +194,6 @@ public sealed class MeshtasticIngestionServiceTests
         public IReadOnlyList<NeighborLinkRecord> LastLinks { get; private set; } = [];
 
         public Task UpsertAsync(
-            string workspaceId,
             string brokerServer,
             string? channelKey,
             IReadOnlyList<NeighborLinkRecord> links,
@@ -209,7 +206,7 @@ public sealed class MeshtasticIngestionServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<NeighborLinkRecord>> GetActiveLinksAsync(string workspaceId, DateTimeOffset notBeforeUtc, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<NeighborLinkRecord>> GetActiveLinksAsync(DateTimeOffset notBeforeUtc, CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<NeighborLinkRecord>>([]);
     }
 

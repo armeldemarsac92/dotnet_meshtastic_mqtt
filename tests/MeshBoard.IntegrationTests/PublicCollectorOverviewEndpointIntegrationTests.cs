@@ -8,6 +8,27 @@ namespace MeshBoard.IntegrationTests;
 public sealed class PublicCollectorOverviewEndpointIntegrationTests
 {
     [Fact]
+    public async Task PublicCollectorOverviewEndpoint_ShouldCountAllMatchingChannelsEvenWhenDetailsAreCapped()
+    {
+        await using var host = new ApiIntegrationTestHost();
+        using var client = host.CreateApiClient();
+        await SeedCollectorOverviewCapScenarioAsync(host.PersistenceConnectionString);
+
+        var response = await client.GetAsync(
+            "/api/public/collector/overview?serverAddress=mqtt.world.example:1883&activeWithinHours=48&lookbackHours=48&maxChannels=10&topPacketTypes=2");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var snapshot = await response.Content.ReadFromJsonAsync<CollectorOverviewSnapshot>();
+        Assert.NotNull(snapshot);
+        Assert.Equal(1, snapshot!.ServerCount);
+        Assert.Equal(12, snapshot.ChannelCount);
+
+        var server = Assert.Single(snapshot.Servers);
+        Assert.Equal(12, server.ChannelCount);
+        Assert.Equal(10, server.Channels.Count);
+    }
+
+    [Fact]
     public async Task PublicCollectorOverviewEndpoint_ShouldReturnNestedServerAndChannelSummaries()
     {
         await using var host = new ApiIntegrationTestHost();
@@ -113,6 +134,26 @@ public sealed class PublicCollectorOverviewEndpointIntegrationTests
 
         await InsertLinkRollupAsync(connection, longFastChannelId, bucketStartUtc, "!alpha", "!bravo", 6, 36.0, 7.0f, 6.5f, observedAtUtc, observedAtUtc.AddMinutes(10));
         await InsertLinkRollupAsync(connection, longFastChannelId, bucketStartUtc, "!bravo", "!charlie", 3, 12.0, 4.5f, 4.0f, observedAtUtc.AddMinutes(1), observedAtUtc.AddMinutes(11));
+    }
+
+    private static async Task SeedCollectorOverviewCapScenarioAsync(string connectionString)
+    {
+        var observedAtUtc = DateTimeOffset.Parse("2026-03-22T10:00:00Z");
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        var serverId = await InsertServerAsync(connection, observedAtUtc);
+
+        for (var index = 0; index < 12; index++)
+        {
+            await InsertChannelAsync(
+                connection,
+                serverId,
+                "US",
+                $"Channel-{index + 1:D2}",
+                observedAtUtc.AddMinutes(-index));
+        }
     }
 
     private static async Task<long> InsertServerAsync(NpgsqlConnection connection, DateTimeOffset observedAtUtc)

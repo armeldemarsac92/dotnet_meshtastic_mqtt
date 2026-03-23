@@ -177,10 +177,10 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
                     WHERE n.server_id = s.id
                 ) AS NodeCount,
                 (
-                    SELECT COUNT(1)
-                    FROM collector_messages m
+                    SELECT COALESCE(SUM(r.packet_count), 0)
+                    FROM collector_channel_packet_hourly_rollups r
                     INNER JOIN collector_channels c
-                        ON c.id = m.channel_id
+                        ON c.id = r.channel_id
                     WHERE c.server_id = s.id
                 ) AS MessageCount,
                 (
@@ -222,9 +222,9 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
                     WHERE n.last_heard_channel_id = fc.ChannelId
                 ) AS NodeCount,
                 (
-                    SELECT COUNT(1)
-                    FROM collector_messages m
-                    WHERE m.channel_id = fc.ChannelId
+                    SELECT COALESCE(SUM(r.packet_count), 0)
+                    FROM collector_channel_packet_hourly_rollups r
+                    WHERE r.channel_id = fc.ChannelId
                 ) AS MessageCount,
                 (
                     SELECT COUNT(1)
@@ -604,6 +604,151 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         return result.GetValueOrDefault();
     }
 
+    public async Task<CollectorNodePage> GetNodePageAsync(
+        CollectorNodePageQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var offset = (Math.Max(1, query.Page) - 1) * query.PageSize;
+        var searchText = query.SearchText?.Trim() ?? string.Empty;
+
+        var orderBy = query.SortBy switch
+        {
+            CollectorNodeSortOption.NameAsc =>
+                "ORDER BY COALESCE(n.long_name, n.short_name, n.node_id) ASC, n.node_id ASC",
+            CollectorNodeSortOption.BatteryDesc =>
+                "ORDER BY n.battery_level_percent DESC NULLS LAST, COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) DESC NULLS LAST",
+            _ =>
+                "ORDER BY COALESCE(n.last_heard_at_utc, n.last_text_message_at_utc) DESC NULLS LAST, COALESCE(n.long_name, n.short_name, n.node_id) ASC"
+        };
+
+        var sql = $"""
+            SELECT
+                COUNT(*) OVER() AS TotalCount,
+                n.node_id AS NodeId,
+                s.server_address AS BrokerServer,
+                n.short_name AS ShortName,
+                n.long_name AS LongName,
+                n.last_heard_at_utc::text AS LastHeardAtUtc,
+                CASE
+                    WHEN last_channel.id IS NULL THEN NULL
+                    ELSE CONCAT(last_channel.region, '/', last_channel.channel_name)
+                END AS LastHeardChannel,
+                n.last_text_message_at_utc::text AS LastTextMessageAtUtc,
+                n.last_known_latitude AS LastKnownLatitude,
+                n.last_known_longitude AS LastKnownLongitude,
+                n.battery_level_percent AS BatteryLevelPercent,
+                n.voltage AS Voltage,
+                n.channel_utilization AS ChannelUtilization,
+                n.air_util_tx AS AirUtilTx,
+                n.uptime_seconds AS UptimeSeconds,
+                n.temperature_celsius AS TemperatureCelsius,
+                n.relative_humidity AS RelativeHumidity,
+                n.barometric_pressure AS BarometricPressure
+            FROM collector_nodes n
+            INNER JOIN collector_servers s
+                ON s.id = n.server_id
+            LEFT JOIN collector_channels last_channel
+                ON last_channel.id = n.last_heard_channel_id
+            WHERE (@SearchText = ''
+                OR n.node_id ILIKE '%' || @SearchText || '%'
+                OR n.short_name ILIKE '%' || @SearchText || '%'
+                OR n.long_name ILIKE '%' || @SearchText || '%'
+                OR s.server_address ILIKE '%' || @SearchText || '%')
+            {orderBy}
+            LIMIT @PageSize OFFSET @Offset;
+            """;
+
+        var parameters = new DynamicParameters();
+        parameters.Add("SearchText", searchText);
+        parameters.Add("PageSize", query.PageSize);
+        parameters.Add("Offset", offset);
+
+        var responses = (await _dbContext.QueryAsync<CollectorNodePageSqlResponse>(sql, parameters, cancellationToken)).ToArray();
+        var items = responses.Select(MapPageNode).ToArray();
+        var totalCount = responses.Length > 0 ? responses[0].TotalCount : 0;
+
+        return new CollectorNodePage
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = Math.Max(1, query.Page),
+            PageSize = query.PageSize
+        };
+    }
+
+    public async Task<CollectorChannelPage> GetChannelPageAsync(
+        CollectorChannelPageQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var offset = (Math.Max(1, query.Page) - 1) * query.PageSize;
+        var searchText = query.SearchText?.Trim() ?? string.Empty;
+
+        var orderBy = query.SortBy switch
+        {
+            CollectorChannelSortOption.NameAsc =>
+                "ORDER BY c.channel_name ASC, c.region ASC",
+            CollectorChannelSortOption.NodeCountDesc =>
+                "ORDER BY NodeCount DESC, c.last_observed_at_utc DESC",
+            CollectorChannelSortOption.MessageCountDesc =>
+                "ORDER BY MessageCount DESC, c.last_observed_at_utc DESC",
+            _ =>
+                "ORDER BY c.last_observed_at_utc DESC, c.channel_name ASC"
+        };
+
+        var sql = $"""
+            SELECT
+                COUNT(*) OVER() AS TotalCount,
+                s.server_address AS ServerAddress,
+                c.region AS Region,
+                c.mesh_version AS MeshVersion,
+                c.channel_name AS ChannelName,
+                c.topic_pattern AS TopicPattern,
+                c.first_observed_at_utc::text AS FirstObservedAtUtc,
+                c.last_observed_at_utc::text AS LastObservedAtUtc,
+                (
+                    SELECT COUNT(1)
+                    FROM collector_nodes n
+                    WHERE n.last_heard_channel_id = c.id
+                ) AS NodeCount,
+                (
+                    SELECT COALESCE(SUM(r.packet_count), 0)
+                    FROM collector_channel_packet_hourly_rollups r
+                    WHERE r.channel_id = c.id
+                ) AS MessageCount,
+                (
+                    SELECT COUNT(1)
+                    FROM collector_neighbor_links l
+                    WHERE l.channel_id = c.id
+                ) AS NeighborLinkCount
+            FROM collector_channels c
+            INNER JOIN collector_servers s
+                ON s.id = c.server_id
+            WHERE (@SearchText = ''
+                OR c.channel_name ILIKE '%' || @SearchText || '%'
+                OR c.region ILIKE '%' || @SearchText || '%'
+                OR s.server_address ILIKE '%' || @SearchText || '%')
+            {orderBy}
+            LIMIT @PageSize OFFSET @Offset;
+            """;
+
+        var parameters = new DynamicParameters();
+        parameters.Add("SearchText", searchText);
+        parameters.Add("PageSize", query.PageSize);
+        parameters.Add("Offset", offset);
+
+        var responses = (await _dbContext.QueryAsync<CollectorChannelPageSqlResponse>(sql, parameters, cancellationToken)).ToArray();
+        var items = responses.Select(MapChannelPage).ToArray();
+        var totalCount = responses.Length > 0 ? responses[0].TotalCount : 0;
+
+        return new CollectorChannelPage
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = Math.Max(1, query.Page),
+            PageSize = query.PageSize
+        };
+    }
+
     private static DynamicParameters CreateFilterParameters(string workspaceId, CollectorMapQuery query)
     {
         var parameters = new DynamicParameters();
@@ -759,8 +904,61 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         };
     }
 
+    private static NodeSummary MapPageNode(CollectorNodePageSqlResponse response)
+    {
+        return new NodeSummary
+        {
+            NodeId = response.NodeId,
+            BrokerServer = response.BrokerServer,
+            ShortName = response.ShortName,
+            LongName = response.LongName,
+            LastHeardAtUtc = ParseNullableTimestamp(response.LastHeardAtUtc),
+            LastHeardChannel = response.LastHeardChannel,
+            LastTextMessageAtUtc = ParseNullableTimestamp(response.LastTextMessageAtUtc),
+            LastKnownLatitude = response.LastKnownLatitude,
+            LastKnownLongitude = response.LastKnownLongitude,
+            BatteryLevelPercent = response.BatteryLevelPercent,
+            Voltage = response.Voltage,
+            ChannelUtilization = response.ChannelUtilization,
+            AirUtilTx = response.AirUtilTx,
+            UptimeSeconds = response.UptimeSeconds,
+            TemperatureCelsius = response.TemperatureCelsius,
+            RelativeHumidity = response.RelativeHumidity,
+            BarometricPressure = response.BarometricPressure
+        };
+    }
+
+    private static CollectorChannelSummary MapChannelPage(CollectorChannelPageSqlResponse response)
+    {
+        return new CollectorChannelSummary
+        {
+            ServerAddress = response.ServerAddress,
+            Region = response.Region,
+            MeshVersion = response.MeshVersion,
+            ChannelName = response.ChannelName,
+            TopicPattern = response.TopicPattern,
+            FirstObservedAtUtc = ParseTimestamp(response.FirstObservedAtUtc),
+            LastObservedAtUtc = ParseTimestamp(response.LastObservedAtUtc),
+            NodeCount = response.NodeCount,
+            MessageCount = response.MessageCount,
+            NeighborLinkCount = response.NeighborLinkCount
+        };
+    }
+
     private static DateTimeOffset ParseTimestamp(string value)
     {
         return DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+    }
+
+    private static DateTimeOffset? ParseNullableTimestamp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var result)
+            ? result
+            : null;
     }
 }

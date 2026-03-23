@@ -19,7 +19,6 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
     }
 
     public async Task UpsertAsync(
-        string workspaceId,
         string brokerServer,
         string? channelKey,
         IReadOnlyList<NeighborLinkRecord> links,
@@ -80,7 +79,6 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
     }
 
     public async Task<IReadOnlyList<NeighborLinkRecord>> GetActiveLinksAsync(
-        string workspaceId,
         DateTimeOffset notBeforeUtc,
         CancellationToken cancellationToken = default)
     {

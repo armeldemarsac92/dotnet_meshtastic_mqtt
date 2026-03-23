@@ -15,10 +15,6 @@ BEGIN
         DROP INDEX IF EXISTS ux_collector_nodes_workspace_channel_node;
         DROP INDEX IF EXISTS ix_collector_nodes_workspace_last_heard;
         DROP INDEX IF EXISTS ix_collector_nodes_workspace_position;
-        DROP INDEX IF EXISTS ux_collector_messages_workspace_message_key;
-        DROP INDEX IF EXISTS ix_collector_messages_workspace_received;
-        DROP INDEX IF EXISTS ix_collector_messages_workspace_channel_received;
-        DROP INDEX IF EXISTS ix_collector_messages_workspace_sender_received;
         DROP INDEX IF EXISTS ix_collector_neighbor_links_workspace_seen;
         DROP INDEX IF EXISTS ix_collector_channel_packet_hourly_rollups_workspace_bucket;
         DROP INDEX IF EXISTS ix_collector_channel_packet_hourly_rollups_workspace_channel_bucket;
@@ -48,9 +44,6 @@ BEGIN
             DROP COLUMN IF EXISTS workspace_id;
 
         ALTER TABLE collector_nodes
-            DROP COLUMN IF EXISTS workspace_id;
-
-        ALTER TABLE collector_messages
             DROP COLUMN IF EXISTS workspace_id;
 
         ALTER TABLE collector_neighbor_links
@@ -83,18 +76,6 @@ BEGIN
         CREATE INDEX IF NOT EXISTS ix_collector_nodes_position
             ON collector_nodes(channel_id)
             WHERE last_known_latitude IS NOT NULL AND last_known_longitude IS NOT NULL;
-
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_collector_messages_message_key
-            ON collector_messages(message_key);
-
-        CREATE INDEX IF NOT EXISTS ix_collector_messages_received
-            ON collector_messages(received_at_utc DESC, id DESC);
-
-        CREATE INDEX IF NOT EXISTS ix_collector_messages_channel_received
-            ON collector_messages(channel_id, received_at_utc DESC, id DESC);
-
-        CREATE INDEX IF NOT EXISTS ix_collector_messages_sender_received
-            ON collector_messages(from_node_id, received_at_utc DESC, id DESC);
 
         ALTER TABLE collector_neighbor_links
             ADD CONSTRAINT collector_neighbor_links_pkey

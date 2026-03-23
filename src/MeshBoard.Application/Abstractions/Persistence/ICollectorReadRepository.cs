@@ -1,6 +1,7 @@
 using MeshBoard.Contracts.Collector;
 using MeshBoard.Contracts.Nodes;
 
+
 namespace MeshBoard.Application.Abstractions.Persistence;
 
 public interface ICollectorReadRepository
@@ -66,5 +67,13 @@ public interface ICollectorReadRepository
         string workspaceId,
         CollectorNeighborLinkStatsQuery query,
         DateTimeOffset notBeforeUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<CollectorNodePage> GetNodePageAsync(
+        CollectorNodePageQuery query,
+        CancellationToken cancellationToken = default);
+
+    Task<CollectorChannelPage> GetChannelPageAsync(
+        CollectorChannelPageQuery query,
         CancellationToken cancellationToken = default);
 }
