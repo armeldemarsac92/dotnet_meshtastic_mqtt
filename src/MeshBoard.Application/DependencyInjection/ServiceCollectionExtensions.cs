@@ -4,6 +4,7 @@ using MeshBoard.Application.Meshtastic;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Authentication;
 using MeshBoard.Application.Caching;
+using MeshBoard.Application.Collector;
 using MeshBoard.Application.Observability;
 using MeshBoard.Application.Services;
 using MeshBoard.Application.Workspaces;
@@ -26,6 +27,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCollectorApplicationServices(this IServiceCollection services)
     {
         services.AddMemoryCache(options => options.SizeLimit = 1_024);
+        services.TryAddSingleton<ILinkDerivationService, LinkDerivationService>();
+        services.TryAddSingleton<ICollectorChannelResolver, CollectorChannelResolver>();
         services.TryAddSingleton<ITopicEncryptionKeyResolver, NullTopicEncryptionKeyResolver>();
         services.TryAddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
         services.TryAddScoped<IWorkspaceContextAccessor, DefaultWorkspaceContextAccessor>();
