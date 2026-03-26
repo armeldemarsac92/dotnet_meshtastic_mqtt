@@ -17,6 +17,8 @@ enum PortNum {
   TEXT_MESSAGE_COMPRESSED_APP = 7;
   WAYPOINT_APP = 8;
   TELEMETRY_APP = 67;
+  TRACEROUTE_APP = 70;
+  NEIGHBORINFO_APP = 71;
   MAP_REPORT_APP = 73;
 }
 
@@ -27,8 +29,8 @@ message ServiceEnvelope {
 }
 
 message MeshPacket {
-  uint32 from = 1;
-  uint32 to = 2;
+  fixed32 from = 1;
+  fixed32 to = 2;
   uint32 channel = 3;
 
   oneof payload_variant {
@@ -36,8 +38,8 @@ message MeshPacket {
     bytes encrypted = 5;
   }
 
-  uint32 id = 6;
-  uint32 rx_time = 7;
+  fixed32 id = 6;
+  fixed32 rx_time = 7;
   float rx_snr = 8;
   uint32 hop_limit = 9;
   bool want_ack = 10;
@@ -118,4 +120,53 @@ message User {
   bool is_licensed = 5;
   uint32 role = 6;
   bytes public_key = 7;
+}
+
+message Neighbor {
+  uint32 node_id = 1;
+  float snr = 2;
+  fixed32 last_rx_time = 3;
+}
+
+message NeighborInfo {
+  uint32 node_id = 1;
+  uint32 last_sent_by_id = 2;
+  uint32 node_broadcast_interval_secs = 3;
+  repeated Neighbor neighbors = 4;
+}
+
+message RouteDiscovery {
+  repeated fixed32 route = 1;
+  repeated int32 snr_towards = 2;
+  repeated fixed32 route_back = 3;
+  repeated int32 snr_back = 4;
+}
+
+message Routing {
+  enum Error {
+    NONE = 0;
+    NO_ROUTE = 1;
+    GOT_NAK = 2;
+    TIMEOUT = 3;
+    NO_INTERFACE = 4;
+    MAX_RETRANSMIT = 5;
+    NO_CHANNEL = 6;
+    TOO_LARGE = 7;
+    NO_RESPONSE = 8;
+    DUTY_CYCLE_LIMIT = 9;
+    BAD_REQUEST = 32;
+    NOT_AUTHORIZED = 33;
+    PKI_FAILED = 34;
+    PKI_UNKNOWN_PUBKEY = 35;
+    ADMIN_BAD_SESSION_KEY = 36;
+    ADMIN_PUBLIC_KEY_UNAUTHORIZED = 37;
+    RATE_LIMIT_EXCEEDED = 38;
+    PKI_SEND_FAIL_PUBLIC_KEY = 39;
+  }
+
+  oneof variant {
+    RouteDiscovery route_request = 1;
+    RouteDiscovery route_reply = 2;
+    Error error_reason = 3;
+  }
 }

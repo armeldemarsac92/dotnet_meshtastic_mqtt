@@ -137,9 +137,13 @@ public sealed class TopicDiscoveryServiceTests
                     Name = "Default",
                     Host = "mqtt.meshtastic.org",
                     Port = 1883,
-                    DefaultTopicPattern = "msh/US/2/e/#",
                     DownlinkTopic = "msh/US/2/json/mqtt/"
                 });
+        }
+
+        public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<BrokerServerProfile?>(null);
         }
 
         public Task<BrokerServerProfile> SaveServerProfile(

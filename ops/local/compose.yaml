@@ -1,0 +1,156 @@
+services:
+  meshboard-client:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Client/Dockerfile
+    container_name: meshboard-client
+    depends_on:
+      meshboard-api:
+        condition: service_started
+      vernemq:
+        condition: service_healthy
+    ports:
+      - "8082:80"
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-bookworm
+    container_name: meshboard-postgres
+    environment:
+      POSTGRES_DB: meshboard
+      POSTGRES_USER: meshboard
+      POSTGRES_PASSWORD: meshboard
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meshboard -d meshboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    volumes:
+      - meshboard-postgres-data:/var/lib/postgresql/data
+
+  meshboard-api:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Api/Dockerfile
+    container_name: meshboard-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Persistence__Provider: PostgreSQL
+      Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
+      RealtimeSession__BrokerUrl: ${MESHBOARD_PUBLIC_BROKER_URL:-ws://localhost:8082/mqtt}
+      RealtimeSession__UseRequestOriginBrokerUrl: ${MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL:-true}
+      RealtimeSession__BrokerPath: ${MESHBOARD_BROKER_PATH:-/mqtt}
+      RealtimeSession__AllowInsecureBrokerUrl: ${MESHBOARD_ALLOW_INSECURE_BROKER_URL:-true}
+      RealtimeSession__Issuer: meshboard-api-local-compose
+      RealtimeSession__Audience: meshboard-realtime
+      RealtimeSession__KeyId: meshboard-compose-k1
+      RealtimeSession__ClientIdPrefix: mb
+      RealtimeSession__TokenLifetimeMinutes: "5"
+      RealtimeSession__SigningPrivateKeyPemFile: /run/meshboard-secrets/realtime-signing-private-key.pem
+      RealtimeDownstreamBroker__ClientId: meshboard-realtime-bridge
+      RealtimeDownstreamBroker__Username: meshboard-bridge
+      RealtimeDownstreamBroker__Password: meshboard-bridge-local-secret
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    volumes:
+      - ./secrets:/run/meshboard-secrets:ro
+      - meshboard-api-dataprotection:/root/.aspnet/DataProtection-Keys
+
+  vernemq:
+    build:
+      context: ../..
+      dockerfile: ops/vernemq/Dockerfile
+      args:
+        VERNEMQ_VERSION: "2.1.1"
+    container_name: meshboard-vernemq
+    environment:
+      HOME: /vernemq/data
+      WAIT_FOR_ERLANG: "60"
+    depends_on:
+      meshboard-api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "/vernemq/bin/vernemq ping | grep -q pong"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    ports:
+      - "1883:1883"
+      - "8080:8080"
+      - "8084:8084"
+    restart: unless-stopped
+    volumes:
+      - ../vernemq/vernemq.conf:/vernemq/etc/vernemq.conf:ro
+      - ../vernemq/vm.args:/vernemq/etc/vm.args:ro
+      - ../vernemq/certs:/vernemq/etc/certs:ro
+      - meshboard-vernemq-data:/vernemq/data
+      - meshboard-vernemq-log:/vernemq/log
+
+  meshboard-realtime-bridge:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.RealtimeBridge/Dockerfile
+    container_name: meshboard-realtime-bridge
+    depends_on:
+      vernemq:
+        condition: service_healthy
+    environment:
+      MeshtasticRuntime__EnableHostedService: "true"
+      Persistence__Provider: PostgreSQL
+      Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
+      RealtimeDownstreamBroker__Host: vernemq
+      RealtimeDownstreamBroker__Port: "1883"
+      RealtimeDownstreamBroker__UseTls: "false"
+      RealtimeDownstreamBroker__ClientId: meshboard-realtime-bridge
+      RealtimeDownstreamBroker__Username: meshboard-bridge
+      RealtimeDownstreamBroker__Password: meshboard-bridge-local-secret
+    restart: unless-stopped
+
+  meshboard-collector:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Collector/Dockerfile
+    container_name: meshboard-collector
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      MeshtasticRuntime__EnableHostedService: "true"
+      Persistence__Provider: PostgreSQL
+      Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: meshboard-cloudflared
+    profiles:
+      - tunnel
+    depends_on:
+      meshboard-client:
+        condition: service_started
+    command:
+      - tunnel
+      - --protocol
+      - ${CF_TUNNEL_TRANSPORT_PROTOCOL:-auto}
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CF_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+
+volumes:
+  meshboard-api-dataprotection:
+  meshboard-postgres-data:
+  meshboard-vernemq-data:
+  meshboard-vernemq-log:

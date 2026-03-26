@@ -96,8 +96,6 @@ public sealed class BrokerServerProfileServiceTests
             Name = "Default server",
             Host = "mqtt.meshtastic.org",
             Port = 1883,
-            DefaultTopicPattern = "msh/US/2/e/#",
-            DefaultEncryptionKeyBase64 = "AQ==",
             DownlinkTopic = "msh/US/2/json/mqtt/",
             EnableSend = true,
             IsActive = isActive,
@@ -112,8 +110,6 @@ public sealed class BrokerServerProfileServiceTests
             Name = "Default server",
             Host = "mqtt.meshtastic.org",
             Port = 1883,
-            DefaultTopicPattern = "msh/US/2/e/#",
-            DefaultEncryptionKeyBase64 = "AQ==",
             DownlinkTopic = "msh/US/2/json/mqtt/",
             EnableSend = true,
             IsActive = isActive
@@ -133,6 +129,8 @@ public sealed class BrokerServerProfileServiceTests
         public int UpsertAsyncCallCount { get; private set; }
 
         public Guid? LastExclusiveActiveProfileId { get; private set; }
+
+        public SaveBrokerServerProfileRequest? LastUpsertRequest { get; private set; }
 
         public BrokerServerProfile UpsertResult { get; set; } = CreateProfile(isActive: false);
 
@@ -194,28 +192,13 @@ public sealed class BrokerServerProfileServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> AreSubscriptionIntentsInitializedAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task MarkSubscriptionIntentsInitializedAsync(
-            string workspaceId,
-            Guid id,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
         public Task<BrokerServerProfile> UpsertAsync(
             string workspaceId,
             SaveBrokerServerProfileRequest request,
             CancellationToken cancellationToken = default)
         {
             UpsertAsyncCallCount++;
+            LastUpsertRequest = request;
             UpsertResult.IsActive = request.IsActive;
             return Task.FromResult(UpsertResult);
         }

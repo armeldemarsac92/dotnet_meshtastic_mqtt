@@ -5,7 +5,9 @@
 
 ## Context
 
-MeshBoard currently behaves like a local operator console:
+This ADR predates the PostgreSQL cutover and collector split. It is kept for decision history, not as a literal description of the current codebase.
+
+At the time this ADR was written, MeshBoard behaved like a local operator console:
 
 - singleton MQTT runtime
 - global server switching

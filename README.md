@@ -1,62 +1,71 @@
 # MeshBoard
 
-Blazor Web App (`.NET 10`) for Meshtastic MQTT monitoring.
+Browser-first Meshtastic MQTT monitoring built around:
 
-It connects to `mqtt.meshtastic.org`, lets you subscribe to channel topics, browse nodes, inspect message traffic, manage favorites, and view node/channel details.
+- `MeshBoard.Client` for the WebAssembly UI, local key vault, browser-side decryption, and local projections
+- `MeshBoard.Api` for cookie auth, preferences, realtime-session bootstrap, and VerneMQ webhook auth
+- `MeshBoard.RealtimeBridge` for upstream MQTT consume and downstream republish
 
-## Tech Stack
+`MeshBoard.Web` has been removed. The active local product stack is the compose-based client/API/bridge runtime under `ops/local/`.
 
-- .NET 10 (Blazor Web App, Interactive Server)
-- SQLite + Dapper persistence
-- MQTTnet + Meshtastic protobuf decoding
-- Tailwind CSS v4
+## Active Architecture
 
-## Run Locally
+- Browser UI: `src/MeshBoard.Client`
+- API: `src/MeshBoard.Api`
+- HTTP SDK: `src/MeshBoard.Api.SDK`
+- Realtime bridge: `src/MeshBoard.RealtimeBridge`
+- Collector: `src/MeshBoard.Collector`
+- Shared contracts: `src/MeshBoard.Contracts`
+- Application services: `src/MeshBoard.Application`
+- Persistence: `src/MeshBoard.Infrastructure.Persistence`
+- Meshtastic transport and decode infrastructure: `src/MeshBoard.Infrastructure.Meshtastic`
+
+## Local Development
 
 Prerequisites:
 
 - .NET SDK 10.x
 - Node.js 20+ and npm
+- Docker Engine with Compose support
+- `openssl`
 
-Commands:
+Install JS dependencies and build the client stylesheet:
 
 ```bash
 npm ci
 npm run tailwind:build
-dotnet run --project src/MeshBoard.Web/MeshBoard.Web.csproj
 ```
 
-App URL: `http://localhost:5222` (or the port shown in terminal output).
-
-For live CSS updates:
+Bootstrap local secrets and broker certificates:
 
 ```bash
-npm run tailwind:watch
+./ops/local/generate-local-stack-secrets.sh
 ```
 
-Run that in a second terminal while running the app.
+Start the active local stack:
 
-## MCP Integration
-
-This repo includes a project-scoped `.mcp.json` entry for [`csharp-lsp-mcp`](https://github.com/HYMMA/csharp-lsp-mcp).
-
-It launches through `scripts/run-csharp-lsp-mcp.sh`, which uses `dnx` to run:
-
-- `CSharpLspMcp@1.0.0`
-- `csharp-ls@0.22.0`
-
-Requirements:
-
-- .NET SDK 10.x or newer
-- An MCP client that supports project-level `.mcp.json` files, such as Claude Code
-
-On first launch, `dnx` will download the tool packages. After the MCP client connects, call `csharp_set_workspace` with this repository root:
-
-```text
-/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server
+```bash
+cp ops/local/.env.example ops/local/.env.local
+docker compose --env-file ops/local/.env.local -f ops/local/compose.yaml up --build
 ```
 
-If you need to rebuild while the language server is running, call `csharp_stop` first to release file locks, then run `csharp_set_workspace` again afterward.
+Useful endpoints:
+
+- Client: `http://localhost:8082`
+- API health: `http://localhost:8081/api/health`
+- PostgreSQL: `postgresql://meshboard:meshboard@localhost:15432/meshboard`
+- VerneMQ WS: `ws://localhost:8080/mqtt`
+- VerneMQ WSS: `wss://localhost:8084/mqtt`
+
+For more details, see [ops/local/README.md](/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/ops/local/README.md).
+
+## Build
+
+Build the solution:
+
+```bash
+dotnet build MeshBoard.slnx
+```
 
 ## Tests
 
@@ -65,7 +74,7 @@ dotnet test tests/MeshBoard.UnitTests/MeshBoard.UnitTests.csproj
 dotnet test tests/MeshBoard.IntegrationTests/MeshBoard.IntegrationTests.csproj
 ```
 
-Optional live decode smoke (real MQTT traffic, disabled by default):
+Optional live decode smoke test against real Meshtastic MQTT traffic:
 
 ```bash
 MESHBOARD_LIVE_DECODE_SMOKE=1 \
@@ -76,37 +85,9 @@ dotnet test tests/MeshBoard.UnitTests/MeshBoard.UnitTests.csproj --filter LiveDe
 
 Set `MESHBOARD_LIVE_DECODE_REQUIRE_TEXT=1` to fail the smoke test unless at least one text message is decoded.
 
-## Docker
+## Docs
 
-Build image:
-
-```bash
-docker build -t meshboard:latest .
-```
-
-Run container:
-
-```bash
-docker run --rm -p 8080:8080 \
-  -e Persistence__ConnectionString="Data Source=/data/meshboard.db" \
-  -v meshboard-data:/data \
-  meshboard:latest
-```
-
-App URL: `http://localhost:8080`
-
-## Common Environment Overrides
-
-- `Broker__Host`
-- `Broker__Port`
-- `Broker__Username`
-- `Broker__Password`
-- `Broker__DefaultTopicPattern`
-- `Broker__DefaultEncryptionKeyBase64`
-- `Broker__EnableSend`
-- `Persistence__ConnectionString`
-
-Notes:
-
-- Default broker credentials in `appsettings.json` target the public Meshtastic MQTT server.
-- `Broker__EnableSend` is `false` by default.
+- Current repo/runtime picture: [docs/PROJECT_FOUNDATIONS.md](/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/docs/PROJECT_FOUNDATIONS.md)
+- Collector traffic schema: [docs/COLLECTOR_POSTGRES_SCHEMA.md](/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/docs/COLLECTOR_POSTGRES_SCHEMA.md)
+- Broad migration history: [docs/ARCHITECTURE_REFACTOR_ROADMAP.md](/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/docs/ARCHITECTURE_REFACTOR_ROADMAP.md)
+- Current cleanup sequence: [docs/CLIENT_FIRST_CLEANUP_PLAN.md](/home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/docs/CLIENT_FIRST_CLEANUP_PLAN.md)

@@ -1,0 +1,29 @@
+@inject AuthApiClient AuthApiClient
+
+@if (!_isReady)
+{
+    <div class="boot-screen">
+        <div class="boot-card">
+            <p class="boot-kicker">MeshBoard</p>
+            <h1 class="boot-title">Restoring session</h1>
+            <p class="boot-copy">Checking the current API cookie and workspace context.</p>
+        </div>
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    private bool _isReady;
+
+    [Parameter]
+    public RenderFragment ChildContent { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AuthApiClient.TryLoadCurrentUserAsync();
+        _isReady = true;
+    }
+}

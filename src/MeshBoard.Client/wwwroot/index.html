@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MeshBoard Client</title>
+    <base href="/" />
+    <script type="importmap"></script>
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@^5/dist/maplibre-gl.css" />
+    <!-- If you add any scoped CSS files, uncomment the following to load them
+    <link href="MeshBoard.Client.styles.css" rel="stylesheet" /> -->
+</head>
+
+<body>
+    <div id="app">
+        <div class="boot-screen">
+            <div class="boot-card">
+                <p class="boot-kicker">MeshBoard</p>
+                <h1 class="boot-title">Loading client shell</h1>
+                <p class="boot-copy">Preparing the browser-first workspace.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+    <script src="js/ui.js"></script>
+    <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+</body>
+
+</html>

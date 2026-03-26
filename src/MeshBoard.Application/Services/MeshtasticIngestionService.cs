@@ -2,7 +2,6 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
-using MeshBoard.Contracts.Realtime;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,22 +17,22 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
 {
     private readonly ILogger<MeshtasticIngestionService> _logger;
     private readonly IMessageRepository _messageRepository;
+    private readonly INeighborLinkRepository? _neighborLinkRepository;
     private readonly INodeRepository _nodeRepository;
-    private readonly IProjectionChangeRepository _projectionChangeRepository;
     private readonly ITopicDiscoveryService _topicDiscoveryService;
     private readonly IUnitOfWork _unitOfWork;
 
     public MeshtasticIngestionService(
         IMessageRepository messageRepository,
         INodeRepository nodeRepository,
-        IProjectionChangeRepository projectionChangeRepository,
         ITopicDiscoveryService topicDiscoveryService,
         IUnitOfWork unitOfWork,
-        ILogger<MeshtasticIngestionService> logger)
+        ILogger<MeshtasticIngestionService> logger,
+        INeighborLinkRepository? neighborLinkRepository = null)
     {
         _messageRepository = messageRepository;
+        _neighborLinkRepository = neighborLinkRepository;
         _nodeRepository = nodeRepository;
-        _projectionChangeRepository = projectionChangeRepository;
         _topicDiscoveryService = topicDiscoveryService;
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -42,7 +41,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
     public async Task IngestEnvelope(MeshtasticEnvelope envelope, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Attempting to ingest Meshtastic envelope from topic: {Topic}", envelope.Topic);
-        var workspaceId = RequireWorkspaceId(envelope);
         var messageKey = BuildMessageKey(envelope);
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
@@ -52,7 +50,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             var messageInserted = await _messageRepository.AddAsync(
                 new SaveObservedMessageRequest
                 {
-                    WorkspaceId = workspaceId,
                     BrokerServer = envelope.BrokerServer,
                     Topic = envelope.Topic,
                     PacketType = envelope.PacketType,
@@ -80,7 +77,7 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 envelope.Topic,
                 envelope.ReceivedAtUtc,
                 envelope.BrokerServer,
-                workspaceId,
+                string.Empty,
                 cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
@@ -88,7 +85,6 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                 await _nodeRepository.UpsertAsync(
                     new UpsertObservedNodeRequest
                     {
-                        WorkspaceId = workspaceId,
                         NodeId = envelope.FromNodeId,
                         BrokerServer = envelope.BrokerServer,
                         ShortName = envelope.ShortName,
@@ -112,101 +108,34 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                     cancellationToken);
             }
 
-            await _unitOfWork.CommitAsync(cancellationToken);
+            if (_neighborLinkRepository is not null)
+            {
+                var neighborLinks = BuildNeighborLinkRecords(envelope);
+                var meshPacketLinks = BuildMeshPacketLinkRecords(envelope);
+                var tracerouteLinks = BuildTracerouteLinkRecords(envelope);
 
-            await PublishProjectionChangesAsync(workspaceId, envelope, cancellationToken);
+                var allLinks = neighborLinks
+                    .Concat(meshPacketLinks)
+                    .Concat(tracerouteLinks)
+                    .ToList();
+
+                if (allLinks.Count > 0)
+                {
+                    await _neighborLinkRepository.UpsertAsync(
+                        envelope.BrokerServer,
+                        envelope.LastHeardChannel,
+                        allLinks,
+                        cancellationToken); 
+                }
+            }
+
+            await _unitOfWork.CommitAsync(cancellationToken);
         }
         catch
         {
             await _unitOfWork.RollbackAsync(cancellationToken);
             throw;
         }
-    }
-
-    private async Task PublishProjectionChangesAsync(
-        string workspaceId,
-        MeshtasticEnvelope envelope,
-        CancellationToken cancellationToken)
-    {
-        var changes = new List<ProjectionChangeDescriptor>
-        {
-            new()
-            {
-                Kind = ProjectionChangeKind.MessageAdded
-            },
-            new()
-            {
-                Kind = ProjectionChangeKind.ChannelSummaryUpdated,
-                EntityKey = ResolveChannelEntityKey(envelope)
-            }
-        };
-
-        if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
-        {
-            changes.Add(
-                new ProjectionChangeDescriptor
-                {
-                    Kind = ProjectionChangeKind.NodeUpdated,
-                    EntityKey = envelope.FromNodeId.Trim()
-                });
-        }
-
-        try
-        {
-            await _projectionChangeRepository.AppendAsync(workspaceId, changes, cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            _logger.LogWarning(
-                exception,
-                "Failed to persist projection change notifications for workspace {WorkspaceId} after ingesting topic {Topic}",
-                workspaceId,
-                envelope.Topic);
-        }
-    }
-
-    private static string RequireWorkspaceId(MeshtasticEnvelope envelope)
-    {
-        if (string.IsNullOrWhiteSpace(envelope.WorkspaceId))
-        {
-            throw new InvalidOperationException("A workspace ID is required to ingest Meshtastic envelopes.");
-        }
-
-        return envelope.WorkspaceId.Trim();
-    }
-
-    private static string? ResolveChannelEntityKey(MeshtasticEnvelope envelope)
-    {
-        if (!string.IsNullOrWhiteSpace(envelope.LastHeardChannel))
-        {
-            return envelope.LastHeardChannel.Trim();
-        }
-
-        if (string.IsNullOrWhiteSpace(envelope.Topic))
-        {
-            return null;
-        }
-
-        var segments = envelope.Topic
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        if (segments.Length < 5 ||
-            !string.Equals(segments[0], "msh", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var region = segments[1];
-        var channel = segments[4];
-
-        if (string.IsNullOrWhiteSpace(region) ||
-            string.IsNullOrWhiteSpace(channel) ||
-            channel is "#" or "+")
-        {
-            return null;
-        }
-
-        return $"{region}/{channel}";
     }
 
     private static string BuildMessageKey(MeshtasticEnvelope envelope)
@@ -221,5 +150,130 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
         return Convert.ToHexStringLower(hashBytes);
+    }
+
+    private static IReadOnlyList<NeighborLinkRecord> BuildNeighborLinkRecords(MeshtasticEnvelope envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.FromNodeId) || envelope.Neighbors is null || envelope.Neighbors.Count == 0)
+        {
+            return [];
+        }
+
+        var reportingNodeId = envelope.FromNodeId.Trim();
+        var linksByKey = new Dictionary<string, NeighborLinkRecord>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var neighbor in envelope.Neighbors)
+        {
+            if (string.IsNullOrWhiteSpace(neighbor.NodeId) ||
+                string.Equals(reportingNodeId, neighbor.NodeId.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var canonical = CreateCanonicalNeighborLink(
+                reportingNodeId,
+                neighbor.NodeId,
+                neighbor.SnrDb,
+                neighbor.LastRxAtUtc ?? envelope.ReceivedAtUtc);
+            var linkKey = $"{canonical.SourceNodeId}|{canonical.TargetNodeId}";
+
+            if (!linksByKey.TryGetValue(linkKey, out var existing))
+            {
+                linksByKey[linkKey] = canonical;
+                continue;
+            }
+
+            var isIncomingLatest = canonical.LastSeenAtUtc >= existing.LastSeenAtUtc;
+            linksByKey[linkKey] = new NeighborLinkRecord
+            {
+                SourceNodeId = existing.SourceNodeId,
+                TargetNodeId = existing.TargetNodeId,
+                SnrDb = isIncomingLatest
+                    ? canonical.SnrDb ?? existing.SnrDb
+                    : existing.SnrDb ?? canonical.SnrDb,
+                LastSeenAtUtc = isIncomingLatest
+                    ? canonical.LastSeenAtUtc
+                    : existing.LastSeenAtUtc
+            };
+        }
+
+        return linksByKey.Values.ToArray();
+    }
+
+    private static IReadOnlyList<NeighborLinkRecord> BuildMeshPacketLinkRecords(MeshtasticEnvelope envelope)
+    {
+        if (envelope.HopStart > 0 && 
+            envelope.HopStart == envelope.HopLimit &&
+            !string.IsNullOrWhiteSpace(envelope.FromNodeId) &&
+            !string.IsNullOrWhiteSpace(envelope.GatewayNodeId) &&
+            !string.Equals(envelope.FromNodeId, envelope.GatewayNodeId, StringComparison.OrdinalIgnoreCase))
+        {
+            var snr = envelope.RxSnr is not null && float.IsFinite(envelope.RxSnr.Value) ? envelope.RxSnr : null;
+            
+            return [CreateCanonicalNeighborLink(
+                envelope.FromNodeId,
+                envelope.GatewayNodeId,
+                snr,
+                envelope.ReceivedAtUtc)];
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<NeighborLinkRecord> BuildTracerouteLinkRecords(MeshtasticEnvelope envelope)
+    {
+        if (envelope.TracerouteHops is null || envelope.TracerouteHops.Count < 2)
+        {
+            return [];
+        }
+
+        var hops = envelope.TracerouteHops;
+        var linksByKey = new Dictionary<string, NeighborLinkRecord>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < hops.Count - 1; i++)
+        {
+            var sourceId = hops[i].NodeId;
+            var targetId = hops[i + 1].NodeId;
+
+            if (string.IsNullOrWhiteSpace(sourceId) || string.IsNullOrWhiteSpace(targetId))
+            {
+                continue;
+            }
+
+            if (string.Equals(sourceId, targetId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var snr = hops[i + 1].SnrDb;
+            var canonical = CreateCanonicalNeighborLink(sourceId, targetId, snr, envelope.ReceivedAtUtc);
+            var linkKey = $"{canonical.SourceNodeId}|{canonical.TargetNodeId}";
+
+            if (!linksByKey.ContainsKey(linkKey))
+            {
+                linksByKey[linkKey] = canonical;
+            }
+        }
+
+        return linksByKey.Values.ToArray();
+    }
+
+    private static NeighborLinkRecord CreateCanonicalNeighborLink(
+        string leftNodeId,
+        string rightNodeId,
+        float? snrDb,
+        DateTimeOffset lastSeenAtUtc)
+    {
+        var normalizedLeft = leftNodeId.Trim();
+        var normalizedRight = rightNodeId.Trim();
+        var leftFirst = StringComparer.OrdinalIgnoreCase.Compare(normalizedLeft, normalizedRight) <= 0;
+
+        return new NeighborLinkRecord
+        {
+            SourceNodeId = leftFirst ? normalizedLeft : normalizedRight,
+            TargetNodeId = leftFirst ? normalizedRight : normalizedLeft,
+            SnrDb = snrDb,
+            LastSeenAtUtc = lastSeenAtUtc
+        };
     }
 }

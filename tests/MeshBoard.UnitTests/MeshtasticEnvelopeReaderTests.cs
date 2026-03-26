@@ -93,6 +93,92 @@ public sealed class MeshtasticEnvelopeReaderTests
     }
 
     [Fact]
+    public async Task Read_ShouldDecodeNeighborInfo_FromDirectMeshPacket()
+    {
+        var reader = CreateReader();
+        var neighborPayload = new NeighborInfo
+        {
+            NodeId = 0x12345678,
+            LastSentById = 0x87654321,
+            NodeBroadcastIntervalSecs = 480
+        };
+        neighborPayload.Neighbors.Add(
+            new Neighbor
+            {
+                NodeId = 0x87654321,
+                Snr = 6.0f,
+                LastRxTime = 1_762_112_400
+            });
+        neighborPayload.Neighbors.Add(
+            new Neighbor
+            {
+                NodeId = 0xAABBCCDD,
+                Snr = -11.25f
+            });
+
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            Id = 0x00FEDCBA,
+            RxTime = 1_762_112_400,
+            Decoded = new Data
+            {
+                Portnum = PortNum.NeighborinfoApp,
+                Payload = neighborPayload.ToByteString()
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Neighbor Info", envelope.PacketType);
+        Assert.Equal("!12345678", envelope.FromNodeId);
+        Assert.Equal("US/Test", envelope.LastHeardChannel);
+        Assert.Equal("Neighbor info: 2 neighbors reported", envelope.PayloadPreview);
+        Assert.NotNull(envelope.Neighbors);
+        Assert.Equal(2, envelope.Neighbors.Count);
+        Assert.Equal("!87654321", envelope.Neighbors[0].NodeId);
+        Assert.Equal(6.0f, envelope.Neighbors[0].SnrDb);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_762_112_400), envelope.Neighbors[0].LastRxAtUtc);
+        Assert.Equal("!aabbccdd", envelope.Neighbors[1].NodeId);
+        Assert.Equal(-11.25f, envelope.Neighbors[1].SnrDb);
+        Assert.Null(envelope.Neighbors[1].LastRxAtUtc);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeRouting_FromDirectMeshPacket()
+    {
+        var reader = CreateReader();
+        var routingPayload = new Routing
+        {
+            RouteReply = new RouteDiscovery
+            {
+                Route = { 0x12345678, 0x87654321 },
+                SnrTowards = { 7, -4 },
+                RouteBack = { 0xAABBCCDD },
+                SnrBack = { 5 }
+            }
+        };
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            Id = 0x01020304,
+            Decoded = new Data
+            {
+                Portnum = PortNum.RoutingApp,
+                Payload = routingPayload.ToByteString()
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Routing", envelope.PacketType);
+        Assert.Equal("!12345678", envelope.FromNodeId);
+        Assert.Equal("Routing route reply: !12345678 -> !87654321; return !aabbccdd", envelope.PayloadPreview);
+    }
+
+    [Fact]
     public async Task Read_ShouldDecodeTextMessage_FromJsonTypePayload()
     {
         var reader = CreateReader();
@@ -147,6 +233,132 @@ public sealed class MeshtasticEnvelopeReaderTests
     }
 
     [Fact]
+    public async Task Read_ShouldDecodeNeighborInfo_FromJsonDecodedPayload()
+    {
+        var reader = CreateReader();
+        var payloadBytes = new NeighborInfo
+        {
+            NodeId = 0x11223344,
+            LastSentById = 0x55667788,
+            NodeBroadcastIntervalSecs = 3600,
+            Neighbors =
+            {
+                new Neighbor
+                {
+                    NodeId = 0x55667788,
+                    Snr = 3.25f
+                }
+            }
+        }.ToByteArray();
+        var jsonPayload = $$"""
+                            {
+                              "decoded": {
+                                "portnum": "NEIGHBORINFO_APP",
+                                "payload": "{{Convert.ToBase64String(payloadBytes)}}",
+                                "source": 287454020,
+                                "dest": 4294967295
+                              },
+                              "id": 19088743,
+                              "timestamp": 1762112400
+                            }
+                            """;
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/json/LongFast/!11223344", Encoding.UTF8.GetBytes(jsonPayload));
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Neighbor Info", envelope.PacketType);
+        Assert.Equal("!11223344", envelope.FromNodeId);
+        Assert.Null(envelope.ToNodeId);
+        Assert.Equal("Neighbor info: 1 neighbor reported", envelope.PayloadPreview);
+        Assert.NotNull(envelope.Neighbors);
+        Assert.Single(envelope.Neighbors);
+        Assert.Equal("!55667788", envelope.Neighbors[0].NodeId);
+        Assert.Equal(3.25f, envelope.Neighbors[0].SnrDb);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeNeighborInfo_FromJsonTypePayload()
+    {
+        var reader = CreateReader();
+        var jsonPayload = """
+                          {
+                            "type": "neighborinfo",
+                            "fromId": "!11223344",
+                            "payload": {
+                              "node_id": "!11223344",
+                              "neighbors": [
+                                {
+                                  "node_id": "!55667788",
+                                  "snr": 3.25,
+                                  "last_rx_time": 1762112400
+                                }
+                              ]
+                            },
+                            "timestamp": 1762112400
+                          }
+                          """;
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/json/LongFast/!11223344", Encoding.UTF8.GetBytes(jsonPayload));
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Neighbor Info", envelope.PacketType);
+        Assert.Equal("!11223344", envelope.FromNodeId);
+        Assert.Null(envelope.ToNodeId);
+        Assert.Equal("Neighbor info: 1 neighbor reported", envelope.PayloadPreview);
+        Assert.NotNull(envelope.Neighbors);
+        Assert.Single(envelope.Neighbors);
+        Assert.Equal("!55667788", envelope.Neighbors[0].NodeId);
+        Assert.Equal(3.25f, envelope.Neighbors[0].SnrDb);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1762112400), envelope.Neighbors[0].LastRxAtUtc);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeRouting_FromJsonTypePayload()
+    {
+        var reader = CreateReader();
+        var jsonPayload = """
+                          {
+                            "type": "routing",
+                            "fromId": "!11223344",
+                            "payload": {
+                              "route_request": {
+                                "route": [287454020, "!55667788"],
+                                "snr_towards": [9, -3],
+                                "route_back": ["!99aabbcc"]
+                              }
+                            }
+                          }
+                          """;
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/json/LongFast/!11223344", Encoding.UTF8.GetBytes(jsonPayload));
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Routing", envelope.PacketType);
+        Assert.Equal("!11223344", envelope.FromNodeId);
+        Assert.Equal("Routing route request: !11223344 -> !55667788; return !99aabbcc", envelope.PayloadPreview);
+    }
+
+    [Fact]
+    public async Task Read_ShouldCanonicalizeCompactBangHexNodeIds_FromJsonPayload()
+    {
+        var reader = CreateReader();
+        var jsonPayload = """
+                          {
+                            "type": "text",
+                            "fromId": "!999999",
+                            "payload": "Hello from compact node id"
+                          }
+                          """;
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/json/LongFast/!999999", Encoding.UTF8.GetBytes(jsonPayload));
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Text Message", envelope.PacketType);
+        Assert.Equal("!00999999", envelope.FromNodeId);
+        Assert.Equal("Hello from compact node id", envelope.PayloadPreview);
+    }
+
+    [Fact]
     public async Task Read_ShouldDecryptEncryptedMeshtasticPayload_WithDefaultKey()
     {
         var reader = CreateReader();
@@ -198,6 +410,127 @@ public sealed class MeshtasticEnvelopeReaderTests
         Assert.Equal("!11223344", envelope.FromNodeId);
         Assert.Null(envelope.ToNodeId);
         Assert.Equal((uint)0x55667788, envelope.PacketId);
+    }
+
+    [Fact]
+    public async Task Read_ShouldExtractHopAndSignalFields_FromDirectMeshPacket()
+    {
+        var reader = CreateReader();
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            Id = 0x00AABBCC,
+            RxTime = 1_762_112_400,
+            RxSnr = -3.5f,
+            RxRssi = -92,
+            HopLimit = 2,
+            HopStart = 3,
+            Decoded = new Data
+            {
+                Portnum = PortNum.TextMessageApp,
+                Payload = Google.Protobuf.ByteString.CopyFromUtf8("hello")
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal(-3.5f, envelope.RxSnr);
+        Assert.Equal(-92, envelope.RxRssi);
+        Assert.Equal(2u, envelope.HopLimit);
+        Assert.Equal(3u, envelope.HopStart);
+    }
+
+    [Fact]
+    public async Task Read_ShouldExtractGatewayNodeId_FromServiceEnvelope()
+    {
+        var reader = CreateReader();
+        var textPayload = Google.Protobuf.ByteString.CopyFromUtf8("hello via gateway");
+        var serviceEnvelope = new ServiceEnvelope
+        {
+            GatewayId = "!aabbccdd",
+            Packet = new MeshPacket
+            {
+                From = 0x11223344,
+                Id = 0x55667788,
+                RxSnr = 4.25f,
+                HopLimit = 3,
+                HopStart = 3,
+                Decoded = new Data
+                {
+                    Portnum = PortNum.TextMessageApp,
+                    Payload = textPayload
+                }
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/LongFast/!11223344", serviceEnvelope.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("!aabbccdd", envelope.GatewayNodeId);
+        Assert.Equal(4.25f, envelope.RxSnr);
+        Assert.Equal(3u, envelope.HopStart);
+        Assert.Equal(3u, envelope.HopLimit);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeTraceroutePayload_FromDirectMeshPacket()
+    {
+        var reader = CreateReader();
+        var routeDiscovery = new RouteDiscovery();
+        routeDiscovery.Route.Add(0x87654321);
+        routeDiscovery.SnrTowards.Add(8);
+        routeDiscovery.SnrTowards.Add(12);
+
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            To = 0xAABBCCDD,
+            Id = 0x99887766,
+            Decoded = new Data
+            {
+                Portnum = PortNum.TracerouteApp,
+                Payload = routeDiscovery.ToByteString()
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Traceroute", envelope.PacketType);
+        Assert.NotNull(envelope.TracerouteHops);
+        Assert.Equal(3, envelope.TracerouteHops.Count);
+        Assert.Equal("!12345678", envelope.TracerouteHops[0].NodeId);
+        Assert.Equal("!87654321", envelope.TracerouteHops[1].NodeId);
+        Assert.Equal(8 * 0.25f, envelope.TracerouteHops[1].SnrDb);
+        Assert.Equal("!aabbccdd", envelope.TracerouteHops[2].NodeId);
+        Assert.Equal(12 * 0.25f, envelope.TracerouteHops[2].SnrDb);
+        Assert.Contains("Traceroute:", envelope.PayloadPreview);
+        Assert.Contains("!87654321", envelope.PayloadPreview);
+    }
+
+    [Fact]
+    public async Task Read_ShouldReturnNullSnrAndRssi_WhenFieldsAreZero()
+    {
+        var reader = CreateReader();
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            Id = 0x00AABBCC,
+            RxSnr = 0f,
+            RxRssi = 0,
+            Decoded = new Data
+            {
+                Portnum = PortNum.TextMessageApp,
+                Payload = Google.Protobuf.ByteString.CopyFromUtf8("test")
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Null(envelope.RxSnr);
+        Assert.Null(envelope.RxRssi);
     }
 
     [Fact]

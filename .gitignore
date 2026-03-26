@@ -1,4 +1,12 @@
 node_modules/
+src/MeshBoard.Client/wwwroot/vendor/
+artifacts/realtime-load-tests/
+ops/local/secrets/*
+!ops/local/secrets/.gitkeep
+ops/local/.env
+ops/local/.env.local
+ops/vernemq/certs/*
+!ops/vernemq/certs/.gitkeep
 
 src/**/bin/
 src/**/obj/

@@ -15,25 +15,22 @@ public sealed class BrokerRuntimeBootstrapServiceTests
         var defaultWorkspaceProfile = CreateProfile(
             "default",
             "Default Workspace",
-            "mqtt-default.example.org",
-            "msh/US/2/e/Legacy/#");
+            "mqtt-default.example.org");
         var workspaceAProfile = CreateProfile(
             "workspace-a",
             "Workspace A",
-            "mqtt-a.example.org",
-            "msh/US/2/e/LongFast/#");
+            "mqtt-a.example.org");
         var workspaceBProfile = CreateProfile(
             "workspace-b",
             "Workspace B",
-            "mqtt-b.example.org",
-            "msh/EU_868/2/e/MediumFast/#");
+            "mqtt-b.example.org");
         var profileRepository = new FakeBrokerServerProfileRepository(
             [defaultWorkspaceProfile, workspaceAProfile, workspaceBProfile],
             [workspaceAProfile, workspaceBProfile]);
-        var runtimeCommandExecutor = new FakeBrokerRuntimeCommandExecutor();
+        var runtimeService = new FakeBrokerRuntimeService();
         var service = new BrokerRuntimeBootstrapService(
             CreateScopeFactory(profileRepository),
-            runtimeCommandExecutor,
+            runtimeService,
             NullLogger<BrokerRuntimeBootstrapService>.Instance);
 
         await service.InitializeActiveWorkspacesAsync();
@@ -43,14 +40,13 @@ public sealed class BrokerRuntimeBootstrapServiceTests
                 "workspace-a",
                 "workspace-b"
             ],
-            runtimeCommandExecutor.ReconcileActiveProfileCalls.OrderBy(workspaceId => workspaceId, StringComparer.Ordinal).ToArray());
+            runtimeService.ReconcileActiveProfileCalls.OrderBy(workspaceId => workspaceId, StringComparer.Ordinal).ToArray());
     }
 
     private static WorkspaceBrokerServerProfile CreateProfile(
         string workspaceId,
         string name,
-        string host,
-        string defaultTopicPattern)
+        string host)
     {
         return new WorkspaceBrokerServerProfile
         {
@@ -64,7 +60,6 @@ public sealed class BrokerRuntimeBootstrapServiceTests
                 UseTls = false,
                 Username = string.Empty,
                 Password = string.Empty,
-                DefaultTopicPattern = defaultTopicPattern,
                 DownlinkTopic = "msh/US/2/json/mqtt/",
                 EnableSend = true,
                 IsActive = true
@@ -76,7 +71,6 @@ public sealed class BrokerRuntimeBootstrapServiceTests
     {
         private readonly Dictionary<string, WorkspaceBrokerServerProfile> _activeProfilesByWorkspace;
         private readonly Dictionary<string, WorkspaceBrokerServerProfile> _userOwnedActiveProfilesByWorkspace;
-        private readonly HashSet<string> _initializedProfiles = new(StringComparer.Ordinal);
 
         public FakeBrokerServerProfileRepository(
             IReadOnlyCollection<WorkspaceBrokerServerProfile> activeProfiles,
@@ -123,30 +117,9 @@ public sealed class BrokerRuntimeBootstrapServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<bool> AreSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(_initializedProfiles.Contains(BuildKey(workspaceId, id)));
-        }
-
-        public Task MarkSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            _initializedProfiles.Add(BuildKey(workspaceId, id));
-            return Task.CompletedTask;
-        }
-
         public Task<BrokerServerProfile> UpsertAsync(string workspaceId, SaveBrokerServerProfileRequest request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
-        }
-
-        public void MarkInitialized(string workspaceId, Guid profileId)
-        {
-            _initializedProfiles.Add(BuildKey(workspaceId, profileId));
-        }
-
-        private static string BuildKey(string workspaceId, Guid profileId)
-        {
-            return $"{workspaceId}:{profileId}";
         }
     }
     private static IServiceScopeFactory CreateScopeFactory(FakeBrokerServerProfileRepository repository)
@@ -156,7 +129,7 @@ public sealed class BrokerRuntimeBootstrapServiceTests
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
-    private sealed class FakeBrokerRuntimeCommandExecutor : IBrokerRuntimeCommandExecutor
+    private sealed class FakeBrokerRuntimeService : IBrokerRuntimeService
     {
         public List<string> EnsureConnectedCalls { get; } = [];
 

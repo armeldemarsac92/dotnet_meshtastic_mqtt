@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "realtime-bridge": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development",
+        "MeshtasticRuntime__EnableHostedService": "true",
+        "Persistence__Provider": "PostgreSQL",
+        "Persistence__ConnectionString": "Host=localhost;Port=15432;Database=meshboard;Username=meshboard;Password=meshboard"
+      }
+    }
+  }
+}

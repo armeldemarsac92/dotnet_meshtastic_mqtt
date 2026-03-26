@@ -1,0 +1,740 @@
+@page "/map"
+@using MeshBoard.Client.Collector
+@using MeshBoard.Client.Components.Details
+@using MeshBoard.Client.Maps
+@using MeshBoard.Contracts.Collector
+@attribute [Authorize]
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+@inject PublicCollectorApiClient PublicCollectorApiClient
+@inject PublicCollectorService PublicCollectorService
+
+<PageTitle>Map</PageTitle>
+
+<div class="flex h-[calc(100dvh-3rem)] min-h-0 flex-col gap-4 sm:h-[calc(100dvh-4rem)] lg:h-[calc(100dvh-5rem)]">
+    <header class="space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Collector map</p>
+                <h1 class="font-display text-4xl text-cinder-950 sm:text-5xl">Radio link map</h1>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button type="button"
+                        class="shell-button shell-button-accent rounded-full px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="RefreshMapAsync"
+                        disabled="@_isLoading">
+                    @(_isLoading ? "Refreshing..." : "Refresh map")
+                </button>
+                <button type="button"
+                        class="shell-button rounded-full px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="ResetFiltersAsync"
+                        disabled="@(!_hasActiveFilters)">
+                    Reset filters
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <section class="shell-panel shrink-0 space-y-3 overflow-hidden rounded-[1.6rem] p-4">
+        @if (!string.IsNullOrWhiteSpace(_mapError))
+        {
+            <p class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_mapError</p>
+        }
+
+        <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-cinder-800/82">
+            <p>@GetMapSummaryText()</p>
+            <div class="flex flex-wrap gap-4 text-xs text-cinder-800/72">
+                <span>Visible nodes: <strong class="text-cinder-950">@_visibleNodes.Count</strong> / @(_snapshot?.NodeCount ?? 0)</span>
+                <span>Radio links: <strong class="text-cinder-950">@_radioLinkPoints.Count</strong> / @(_snapshot?.LinkCount ?? 0)</span>
+                <span>Channels: <strong class="text-cinder-950">@(_snapshot?.ChannelCount ?? 0)</strong></span>
+                @if (_snapshot?.GeneratedAtUtc is not null)
+                {
+                    <span>Snapshot: <strong class="text-cinder-950" title="@FormatTimestamp(_snapshot.GeneratedAtUtc)">@FormatTimestamp(_snapshot.GeneratedAtUtc)</strong></span>
+                }
+            </div>
+        </div>
+
+        <div class="grid gap-3 lg:grid-cols-[1.15fr_1fr_1fr_0.75fr]">
+            <label class="space-y-1.5">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Search nodes</span>
+                <input class="shell-input w-full rounded-2xl px-4 py-2.5 text-sm text-cinder-950"
+                       @bind="_searchText"
+                       @bind:event="oninput"
+                       @bind:after="HandleSearchChangedAsync"
+                       placeholder="Node id, name, channel, or server" />
+            </label>
+
+            <label class="space-y-1.5">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Server</span>
+                <select class="shell-input w-full rounded-2xl px-4 py-2.5 text-sm text-cinder-950"
+                        value="@(_selectedServerAddress ?? string.Empty)"
+                        @onchange="HandleServerChangedAsync">
+                    <option value="">All servers</option>
+                    @foreach (var server in _servers)
+                    {
+                        <option value="@server.ServerAddress">@server.ServerAddress</option>
+                    }
+                </select>
+            </label>
+
+            <label class="space-y-1.5">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Channel</span>
+                <select class="shell-input w-full rounded-2xl px-4 py-2.5 text-sm text-cinder-950"
+                        value="@(_selectedChannelValue ?? string.Empty)"
+                        @onchange="HandleChannelChangedAsync">
+                    <option value="">All channels</option>
+                    @foreach (var channel in _channels)
+                    {
+                        <option value="@BuildChannelSelectionKey(channel)">
+                            @channel.Region / @channel.ChannelName
+                        </option>
+                    }
+                </select>
+            </label>
+
+            <label class="space-y-1.5">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active window</span>
+                <select class="shell-input w-full rounded-2xl px-4 py-2.5 text-sm text-cinder-950"
+                        @bind="_activeWithinHours"
+                        @bind:after="HandleQueryWindowChangedAsync">
+                    <option value="6">6 hours</option>
+                    <option value="24">24 hours</option>
+                    <option value="72">72 hours</option>
+                    <option value="168">7 days</option>
+                </select>
+            </label>
+        </div>
+    </section>
+
+    <section class="shell-panel relative min-h-0 flex-1 overflow-hidden rounded-[1.6rem] p-4">
+        <div id="@MapElementId"
+             class="meshboard-node-map h-full w-full overflow-hidden rounded-[1.25rem] border border-sand-200/80 bg-slate-50/60"></div>
+
+        <div class="pointer-events-none absolute inset-x-6 top-6 z-10 flex items-start justify-between gap-3">
+            <div class="pointer-events-auto">
+                <button type="button"
+                        class="@GetToggleClass(_showRadioLinks)"
+                        @onclick="ToggleRadioLinksAsync">
+                    Radio links @(_radioLinkPoints.Count > 0 ? $"({_radioLinkPoints.Count})" : "")
+                </button>
+            </div>
+
+            <div class="pointer-events-auto flex flex-wrap gap-2">
+                <button type="button"
+                        class="shell-button rounded-full px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/20"
+                        @onclick="ResetViewAsync"
+                        disabled="@(!_canResetView)">
+                    Reset view
+                </button>
+            </div>
+        </div>
+
+        <div class="pointer-events-none absolute bottom-6 right-6 z-10 w-full max-w-sm">
+            <div class="pointer-events-auto shell-subpanel space-y-3 rounded-[1.35rem] border border-white/70 bg-white/90 p-4 shadow-lg shadow-cinder-950/15">
+                <div class="space-y-1">
+                    <p class="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-cinder-800/62">Focused node</p>
+
+                    @if (FocusedNode is null)
+                    {
+                        <p class="text-xs leading-6 text-cinder-800/72">
+                            Hover a node to inspect it, or click one to pin this panel before opening the node or channel modal.
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="space-y-1">
+                            <p class="text-sm font-semibold text-cinder-950">@FocusedNode.DisplayName</p>
+                            <p class="break-words text-[0.72rem] text-cinder-800/72">@FocusedNode.NodeId</p>
+                        </div>
+
+                        <dl class="grid gap-2 text-[0.72rem] text-cinder-800/78 sm:grid-cols-2">
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Channel</dt>
+                                <dd class="mt-1 break-words text-cinder-950">@(FocusedNode.ChannelKey ?? "Unknown")</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Visible peers</dt>
+                                <dd class="mt-1 text-cinder-950">@FocusedNodePeerCount</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Battery</dt>
+                                <dd class="mt-1 text-cinder-950">@FormatBattery(FocusedNode.BatteryLevelPercent)</dd>
+                            </div>
+                            <div class="rounded-2xl border border-sand-200/80 bg-white/75 px-3 py-2">
+                                <dt class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">Coordinates</dt>
+                                <dd class="mt-1 text-cinder-950">@FormatCoordinates(FocusedNode)</dd>
+                            </div>
+                        </dl>
+
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button"
+                                    class="shell-button shell-button-accent rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                    @onclick="() => OpenNodeDetails(FocusedNode.NodeId)">
+                                Open node
+                            </button>
+
+                            @if (!string.IsNullOrWhiteSpace(FocusedNode.ChannelKey))
+                            {
+                                <button type="button"
+                                        class="shell-button rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="() => OpenChannelDetails(FocusedNode.ChannelKey!)">
+                                    Open channel
+                                </button>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(_pinnedNodeId))
+                            {
+                                <button type="button"
+                                        class="shell-button rounded-full px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="ReleasePinnedNodeAsync">
+                                    Release pin
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (_showRadioLinks)
+        {
+            <div class="pointer-events-none absolute bottom-6 left-6 z-10 max-w-xs">
+                <div class="pointer-events-auto shell-subpanel space-y-2 rounded-[1.35rem] border border-white/70 bg-white/90 p-4 text-xs text-cinder-800/82 shadow-lg shadow-cinder-950/15">
+                    <p class="font-semibold uppercase tracking-[0.14em] text-cinder-800/62">SNR legend</p>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#31a354]"></span>
+                        <span>Strong (&gt; 0 dB)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#fdbb84]"></span>
+                        <span>Moderate (-10 to 0 dB)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#e34a33]"></span>
+                        <span>Weak (&lt; -10 dB)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="h-2 w-6 rounded-full bg-[#a0a0a0]"></span>
+                        <span>Unknown SNR</span>
+                    </div>
+
+                    <p class="pt-1 text-[0.72rem] leading-5 text-cinder-800/68">@GetRadioLinkStatusText()</p>
+                </div>
+            </div>
+        }
+
+        @if (!_isLoading && _visibleNodes.Count == 0)
+        {
+            <div class="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
+                <div class="max-w-md rounded-[1.8rem] border border-white/70 bg-white/90 px-6 py-5 text-center shadow-lg shadow-cinder-950/15">
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">No positioned nodes</p>
+                    <p class="mt-3 text-sm leading-7 text-cinder-800/80">
+                        The collector returned no positioned nodes for the current server, channel, and time-window filters.
+                    </p>
+                </div>
+            </div>
+        }
+        else if (_visiblePositionCount < _visibleNodes.Count)
+        {
+            <div class="@GetOverlapHintClass(_showRadioLinks)">
+                @_visibleNodes.Count nodes match the current filters, but @_visiblePositionCount unique positions are represented on the map.
+                Overlapping coordinates are spread slightly so you can still select them.
+            </div>
+        }
+    </section>
+</div>
+
+<NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
+                  NodeId="@(_selectedNodeId ?? string.Empty)"
+                  OnClose="CloseNodeDetails"
+                  OnOpenChannel="OpenChannelDetailsAsync"
+                  OnOpenNode="OpenNodeDetailsAsync" />
+
+<ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedModalChannelKey))"
+                     ChannelKey="@(_selectedModalChannelKey ?? string.Empty)"
+                     OnClose="CloseChannelDetails"
+                     OnOpenNode="OpenNodeDetailsAsync" />
+
+@code {
+    private const string MapElementId = "meshboard-client-node-map";
+    private const string RadioLinksPreferenceKey = "meshboard:map:radioLinks";
+    private IReadOnlyCollection<CollectorServerSummary> _servers = [];
+    private IReadOnlyCollection<CollectorChannelSummary> _channels = [];
+    private IReadOnlyList<CollectorMapNodeView> _allNodes = [];
+    private IReadOnlyList<CollectorMapNodeView> _visibleNodes = [];
+    private IReadOnlyList<MapNodePoint> _visibleMapNodes = [];
+    private IReadOnlyList<RadioLinkPoint> _radioLinkPoints = [];
+    private CollectorMapSnapshot? _snapshot;
+    private DotNetObjectReference<Map>? _mapCallbackReference;
+    private Lazy<Task<IJSObjectReference>>? _moduleTask;
+    private bool _isLoading;
+    private bool _isMapRenderPending;
+    private bool _showRadioLinks;
+    private bool _shouldFitMapToNodes = true;
+    private int _activeWithinHours = 24;
+    private int _visiblePositionCount;
+    private string _searchText = string.Empty;
+    private string? _hoveredNodeId;
+    private string? _mapError;
+    private string? _pinnedNodeId;
+    private string? _selectedChannelValue;
+    private string? _selectedModalChannelKey;
+    private string? _selectedNodeId;
+    private string? _selectedServerAddress;
+
+    private CollectorMapNodeView? FocusedNode =>
+        ResolveNode(_pinnedNodeId) ??
+        ResolveNode(_hoveredNodeId);
+
+    private int FocusedNodePeerCount =>
+        FocusedNode is null || string.IsNullOrWhiteSpace(FocusedNode.ChannelKey)
+            ? 0
+            : _visibleNodes.Count(node =>
+                !string.Equals(node.NodeId, FocusedNode.NodeId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(node.ChannelKey, FocusedNode.ChannelKey, StringComparison.Ordinal));
+
+    private bool _hasActiveFilters =>
+        !string.IsNullOrWhiteSpace(_selectedServerAddress) ||
+        !string.IsNullOrWhiteSpace(_selectedChannelValue) ||
+        _activeWithinHours != 24 ||
+        !string.IsNullOrWhiteSpace(_searchText);
+
+    private bool _canResetView =>
+        !string.IsNullOrWhiteSpace(_searchText) ||
+        !string.IsNullOrWhiteSpace(_pinnedNodeId) ||
+        !string.IsNullOrWhiteSpace(_hoveredNodeId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadObservedServersAsync();
+        await LoadObservedChannelsAsync();
+        await LoadMapSnapshotAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await RestoreLayerVisibilityAsync();
+            _isMapRenderPending = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_isMapRenderPending)
+        {
+            _isMapRenderPending = false;
+            await RenderMapAsync();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _mapCallbackReference?.Dispose();
+
+        if (_moduleTask is null || !_moduleTask.IsValueCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            var module = await _moduleTask.Value;
+            await module.InvokeVoidAsync("disposeNodeMap", MapElementId);
+            await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnNodeSelectedFromMap(string? nodeId)
+    {
+        _pinnedNodeId = string.IsNullOrWhiteSpace(nodeId)
+            ? null
+            : string.Equals(_pinnedNodeId, nodeId, StringComparison.Ordinal)
+                ? null
+                : nodeId.Trim();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnNodeHoveredFromMap(string? nodeId)
+    {
+        _hoveredNodeId = string.IsNullOrWhiteSpace(nodeId) ? null : nodeId.Trim();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleSearchChangedAsync()
+    {
+        _shouldFitMapToNodes = true;
+        RefreshVisibleNodes();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleServerChangedAsync(ChangeEventArgs args)
+    {
+        _selectedServerAddress = NormalizeNullable(args.Value?.ToString());
+        _selectedChannelValue = null;
+        _shouldFitMapToNodes = true;
+
+        await LoadObservedChannelsAsync();
+        await LoadMapSnapshotAsync();
+    }
+
+    private async Task HandleChannelChangedAsync(ChangeEventArgs args)
+    {
+        _selectedChannelValue = NormalizeNullable(args.Value?.ToString());
+        _shouldFitMapToNodes = true;
+        await LoadMapSnapshotAsync();
+    }
+
+    private async Task HandleQueryWindowChangedAsync()
+    {
+        _shouldFitMapToNodes = true;
+        await LoadMapSnapshotAsync();
+    }
+
+    private async Task RefreshMapAsync()
+    {
+        _shouldFitMapToNodes = true;
+        await LoadMapSnapshotAsync();
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        _selectedServerAddress = null;
+        _selectedChannelValue = null;
+        _activeWithinHours = 24;
+        _searchText = string.Empty;
+        _hoveredNodeId = null;
+        _pinnedNodeId = null;
+        _shouldFitMapToNodes = true;
+
+        await LoadObservedChannelsAsync();
+        await LoadMapSnapshotAsync();
+    }
+
+    private async Task ResetViewAsync()
+    {
+        _searchText = string.Empty;
+        _hoveredNodeId = null;
+        _pinnedNodeId = null;
+        _shouldFitMapToNodes = true;
+        RefreshVisibleNodes();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToggleRadioLinksAsync()
+    {
+        _showRadioLinks = !_showRadioLinks;
+        await PersistLayerVisibilityAsync(RadioLinksPreferenceKey, _showRadioLinks);
+        _isMapRenderPending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ReleasePinnedNodeAsync()
+    {
+        _pinnedNodeId = null;
+        _isMapRenderPending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenNodeDetails(string nodeId)
+    {
+        _selectedModalChannelKey = null;
+        _selectedNodeId = nodeId;
+    }
+
+    private Task OpenNodeDetailsAsync(string nodeId)
+    {
+        OpenNodeDetails(nodeId);
+        return Task.CompletedTask;
+    }
+
+    private void CloseNodeDetails()
+    {
+        _selectedNodeId = null;
+    }
+
+    private void OpenChannelDetails(string channelKey)
+    {
+        _selectedNodeId = null;
+        _selectedModalChannelKey = channelKey;
+    }
+
+    private Task OpenChannelDetailsAsync(string channelKey)
+    {
+        OpenChannelDetails(channelKey);
+        return Task.CompletedTask;
+    }
+
+    private void CloseChannelDetails()
+    {
+        _selectedModalChannelKey = null;
+    }
+
+    private async Task LoadObservedServersAsync()
+    {
+        try
+        {
+            _servers = await PublicCollectorApiClient.GetObservedServersAsync();
+        }
+        catch (Exception exception)
+        {
+            _mapError = exception.Message;
+        }
+    }
+
+    private async Task LoadObservedChannelsAsync()
+    {
+        try
+        {
+            _channels = await PublicCollectorApiClient.GetObservedChannelsAsync(
+                new CollectorMapQuery
+                {
+                    ServerAddress = _selectedServerAddress
+                });
+
+            if (!string.IsNullOrWhiteSpace(_selectedChannelValue) &&
+                !_channels.Any(channel => string.Equals(BuildChannelSelectionKey(channel), _selectedChannelValue, StringComparison.Ordinal)))
+            {
+                _selectedChannelValue = null;
+            }
+        }
+        catch (Exception exception)
+        {
+            _mapError = exception.Message;
+        }
+    }
+
+    private async Task LoadMapSnapshotAsync()
+    {
+        _isLoading = true;
+        _mapError = null;
+
+        try
+        {
+            var snapshot = await PublicCollectorService.LoadMapSnapshotAsync(BuildMapQuery());
+            _snapshot = snapshot;
+            _allNodes = CollectorMapViewBuilder.BuildNodeViews(snapshot.Nodes);
+            RefreshVisibleNodes();
+        }
+        catch (Exception exception)
+        {
+            _snapshot = null;
+            _allNodes = [];
+            _visibleNodes = [];
+            _visibleMapNodes = [];
+            _radioLinkPoints = [];
+            _visiblePositionCount = 0;
+            _mapError = exception.Message;
+            _isMapRenderPending = true;
+        }
+        finally
+        {
+            _isLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void RefreshVisibleNodes()
+    {
+        _visibleNodes = CollectorMapViewBuilder.ApplySearch(_allNodes, _searchText);
+        _visibleMapNodes = CollectorMapViewBuilder.ToMapNodePoints(_visibleNodes);
+        _radioLinkPoints = CollectorMapViewBuilder.BuildRadioLinkPoints(_snapshot?.Links, _visibleNodes);
+        _visiblePositionCount = CollectorMapViewBuilder.CountCoordinateBuckets(_visibleNodes);
+
+        if (!string.IsNullOrWhiteSpace(_pinnedNodeId) &&
+            !_visibleNodes.Any(node => string.Equals(node.NodeId, _pinnedNodeId, StringComparison.OrdinalIgnoreCase)))
+        {
+            _pinnedNodeId = null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_hoveredNodeId) &&
+            !_visibleNodes.Any(node => string.Equals(node.NodeId, _hoveredNodeId, StringComparison.OrdinalIgnoreCase)))
+        {
+            _hoveredNodeId = null;
+        }
+
+        _isMapRenderPending = true;
+    }
+
+    private CollectorMapQuery BuildMapQuery()
+    {
+        var selectedChannel = ResolveSelectedChannel();
+
+        return new CollectorMapQuery
+        {
+            ServerAddress = _selectedServerAddress,
+            Region = selectedChannel?.Region,
+            ChannelName = selectedChannel?.ChannelName,
+            ActiveWithinHours = _activeWithinHours,
+            MaxNodes = 5_000,
+            MaxLinks = 10_000
+        };
+    }
+
+    private CollectorChannelSummary? ResolveSelectedChannel()
+    {
+        return string.IsNullOrWhiteSpace(_selectedChannelValue)
+            ? null
+            : _channels.FirstOrDefault(channel =>
+                string.Equals(BuildChannelSelectionKey(channel), _selectedChannelValue, StringComparison.Ordinal));
+    }
+
+    private async Task RenderMapAsync()
+    {
+        try
+        {
+            var module = await GetMapModuleAsync();
+            _mapCallbackReference ??= DotNetObjectReference.Create(this);
+
+            await module.InvokeVoidAsync(
+                "renderNodeMap",
+                MapElementId,
+                _visibleMapNodes,
+                _shouldFitMapToNodes,
+                _mapCallbackReference,
+                _radioLinkPoints,
+                _showRadioLinks);
+            await SynchronizePinnedNodeAsync();
+
+            _shouldFitMapToNodes = false;
+            _mapError = null;
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (Exception exception)
+        {
+            _mapError = exception.Message;
+        }
+    }
+
+    private Task<IJSObjectReference> GetMapModuleAsync()
+    {
+        _moduleTask ??= new Lazy<Task<IJSObjectReference>>(
+            () => JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/node-map.js?v=8").AsTask());
+        return _moduleTask.Value;
+    }
+
+    private async Task SynchronizePinnedNodeAsync()
+    {
+        if (_moduleTask is null || !_moduleTask.IsValueCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            var module = await _moduleTask.Value;
+            await module.InvokeVoidAsync("setPinnedNode", MapElementId, _pinnedNodeId);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private async Task RestoreLayerVisibilityAsync()
+    {
+        _showRadioLinks = string.Equals(
+            await JSRuntime.InvokeAsync<string?>("localStorage.getItem", RadioLinksPreferenceKey),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task PersistLayerVisibilityAsync(string storageKey, bool value)
+    {
+        await JSRuntime.InvokeVoidAsync(
+            "localStorage.setItem",
+            storageKey,
+            value ? "true" : "false");
+    }
+
+    private CollectorMapNodeView? ResolveNode(string? nodeId)
+    {
+        return string.IsNullOrWhiteSpace(nodeId)
+            ? null
+            : _visibleNodes.FirstOrDefault(node => string.Equals(node.NodeId, nodeId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetMapSummaryText()
+    {
+        if (_snapshot is null)
+        {
+            return "Loading the collector map snapshot.";
+        }
+
+        return $"{_visibleNodes.Count} visible nodes from {_snapshot.NodeCount} active positioned nodes, with {_radioLinkPoints.Count} visible radio links from {_snapshot.LinkCount} active links in the selected snapshot.";
+    }
+
+    private string GetRadioLinkStatusText()
+    {
+        if (_snapshot is null)
+        {
+            return "Loading the current collector link snapshot.";
+        }
+
+        if (_snapshot.LinkCount == 0)
+        {
+            return "The collector does not currently expose any active radio links for this query.";
+        }
+
+        if (_radioLinkPoints.Count == 0)
+        {
+            return "The collector has active radio links, but none of them currently match the visible node filter.";
+        }
+
+        if (_radioLinkPoints.Count == _snapshot.LinkCount)
+        {
+            return $"Displaying all {_radioLinkPoints.Count} active radio links from the collector snapshot.";
+        }
+
+        return $"Displaying {_radioLinkPoints.Count} of {_snapshot.LinkCount} active radio links for the current map filter.";
+    }
+
+    private static string BuildChannelSelectionKey(CollectorChannelSummary channel)
+    {
+        return $"{channel.ServerAddress}||{channel.Region}/{channel.ChannelName}";
+    }
+
+    private static string? NormalizeNullable(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string FormatBattery(int? batteryLevelPercent)
+    {
+        return batteryLevelPercent.HasValue
+            ? $"{batteryLevelPercent.Value}%"
+            : "Unknown";
+    }
+
+    private static string FormatCoordinates(CollectorMapNodeView node)
+    {
+        return $"{node.Latitude:F5}, {node.Longitude:F5}";
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Unknown";
+    }
+
+    private static string GetToggleClass(bool isEnabled)
+    {
+        return isEnabled
+            ? "shell-button shell-button-accent rounded-full px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/20"
+            : "shell-button rounded-full px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] shadow-lg shadow-cinder-950/20";
+    }
+
+    private static string GetOverlapHintClass(bool showRadioLinks)
+    {
+        return showRadioLinks
+            ? "pointer-events-none absolute bottom-36 left-6 max-w-md rounded-[1.3rem] border border-white/70 bg-white/90 px-4 py-3 text-sm leading-6 text-cinder-800/82 shadow-lg shadow-cinder-950/10"
+            : "pointer-events-none absolute bottom-6 left-6 max-w-md rounded-[1.3rem] border border-white/70 bg-white/90 px-4 py-3 text-sm leading-6 text-cinder-800/82 shadow-lg shadow-cinder-950/10";
+    }
+}

@@ -2,8 +2,6 @@ namespace MeshBoard.Contracts.Nodes;
 
 public sealed class UpsertObservedNodeRequest
 {
-    public string WorkspaceId { get; set; } = string.Empty;
-
     public required string NodeId { get; set; }
 
     public string BrokerServer { get; set; } = string.Empty;

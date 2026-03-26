@@ -3,7 +3,6 @@ using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Favorites;
-using MeshBoard.Contracts.Realtime;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace MeshBoard.UnitTests;
@@ -14,11 +13,9 @@ public sealed class FavoriteNodeServiceTests
     public async Task SaveFavoriteNode_ShouldCommitTransaction()
     {
         var repository = new FakeFavoriteNodeRepository();
-        var projectionChangeRepository = new FakeProjectionChangeRepository();
         var unitOfWork = new FakeUnitOfWork();
         var service = new FavoriteNodeService(
             repository,
-            projectionChangeRepository,
             unitOfWork,
             new FakeWorkspaceContextAccessor(),
             NullLogger<FavoriteNodeService>.Instance);
@@ -35,21 +32,15 @@ public sealed class FavoriteNodeServiceTests
         Assert.Equal(1, unitOfWork.BeginCount);
         Assert.Equal(1, unitOfWork.CommitCount);
         Assert.Equal(0, unitOfWork.RollbackCount);
-        var change = Assert.Single(projectionChangeRepository.Changes);
-        Assert.Equal("workspace-tests", change.WorkspaceId);
-        Assert.Equal(ProjectionChangeKind.FavoriteNodesChanged, change.Kind);
-        Assert.Equal("!abcd1234", change.EntityKey);
     }
 
     [Fact]
     public async Task SaveFavoriteNode_ShouldRollback_WhenRepositoryFails()
     {
         var repository = new FakeFavoriteNodeRepository { ThrowOnUpsert = true };
-        var projectionChangeRepository = new FakeProjectionChangeRepository();
         var unitOfWork = new FakeUnitOfWork();
         var service = new FavoriteNodeService(
             repository,
-            projectionChangeRepository,
             unitOfWork,
             new FakeWorkspaceContextAccessor(),
             NullLogger<FavoriteNodeService>.Instance);
@@ -64,18 +55,15 @@ public sealed class FavoriteNodeServiceTests
         Assert.Equal(1, unitOfWork.BeginCount);
         Assert.Equal(0, unitOfWork.CommitCount);
         Assert.Equal(1, unitOfWork.RollbackCount);
-        Assert.Empty(projectionChangeRepository.Changes);
     }
 
     [Fact]
     public async Task RemoveFavoriteNode_ShouldCommit_WhenNodeExists()
     {
         var repository = new FakeFavoriteNodeRepository { DeleteResult = true };
-        var projectionChangeRepository = new FakeProjectionChangeRepository();
         var unitOfWork = new FakeUnitOfWork();
         var service = new FavoriteNodeService(
             repository,
-            projectionChangeRepository,
             unitOfWork,
             new FakeWorkspaceContextAccessor(),
             NullLogger<FavoriteNodeService>.Instance);
@@ -85,21 +73,15 @@ public sealed class FavoriteNodeServiceTests
         Assert.Equal(1, unitOfWork.BeginCount);
         Assert.Equal(1, unitOfWork.CommitCount);
         Assert.Equal(0, unitOfWork.RollbackCount);
-        var change = Assert.Single(projectionChangeRepository.Changes);
-        Assert.Equal("workspace-tests", change.WorkspaceId);
-        Assert.Equal(ProjectionChangeKind.FavoriteNodesChanged, change.Kind);
-        Assert.Equal("!abcd1234", change.EntityKey);
     }
 
     [Fact]
     public async Task RemoveFavoriteNode_ShouldRollbackAndThrowNotFound_WhenNodeDoesNotExist()
     {
         var repository = new FakeFavoriteNodeRepository { DeleteResult = false };
-        var projectionChangeRepository = new FakeProjectionChangeRepository();
         var unitOfWork = new FakeUnitOfWork();
         var service = new FavoriteNodeService(
             repository,
-            projectionChangeRepository,
             unitOfWork,
             new FakeWorkspaceContextAccessor(),
             NullLogger<FavoriteNodeService>.Instance);
@@ -109,7 +91,6 @@ public sealed class FavoriteNodeServiceTests
         Assert.Equal(1, unitOfWork.BeginCount);
         Assert.Equal(0, unitOfWork.CommitCount);
         Assert.Equal(1, unitOfWork.RollbackCount);
-        Assert.Empty(projectionChangeRepository.Changes);
     }
 
     private sealed class FakeFavoriteNodeRepository : IFavoriteNodeRepository
@@ -161,49 +142,6 @@ public sealed class FavoriteNodeServiceTests
         public string GetWorkspaceId()
         {
             return "workspace-tests";
-        }
-    }
-
-    private sealed class FakeProjectionChangeRepository : IProjectionChangeRepository
-    {
-        public List<ProjectionChangeEvent> Changes { get; } = [];
-
-        public Task AppendAsync(
-            string workspaceId,
-            IReadOnlyCollection<ProjectionChangeDescriptor> changes,
-            CancellationToken cancellationToken = default)
-        {
-            foreach (var change in changes)
-            {
-                Changes.Add(
-                    new ProjectionChangeEvent
-                    {
-                        WorkspaceId = workspaceId,
-                        Kind = change.Kind,
-                        EntityKey = change.EntityKey
-                    });
-            }
-
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyCollection<ProjectionChangeEvent>> GetChangesAfterAsync(
-            long lastSeenId,
-            int take,
-            CancellationToken cancellationToken = default)
-        {
-            IReadOnlyCollection<ProjectionChangeEvent> result = Changes;
-            return Task.FromResult(result);
-        }
-
-        public Task<long> GetLatestIdAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(0L);
-        }
-
-        public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoffUtc, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(0);
         }
     }
 

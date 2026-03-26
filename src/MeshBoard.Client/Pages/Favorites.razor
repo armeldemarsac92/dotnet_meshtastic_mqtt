@@ -1,0 +1,204 @@
+@attribute [Authorize]
+@inject FavoritePreferenceApiClient FavoritePreferenceApiClient
+
+<PageTitle>Favorites</PageTitle>
+
+<div class="grid gap-6 xl:grid-cols-[0.95fr_1.25fr]">
+    <section class="shell-panel rounded-[2rem] p-8">
+        <div class="space-y-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
+            <h1 class="font-display text-4xl text-cinder-950">Favorite nodes</h1>
+            <p class="text-sm leading-7 text-cinder-800/82">
+                This page uses the new API preference surface with cookie auth and antiforgery-protected writes.
+            </p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_commandError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+        }
+
+        <EditForm class="mt-6 grid gap-4" Model="_form" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+
+            <label class="block space-y-2">
+                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Node id</span>
+                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                           @bind-Value="_form.NodeId" />
+                <ValidationMessage For="() => _form.NodeId" />
+            </label>
+
+            <label class="block space-y-2">
+                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Short name</span>
+                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                           @bind-Value="_form.ShortName" />
+            </label>
+
+            <label class="block space-y-2">
+                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Long name</span>
+                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                           @bind-Value="_form.LongName" />
+            </label>
+
+            <button type="submit"
+                    class="shell-button shell-button-accent mt-2 rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    disabled="@_isSaving">
+                @(_isSaving ? "Saving..." : "Save favorite")
+            </button>
+        </EditForm>
+    </section>
+
+    <section class="shell-panel rounded-[2rem] p-8">
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Workspace state</p>
+                <h2 class="mt-2 font-display text-3xl text-cinder-950">Saved favorites</h2>
+            </div>
+
+            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    @onclick="ReloadAsync"
+                    disabled="@_isLoading">
+                Refresh
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_loadError</p>
+        }
+        else if (_isLoading)
+        {
+            <p class="mt-6 text-sm text-cinder-800/72">Loading favorites...</p>
+        }
+        else if (_favorites.Count == 0)
+        {
+            <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
+                No favorites are saved yet for this workspace.
+            </div>
+        }
+        else
+        {
+            <div class="mt-6 grid gap-4">
+                @foreach (var favorite in _favorites)
+                {
+                    <article class="shell-subpanel flex flex-col gap-4 rounded-[1.7rem] p-5 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="space-y-1">
+                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@favorite.NodeId</p>
+                            <h3 class="font-display text-2xl text-cinder-950">
+                                @(string.IsNullOrWhiteSpace(favorite.ShortName) ? "Unnamed favorite" : favorite.ShortName)
+                            </h3>
+                            <p class="text-sm text-cinder-800/80">
+                                @(string.IsNullOrWhiteSpace(favorite.LongName) ? "No long name provided." : favorite.LongName)
+                            </p>
+                        </div>
+
+                        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="() => RemoveAsync(favorite.NodeId)"
+                                disabled="@_isDeleting">
+                            Remove
+                        </button>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private readonly List<FavoriteNode> _favorites = [];
+    private FavoriteFormModel _form = new();
+    private bool _isDeleting;
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private string? _commandError;
+    private string? _loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFavoritesAsync();
+    }
+
+    private async Task LoadFavoritesAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var favorites = await FavoritePreferenceApiClient.GetFavoritesAsync();
+            _favorites.Clear();
+            _favorites.AddRange(favorites.OrderBy(item => item.NodeId, StringComparer.OrdinalIgnoreCase));
+        }
+        catch (Exception exception)
+        {
+            _loadError = exception.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        await LoadFavoritesAsync();
+    }
+
+    private async Task RemoveAsync(string nodeId)
+    {
+        _commandError = null;
+        _isDeleting = true;
+
+        try
+        {
+            await FavoritePreferenceApiClient.RemoveFavoriteAsync(nodeId);
+            await LoadFavoritesAsync();
+        }
+        catch (Exception exception)
+        {
+            _commandError = exception.Message;
+        }
+        finally
+        {
+            _isDeleting = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _commandError = null;
+        _isSaving = true;
+
+        try
+        {
+            await FavoritePreferenceApiClient.SaveFavoriteAsync(
+                new SaveFavoriteNodeRequest
+                {
+                    NodeId = _form.NodeId.Trim(),
+                    ShortName = string.IsNullOrWhiteSpace(_form.ShortName) ? null : _form.ShortName.Trim(),
+                    LongName = string.IsNullOrWhiteSpace(_form.LongName) ? null : _form.LongName.Trim()
+                });
+
+            _form = new FavoriteFormModel();
+            await LoadFavoritesAsync();
+        }
+        catch (Exception exception)
+        {
+            _commandError = exception.Message;
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private sealed class FavoriteFormModel
+    {
+        [Required]
+        public string NodeId { get; set; } = string.Empty;
+
+        public string? ShortName { get; set; }
+
+        public string? LongName { get; set; }
+    }
+}

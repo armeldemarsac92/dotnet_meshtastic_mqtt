@@ -1,0 +1,258 @@
+@using MeshBoard.Client.Nodes
+
+<div class="grid gap-4 sm:grid-cols-2 lg:hidden">
+    @foreach (var node in Nodes)
+    {
+        <article class="node-card shell-panel rounded-[1.6rem] p-5 cursor-pointer"
+                 @onclick="() => OnOpenNode.InvokeAsync(node.NodeId)">
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <p class="truncate font-semibold text-cinder-950">@node.DisplayName</p>
+                    <p class="mt-1 truncate text-xs text-cinder-800/60">@node.NodeId</p>
+                </div>
+
+                @if (IsFavorite is not null && OnToggleFavorite.HasDelegate)
+                {
+                    <button type="button"
+                            class="shell-button @(IsFavorite(node.NodeId) ? "shell-button-accent" : string.Empty) shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold"
+                            @onclick:stopPropagation="true"
+                            @onclick="() => OnToggleFavorite.InvokeAsync(node.NodeId)"
+                            title="@(IsFavorite(node.NodeId) ? "Remove from favorites" : "Save as favorite")"
+                            disabled="@(FavoriteActionNodeId == node.NodeId)">
+                        @(IsFavorite(node.NodeId) ? "★" : "☆")
+                    </button>
+                }
+                else
+                {
+                    <span class="shrink-0 text-sm text-cinder-800/40">&mdash;</span>
+                }
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center gap-2">
+                @if (!string.IsNullOrWhiteSpace(node.LastHeardChannel))
+                {
+                    <button type="button"
+                            class="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-cinder-900"
+                            @onclick:stopPropagation="true"
+                            @onclick="() => OnOpenChannel.InvokeAsync(node.LastHeardChannel!)">
+                        @node.LastHeardChannel
+                    </button>
+                }
+
+                @if (node.BatteryLevelPercent.HasValue)
+                {
+                    <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold @GetBatteryClass(node.BatteryLevelPercent)">
+                        @node.BatteryLevelPercent%
+                    </span>
+                }
+
+                @if (node.LastKnownLatitude.HasValue)
+                {
+                    <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold text-signal-600">
+                        Located
+                    </span>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(node.LastPacketType))
+                {
+                    <span class="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-[0.68rem] font-semibold text-cinder-800/70">
+                        @node.LastPacketType
+                    </span>
+                }
+            </div>
+
+            <div class="mt-4 flex items-center justify-between text-xs text-cinder-800/60">
+                @if (node.ObservedPacketCount > 0)
+                {
+                    <span>@node.ObservedPacketCount packets</span>
+                }
+                else
+                {
+                    <span>@node.BrokerServer</span>
+                }
+                <span title="@FormatTimestamp(node.LastHeardAtUtc)">@FormatRelativeTime(node.LastHeardAtUtc)</span>
+            </div>
+        </article>
+    }
+</div>
+
+<section class="shell-panel hidden overflow-hidden rounded-[2rem] p-0 lg:block">
+    <div class="overflow-x-auto">
+        <table class="min-w-full table-fixed border-collapse">
+            <colgroup>
+                <col class="w-[10%]" />
+                <col class="w-[21%]" />
+                <col class="w-[14%]" />
+                <col class="w-[15%]" />
+                <col class="w-[16%]" />
+                <col class="w-[14%]" />
+                <col class="w-[10%]" />
+            </colgroup>
+            <thead class="border-b border-sand-100/80 bg-white/65 text-left text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">
+                <tr>
+                    <th class="px-5 py-4">Favorite</th>
+                    <th class="px-5 py-4">Node</th>
+                    <th class="px-5 py-4">Channel</th>
+                    <th class="px-5 py-4">Position</th>
+                    <th class="px-5 py-4">Device</th>
+                    <th class="px-5 py-4">Environment</th>
+                    <th class="px-5 py-4">Last heard</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var node in Nodes)
+                {
+                    var isSelected = string.Equals(SelectedNodeId, node.NodeId, StringComparison.OrdinalIgnoreCase);
+
+                    <tr class="border-t border-sand-100/80 text-sm text-cinder-900 @(isSelected ? "bg-signal-50/50" : string.Empty)">
+                        <td class="px-5 py-4 align-top">
+                            @if (IsFavorite is not null && OnToggleFavorite.HasDelegate)
+                            {
+                                <button class="shell-button @(IsFavorite(node.NodeId) ? "shell-button-accent" : string.Empty) rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="() => OnToggleFavorite.InvokeAsync(node.NodeId)"
+                                        disabled="@(FavoriteActionNodeId == node.NodeId)">
+                                    @(IsFavorite(node.NodeId) ? "Saved" : "Save")
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="text-cinder-800/40">&mdash;</span>
+                            }
+                        </td>
+                        <td class="px-5 py-4 align-top">
+                            <button type="button"
+                                    class="text-left"
+                                    @onclick="() => OnOpenNode.InvokeAsync(node.NodeId)">
+                                <div class="font-medium text-cinder-950">@node.DisplayName</div>
+                                <div class="mt-2 text-xs text-cinder-800/62">@node.NodeId</div>
+                                @if (!string.IsNullOrWhiteSpace(node.LastPacketType))
+                                {
+                                    <div class="mt-2 text-xs text-signal-600">@node.LastPacketType</div>
+                                }
+                            </button>
+                        </td>
+                        <td class="px-5 py-4 align-top">
+                            @if (string.IsNullOrWhiteSpace(node.LastHeardChannel))
+                            {
+                                <span class="text-cinder-800/70">Unknown</span>
+                            }
+                            else
+                            {
+                                <button type="button"
+                                        class="shell-button rounded-full px-3 py-1 text-xs font-semibold"
+                                        @onclick="() => OnOpenChannel.InvokeAsync(node.LastHeardChannel!)">
+                                    @node.LastHeardChannel
+                                </button>
+                            }
+                        </td>
+                        <td class="px-5 py-4 align-top text-cinder-800/82">@FormatPosition(node.LastKnownLatitude, node.LastKnownLongitude)</td>
+                        <td class="px-5 py-4 align-top text-cinder-800/82">@FormatDeviceTelemetry(node)</td>
+                        <td class="px-5 py-4 align-top text-cinder-800/82">@FormatEnvironmentTelemetry(node)</td>
+                        <td class="px-5 py-4 align-top">
+                            <div title="@FormatTimestamp(node.LastHeardAtUtc)">@FormatRelativeTime(node.LastHeardAtUtc)</div>
+                            @if (node.ObservedPacketCount > 0)
+                            {
+                                <div class="mt-2 text-xs text-cinder-800/62">@node.ObservedPacketCount packets</div>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<NodeRowViewModel> Nodes { get; set; } = Array.Empty<NodeRowViewModel>();
+
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnOpenNode { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnOpenChannel { get; set; }
+
+    [Parameter]
+    public Func<string, bool>? IsFavorite { get; set; }
+
+    [Parameter]
+    public string? FavoriteActionNodeId { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnToggleFavorite { get; set; }
+
+    [Parameter]
+    public string? SelectedNodeId { get; set; }
+
+    private static string GetBatteryClass(int? battery)
+    {
+        if (!battery.HasValue) return "text-cinder-800/50";
+        if (battery >= 50) return "battery-high";
+        if (battery >= 20) return "battery-medium";
+        return "battery-low";
+    }
+
+    private static string FormatPosition(double? lat, double? lon)
+    {
+        if (!lat.HasValue || !lon.HasValue) return "No position yet";
+        return FormattableString.Invariant($"{lat.Value:F5}, {lon.Value:F5}");
+    }
+
+    private static string FormatDeviceTelemetry(NodeRowViewModel node)
+    {
+        var parts = new List<string>();
+
+        if (node.BatteryLevelPercent.HasValue)
+            parts.Add($"{node.BatteryLevelPercent.Value}% battery");
+        if (node.Voltage.HasValue)
+            parts.Add(FormattableString.Invariant($"{node.Voltage.Value:F2}V"));
+        if (node.ChannelUtilization.HasValue)
+            parts.Add(FormattableString.Invariant($"{node.ChannelUtilization.Value:F1}% channel"));
+        if (node.AirUtilTx.HasValue)
+            parts.Add(FormattableString.Invariant($"{node.AirUtilTx.Value:F1}% TX"));
+        if (node.UptimeSeconds.HasValue)
+            parts.Add($"uptime {FormatDuration(node.UptimeSeconds.Value)}");
+
+        return parts.Count == 0 ? "No device metrics yet" : string.Join(", ", parts);
+    }
+
+    private static string FormatEnvironmentTelemetry(NodeRowViewModel node)
+    {
+        var parts = new List<string>();
+
+        if (node.TemperatureCelsius.HasValue)
+            parts.Add(FormattableString.Invariant($"{node.TemperatureCelsius.Value:F1}C"));
+        if (node.RelativeHumidity.HasValue)
+            parts.Add(FormattableString.Invariant($"{node.RelativeHumidity.Value:F1}% RH"));
+        if (node.BarometricPressure.HasValue)
+            parts.Add(FormattableString.Invariant($"{node.BarometricPressure.Value:F1} hPa"));
+
+        return parts.Count == 0 ? "No environment metrics yet" : string.Join(", ", parts);
+    }
+
+    private static string FormatRelativeTime(DateTimeOffset? value)
+    {
+        if (!value.HasValue) return "Never";
+        var diff = DateTimeOffset.UtcNow - value.Value;
+        if (diff.TotalSeconds < 60) return "Just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return value.Value.ToLocalTime().ToString("MMM d");
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Unknown";
+    }
+
+    private static string FormatDuration(long uptimeSeconds)
+    {
+        var uptime = TimeSpan.FromSeconds(uptimeSeconds);
+        if (uptime.TotalDays >= 1) return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        if (uptime.TotalHours >= 1) return $"{(int)uptime.TotalHours}h {uptime.Minutes}m";
+        return $"{uptime.Minutes}m";
+    }
+}

@@ -97,7 +97,6 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
             UseTls = false,
             Username = string.Empty,
             Password = string.Empty,
-            DefaultTopicPattern = "msh/US/2/e/#",
             DownlinkTopic = "msh/US/2/json/mqtt/",
             EnableSend = true,
             IsActive = true
@@ -158,16 +157,6 @@ public sealed class SingleMqttSessionWorkspaceBrokerSessionManagerTests
         }
 
         public Task SetExclusiveActiveAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> AreSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task MarkSubscriptionIntentsInitializedAsync(string workspaceId, Guid id, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }

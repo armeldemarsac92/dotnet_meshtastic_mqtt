@@ -1,0 +1,453 @@
+@page "/"
+@using MeshBoard.Client.Channels
+@using MeshBoard.Client.Dashboard
+@using MeshBoard.Client.Nodes
+@implements IDisposable
+@inject AuthSessionState AuthSessionState
+@inject BrowserRealtimeClient BrowserRealtimeClient
+@inject ChannelProjectionStore ChannelProjectionStore
+@inject ClientDashboardSummaryBuilder DashboardSummaryBuilder
+@inject DecryptedMessageStore DecryptedMessageStore
+@inject LiveMessageFeedService LiveMessageFeedService
+@inject NodeProjectionStore NodeProjectionStore
+@inject RealtimeClientState RealtimeClientState
+@inject VaultSessionState VaultSessionState
+
+<PageTitle>MeshBoard Dashboard</PageTitle>
+
+@if (!AuthSessionState.IsAuthenticated)
+{
+    <section class="shell-panel rounded-[2.2rem] px-8 py-10 lg:px-10">
+        <div class="grid gap-8 lg:grid-cols-[1.3fr_1fr]">
+            <div class="space-y-5">
+                <p class="text-xs font-semibold uppercase tracking-[0.3em] text-signal-600">Browser-first MeshBoard</p>
+                <h1 class="max-w-3xl font-display text-4xl leading-tight text-cinder-950 sm:text-5xl">
+                    Sign in to open your realtime workspace, local vault, and client-owned Meshtastic dashboard.
+                </h1>
+                <p class="max-w-2xl text-base leading-8 text-cinder-800/82">
+                    The browser owns the `MQTT 5 / WSS` connection, decryption stays on the device, and the dashboard
+                    summarizes live traffic from local projections instead of server-side read models.
+                </p>
+
+                <div class="flex flex-wrap gap-3">
+                    <a class="shell-button shell-button-accent inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                       href="/login">
+                        Sign in
+                    </a>
+                    <a class="shell-button inline-flex rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                       href="/register">
+                        Create account
+                    </a>
+                </div>
+            </div>
+
+            <div class="grid gap-4">
+                <article class="shell-subpanel rounded-[1.8rem] p-5">
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Client trust model</p>
+                    <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
+                        <li>API stores preferences and workspace metadata only</li>
+                        <li>Broker sessions use short-lived WSS tokens</li>
+                        <li>Meshtastic keys remain inside the local encrypted vault</li>
+                    </ul>
+                </article>
+
+                <article class="shell-subpanel rounded-[1.8rem] p-5">
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Local summaries</p>
+                    <ul class="mt-4 grid gap-3 text-sm leading-7 text-cinder-800/82">
+                        <li>Recent packets and decrypt health</li>
+                        <li>Observed nodes, channels, and map projections</li>
+                        <li>Saved broker, channel, preset, and favorite counts</li>
+                    </ul>
+                </article>
+            </div>
+        </div>
+    </section>
+}
+else
+{
+    <div class="space-y-6">
+        @if (!string.IsNullOrWhiteSpace(_commandError))
+        {
+            <p class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_commandError</p>
+        }
+
+        <section class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Transport</p>
+                <div class="mt-3 flex items-center gap-2">
+                    <span class="status-dot @GetConnectionDotClass(_realtimeSnapshot)"></span>
+                    <p class="text-2xl font-semibold text-cinder-950">@_realtimeSnapshot.Status</p>
+                </div>
+                <p class="mt-2 text-sm text-cinder-800/72">@DisplayValue(_realtimeSnapshot.BrokerUrl)</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Raw packets</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.RawPacketCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@FormatTimestamp(_realtimeSnapshot.LastMessageReceivedAtUtc)</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Decoded messages</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.DecryptedMessageCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Client-side projection only</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Observed nodes</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.ObservedNodeCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@_summary.LocatedNodeCount with location</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Active channels</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.ObservedChannelCount</p>
+                <p class="mt-2 text-sm text-cinder-800/72">Projected from the current browser session</p>
+            </article>
+
+            <article class="shell-panel rounded-[1.8rem] p-5">
+                <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Local vault</p>
+                <p class="mt-3 text-2xl font-semibold text-cinder-950">@GetVaultStatusLabel()</p>
+                <p class="mt-2 text-sm text-cinder-800/72">@_vaultSnapshot.StoredKeyCount stored key(s)</p>
+            </article>
+        </section>
+
+        <section class="shell-panel rounded-[2rem] p-8">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Transport</p>
+                    <h2 class="mt-2 font-display text-3xl text-cinder-950">Realtime broker session</h2>
+                    <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
+                        The dashboard keeps the current connect and disconnect controls, but the surrounding state now
+                        reads like an operational summary instead of a bootstrap page.
+                    </p>
+                </div>
+
+                <div class="flex flex-wrap gap-3">
+                    <button class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="ConnectAsync"
+                            disabled="@(_realtimeSnapshot.IsConnecting || _realtimeSnapshot.IsConnected)">
+                        @ConnectLabel
+                    </button>
+
+                    <button class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="DisconnectAsync"
+                            disabled="@(!_realtimeSnapshot.IsConnected && !_realtimeSnapshot.IsConnecting)">
+                        @DisconnectLabel
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-6 grid gap-4 sm:grid-cols-2">
+                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Broker URL</p>
+                    <p class="mt-3 break-all text-sm font-medium text-cinder-950">@DisplayValue(_realtimeSnapshot.BrokerUrl)</p>
+                </article>
+
+                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Client ID</p>
+                    <p class="mt-3 break-all text-sm font-medium text-cinder-950">@DisplayValue(_realtimeSnapshot.ClientId)</p>
+                </article>
+
+                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Allowed topics</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@_realtimeSnapshot.AllowedTopicPatterns.Count</p>
+                    <p class="mt-2 text-sm text-cinder-800/72">Active subscriptions: @_realtimeSnapshot.ActiveSubscriptionCount</p>
+                </article>
+
+                <article class="shell-subpanel rounded-[1.6rem] p-5">
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Session expiry</p>
+                    <p class="mt-3 text-sm font-medium text-cinder-950">@FormatTimestamp(_realtimeSnapshot.SessionExpiresAtUtc)</p>
+                    <p class="mt-2 text-sm text-cinder-800/72">Connected at @FormatTimestamp(_realtimeSnapshot.ConnectedAtUtc)</p>
+                </article>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_realtimeSnapshot.LastDisconnectReason))
+            {
+                <p class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                    @_realtimeSnapshot.LastDisconnectReason
+                </p>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_realtimeSnapshot.LastError))
+            {
+                <p class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    @_realtimeSnapshot.LastError
+                </p>
+            }
+        </section>
+
+        <div class="grid gap-6 xl:grid-cols-[0.9fr_1.05fr_1.05fr]">
+            <section class="shell-panel rounded-[2rem] p-8">
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Decrypt health</p>
+                <h2 class="mt-2 font-display text-3xl text-cinder-950">Local key effectiveness</h2>
+                <p class="mt-3 text-sm leading-7 text-cinder-800/82">
+                    These counts come from the current in-memory live packet window. They answer whether the vault is
+                    actually matching keys against the live traffic.
+                </p>
+
+                <div class="mt-6 grid gap-4">
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Successful decrypts</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.SuccessfulDecryptCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">No matching key</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.NoMatchingKeyCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Decrypt or parse failures</p>
+                        <p class="mt-3 text-2xl font-semibold text-cinder-950">@_summary.DecryptFailureCount</p>
+                    </article>
+
+                    <article class="shell-subpanel rounded-[1.6rem] p-5">
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Persistent storage</p>
+                        <p class="mt-3 text-lg font-semibold text-cinder-950">@GetPersistentStorageLabel()</p>
+                        <p class="mt-2 text-sm text-cinder-800/72">KDF: @DisplayValue(_vaultSnapshot.KdfName)</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="shell-panel rounded-[2rem] p-8">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Live channels</p>
+                        <h2 class="mt-2 font-display text-3xl text-cinder-950">Busiest live channels</h2>
+                    </div>
+
+                    <a class="text-sm font-medium text-signal-600 underline underline-offset-4" href="/channels">Open channels</a>
+                </div>
+
+                @if (_summary.ActiveChannels.Count == 0)
+                {
+                    <p class="mt-6 text-sm leading-7 text-cinder-800/78">
+                        No locally projected channels yet. Keep the realtime connection open and wait for live traffic.
+                    </p>
+                }
+                else
+                {
+                    <div class="mt-6 grid gap-4">
+                        @foreach (var channel in _summary.ActiveChannels)
+                        {
+                            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-signal-600">@channel.ChannelKey</p>
+                                        <p class="mt-2 text-sm font-medium text-cinder-950">@DisplayValue(channel.LastPacketType)</p>
+                                    </div>
+
+                                    <div class="text-right text-sm text-cinder-800/72">
+                                        <p>@channel.ObservedPacketCount packets</p>
+                                        <p class="mt-1">@channel.DistinctNodeCount nodes</p>
+                                    </div>
+                                </div>
+
+                                <p class="mt-4 text-sm text-cinder-800/72">@FormatTimestamp(channel.LastObservedAtUtc)</p>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="shell-panel rounded-[2rem] p-8">
+                <div class="flex items-center justify-between gap-4">
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Active nodes</p>
+                        <h2 class="mt-2 font-display text-3xl text-cinder-950">Most observed nodes</h2>
+                    </div>
+
+                    <a class="text-sm font-medium text-signal-600 underline underline-offset-4" href="/nodes">Open nodes</a>
+                </div>
+
+                @if (_summary.ActiveNodes.Count == 0)
+                {
+                    <p class="mt-6 text-sm leading-7 text-cinder-800/78">
+                        No locally projected nodes yet. Messages, node info, telemetry, and position packets will populate this list.
+                    </p>
+                }
+                else
+                {
+                    <div class="mt-6 grid gap-4">
+                        @foreach (var node in _summary.ActiveNodes)
+                        {
+                            <article class="shell-subpanel rounded-[1.6rem] p-5">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-signal-600">@node.DisplayName</p>
+                                        <p class="mt-2 text-sm text-cinder-800/72">@node.NodeId</p>
+                                        <p class="mt-2 text-sm font-medium text-cinder-950">@DisplayValue(node.Channel)</p>
+                                    </div>
+
+                                    <div class="text-right text-sm text-cinder-800/72">
+                                        <p>@node.ObservedPacketCount packets</p>
+                                        <p class="mt-1">@GetNodeFlags(node)</p>
+                                    </div>
+                                </div>
+
+                                <p class="mt-4 text-sm text-cinder-800/72">@FormatTimestamp(node.LastHeardAtUtc)</p>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+
+    </div>
+}
+
+@code {
+    private string? _commandError;
+    private RealtimeClientSnapshot _realtimeSnapshot = new();
+    private ClientDashboardSummary _summary = new();
+    private VaultStatusSnapshot _vaultSnapshot = new();
+
+    protected override void OnInitialized()
+    {
+        AuthSessionState.Changed += HandleDashboardStateChanged;
+        RealtimeClientState.Changed += HandleDashboardStateChanged;
+        LiveMessageFeedService.Changed += HandleDashboardStateChanged;
+        DecryptedMessageStore.Changed += HandleDashboardStateChanged;
+        NodeProjectionStore.Changed += HandleDashboardStateChanged;
+        ChannelProjectionStore.Changed += HandleDashboardStateChanged;
+        VaultSessionState.Changed += HandleDashboardStateChanged;
+        RefreshDashboardState();
+    }
+
+    public void Dispose()
+    {
+        AuthSessionState.Changed -= HandleDashboardStateChanged;
+        RealtimeClientState.Changed -= HandleDashboardStateChanged;
+        LiveMessageFeedService.Changed -= HandleDashboardStateChanged;
+        DecryptedMessageStore.Changed -= HandleDashboardStateChanged;
+        NodeProjectionStore.Changed -= HandleDashboardStateChanged;
+        ChannelProjectionStore.Changed -= HandleDashboardStateChanged;
+        VaultSessionState.Changed -= HandleDashboardStateChanged;
+    }
+
+    private string ConnectLabel => _realtimeSnapshot.IsConnecting
+        ? "Opening..."
+        : _realtimeSnapshot.IsConnected
+            ? "Connected"
+            : "Open realtime";
+
+    private string DisconnectLabel => _realtimeSnapshot.IsDisconnecting
+        ? "Disconnecting..."
+        : "Disconnect";
+
+    private async Task ConnectAsync()
+    {
+        _commandError = null;
+
+        try
+        {
+            await BrowserRealtimeClient.ConnectAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            _commandError = exception.Message;
+        }
+    }
+
+    private async Task DisconnectAsync()
+    {
+        _commandError = null;
+
+        try
+        {
+            await BrowserRealtimeClient.DisconnectAsync();
+        }
+        catch (InvalidOperationException exception)
+        {
+            _commandError = exception.Message;
+        }
+    }
+
+    private static string GetNodeFlags(ClientDashboardNodeSummary node)
+    {
+        if (node.HasLocation && node.HasTelemetry)
+        {
+            return "location + telemetry";
+        }
+
+        if (node.HasLocation)
+        {
+            return "location";
+        }
+
+        if (node.HasTelemetry)
+        {
+            return "telemetry";
+        }
+
+        return "basic traffic only";
+    }
+
+    private string GetPersistentStorageLabel()
+    {
+        if (!_vaultSnapshot.PersistentStorageSupported)
+        {
+            return "Not supported";
+        }
+
+        return _vaultSnapshot.PersistentStorageGranted
+            ? "Granted"
+            : "Available";
+    }
+
+    private string GetVaultStatusLabel()
+    {
+        if (_vaultSnapshot.IsUnlocked)
+        {
+            return "Unlocked";
+        }
+
+        if (_vaultSnapshot.HasVault)
+        {
+            return "Locked";
+        }
+
+        return "Not configured";
+    }
+
+    private void HandleDashboardStateChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            RefreshDashboardState();
+            StateHasChanged();
+        });
+    }
+
+    private void RefreshDashboardState()
+    {
+        _realtimeSnapshot = RealtimeClientState.Snapshot;
+        _vaultSnapshot = VaultSessionState.Snapshot;
+        _summary = DashboardSummaryBuilder.Build(
+            _realtimeSnapshot,
+            LiveMessageFeedService.Current,
+            DecryptedMessageStore.Current,
+            NodeProjectionStore.Current,
+            ChannelProjectionStore.Current);
+    }
+
+    private static string DisplayValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "Not set" : value;
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "Not available";
+    }
+
+    private static string GetConnectionDotClass(RealtimeClientSnapshot snapshot)
+    {
+        if (snapshot.IsConnected) return "status-dot-connected";
+        if (snapshot.IsConnecting) return "status-dot-connecting";
+        return "status-dot-disconnected";
+    }
+}

@@ -9,7 +9,6 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 {
     private readonly IHostApplicationLifetime _applicationLifetime;
     private readonly IBrokerRuntimeBootstrapService _brokerRuntimeBootstrapService;
-    private readonly MeshtasticInboundMessageQueue _inboundMessageQueue;
     private readonly IWorkspaceBrokerSessionManager _brokerSessionManager;
     private readonly ILogger<MeshtasticMqttHostedService> _logger;
     private readonly CancellationTokenSource _stoppingTokenSource = new();
@@ -17,13 +16,11 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
     public MeshtasticMqttHostedService(
         IBrokerRuntimeBootstrapService brokerRuntimeBootstrapService,
-        MeshtasticInboundMessageQueue inboundMessageQueue,
         IWorkspaceBrokerSessionManager brokerSessionManager,
         IHostApplicationLifetime applicationLifetime,
         ILogger<MeshtasticMqttHostedService> logger)
     {
         _brokerRuntimeBootstrapService = brokerRuntimeBootstrapService;
-        _inboundMessageQueue = inboundMessageQueue;
         _brokerSessionManager = brokerSessionManager;
         _applicationLifetime = applicationLifetime;
         _logger = logger;
@@ -31,8 +28,6 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _brokerSessionManager.MessageReceived += OnMessageReceived;
-
         _applicationLifetime.ApplicationStarted.Register(
             () => _startupTask = Task.Run(() => ConnectAndSubscribeAsync(_stoppingTokenSource.Token), CancellationToken.None));
 
@@ -42,8 +37,6 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _stoppingTokenSource.Cancel();
-        _brokerSessionManager.MessageReceived -= OnMessageReceived;
-        _inboundMessageQueue.Complete();
 
         if (_startupTask is not null)
         {
@@ -77,25 +70,5 @@ internal sealed class MeshtasticMqttHostedService : IHostedService
                 exception,
                 "The Meshtastic MQTT hosted service could not connect and subscribe during startup");
         }
-    }
-
-    private Task OnMessageReceived(MeshBoard.Contracts.Meshtastic.MqttInboundMessage inboundMessage)
-    {
-        if (!_inboundMessageQueue.TryEnqueue(inboundMessage))
-        {
-            var snapshot = _inboundMessageQueue.GetSnapshot(inboundMessage.WorkspaceId);
-            var shouldLog = snapshot.DroppedCount == 1 || snapshot.DroppedCount % 100 == 0;
-
-            if (shouldLog)
-            {
-                _logger.LogWarning(
-                    "Dropping Meshtastic inbound message for workspace {WorkspaceId} because the inbound queue is full. Depth: {QueueDepth}; Dropped: {DroppedCount}",
-                    inboundMessage.WorkspaceId,
-                    snapshot.CurrentDepth,
-                    snapshot.DroppedCount);
-            }
-        }
-
-        return Task.CompletedTask;
     }
 }

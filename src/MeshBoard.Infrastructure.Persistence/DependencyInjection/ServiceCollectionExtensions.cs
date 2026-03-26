@@ -4,52 +4,115 @@ using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Persistence.Context;
 using MeshBoard.Infrastructure.Persistence.Initialization;
 using MeshBoard.Infrastructure.Persistence.Repositories;
-using MeshBoard.Infrastructure.Persistence.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace MeshBoard.Infrastructure.Persistence.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddPersistenceInfrastructure(
+    public static IServiceCollection AddProductPersistenceInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var provider = configuration.GetSection(PersistenceOptions.SectionName).GetValue<string>("Provider");
+        AddPersistenceOptions(services, configuration);
+        var provider = GetProvider(configuration);
 
-        if (!string.Equals(provider, "SQLite", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new NotSupportedException(
-                $"The configured persistence provider '{provider}' is not supported yet. Only SQLite is implemented.");
-        }
+        EnsurePostgreSqlProvider(provider, "product");
+        EnsureSharedPostgreSqlInfrastructure(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPersistenceInitializer, PostgresDatabaseInitializer>());
+        RegisterProductRepositories(services);
+        EnsurePersistenceInitializationHostedService(services);
 
+        return services;
+    }
+
+    public static IServiceCollection AddCollectorPersistenceInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        AddPersistenceOptions(services, configuration);
+        var provider = GetProvider(configuration);
+        EnsurePostgreSqlProvider(provider, "collector");
+        EnsureSharedPostgreSqlInfrastructure(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPersistenceInitializer, PostgresCollectorSchemaInitializer>());
+        RegisterCollectorPersistenceRepositories(services);
+        EnsurePersistenceInitializationHostedService(services);
+
+        return services;
+    }
+
+    public static IServiceCollection AddCollectorReadPersistenceInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        AddPersistenceOptions(services, configuration);
+        var provider = GetProvider(configuration);
+        EnsurePostgreSqlProvider(provider, "collector read");
+        EnsureSharedPostgreSqlInfrastructure(services);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IPersistenceInitializer, PostgresCollectorSchemaInitializer>());
+        RegisterCollectorReadRepositories(services);
+        EnsurePersistenceInitializationHostedService(services);
+
+        return services;
+    }
+
+    private static void AddPersistenceOptions(IServiceCollection services, IConfiguration configuration)
+    {
         services
             .AddOptions<PersistenceOptions>()
             .Bind(configuration.GetSection(PersistenceOptions.SectionName));
+    }
 
-        services
-            .AddOptions<BrokerOptions>()
-            .Bind(configuration.GetSection(BrokerOptions.SectionName));
+    private static string GetProvider(IConfiguration configuration)
+    {
+        return configuration.GetSection(PersistenceOptions.SectionName).GetValue<string>("Provider") ?? "PostgreSQL";
+    }
 
-        services.AddScoped<DapperContext>();
-        services.AddScoped<IDbContext>(provider => provider.GetRequiredService<DapperContext>());
-        services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<DapperContext>());
-        services.AddScoped<IBrokerServerProfileRepository, BrokerServerProfileRepository>();
-        services.AddScoped<IDiscoveredTopicRepository, DiscoveredTopicRepository>();
+    private static void RegisterProductRepositories(IServiceCollection services)
+    {
+        services.AddScoped<IBrokerServerProfileRepository, ProductBrokerServerProfileRepository>();
         services.AddScoped<IFavoriteNodeRepository, FavoriteNodeRepository>();
-        services.AddScoped<IMessageRepository, MessageRepository>();
-        services.AddScoped<INodeRepository, NodeRepository>();
-        services.AddSingleton<IProjectionChangeRepository, SqliteProjectionChangeRepository>();
-        services.AddScoped<ISubscriptionIntentRepository, SubscriptionIntentRepository>();
-        services.AddScoped<ITopicPresetRepository, TopicPresetRepository>();
         services.AddScoped<IUserAccountRepository, UserAccountRepository>();
-        services.AddSingleton<IBrokerRuntimeCommandRepository, SqliteBrokerRuntimeCommandRepository>();
-        services.AddSingleton<IBrokerRuntimeRegistry, SqliteBrokerRuntimeRegistry>();
+    }
 
-        services.AddSingleton<SqliteDatabaseInitializer>();
-        services.AddHostedService<PersistenceInitializationHostedService>();
+    private static void RegisterCollectorPersistenceRepositories(IServiceCollection services)
+    {
+        services.AddScoped<CollectorChannelResolver>();
+        services.AddScoped<IBrokerServerProfileRepository, CollectorBrokerServerProfileRepository>();
+        services.AddScoped<ICollectorPacketRollupRepository, CollectorPacketRollupRepository>();
+        services.AddScoped<IDiscoveredTopicRepository, CollectorDiscoveredTopicRepository>();
+        services.AddScoped<IMessageRepository, CollectorMessageRepository>();
+        services.AddScoped<INeighborLinkRepository, CollectorNeighborLinkRepository>();
+        services.AddScoped<INodeRepository, CollectorNodeRepository>();
+    }
 
-        return services;
+    private static void RegisterCollectorReadRepositories(IServiceCollection services)
+    {
+        services.AddScoped<ICollectorReadRepository, CollectorReadRepository>();
+    }
+
+    private static void EnsureSharedPostgreSqlInfrastructure(IServiceCollection services)
+    {
+        services.TryAddSingleton<IPersistenceConnectionFactory, PostgresPersistenceConnectionFactory>();
+        services.TryAddScoped<DapperContext>();
+        services.TryAddScoped<IDbContext>(provider => provider.GetRequiredService<DapperContext>());
+        services.TryAddScoped<IUnitOfWork>(provider => provider.GetRequiredService<DapperContext>());
+    }
+
+    private static void EnsurePersistenceInitializationHostedService(IServiceCollection services)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PersistenceInitializationHostedService>());
+    }
+
+    private static void EnsurePostgreSqlProvider(string provider, string surfaceName)
+    {
+        if (provider.Trim().ToLowerInvariant() is not ("postgres" or "postgresql"))
+        {
+            throw new NotSupportedException(
+                $"The configured persistence provider '{provider}' is not supported for the {surfaceName} path. Only PostgreSQL is implemented.");
+        }
     }
 }

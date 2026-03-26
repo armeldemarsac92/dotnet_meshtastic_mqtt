@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeshBoard.Application\MeshBoard.Application.csproj" />
+    <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Persistence\MeshBoard.Infrastructure.Persistence.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

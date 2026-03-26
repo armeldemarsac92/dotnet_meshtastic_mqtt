@@ -2,7 +2,6 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
-using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
 
 namespace MeshBoard.Application.Services;
@@ -12,6 +11,8 @@ public interface IBrokerServerProfileService
     Task<IReadOnlyCollection<BrokerServerProfile>> GetServerProfiles(CancellationToken cancellationToken = default);
 
     Task<BrokerServerProfile> GetActiveServerProfile(CancellationToken cancellationToken = default);
+
+    Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default);
 
     Task<BrokerServerProfile> SaveServerProfile(
         SaveBrokerServerProfileRequest request,
@@ -57,6 +58,11 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
         throw new NotFoundException("No active broker server profile is configured.");
     }
 
+    public Task<BrokerServerProfile?> GetServerProfileById(Guid profileId, CancellationToken cancellationToken = default)
+    {
+        return _repository.GetByIdAsync(GetWorkspaceId(), profileId, cancellationToken);
+    }
+
     public async Task<BrokerServerProfile> SaveServerProfile(
         SaveBrokerServerProfileRequest request,
         CancellationToken cancellationToken = default)
@@ -83,19 +89,9 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             throw new BadRequestException("Server port must be between 1 and 65535.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.DefaultTopicPattern))
-        {
-            throw new BadRequestException("A default topic pattern is required.");
-        }
-
         if (string.IsNullOrWhiteSpace(request.DownlinkTopic))
         {
             throw new BadRequestException("A downlink topic is required.");
-        }
-
-        if (!TopicEncryptionKey.TryParse(request.DefaultEncryptionKeyBase64, out _))
-        {
-            throw new BadRequestException("Default encryption key must be valid base64 or hexadecimal AES key.");
         }
 
         var normalizedRequest = new SaveBrokerServerProfileRequest
@@ -107,8 +103,6 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             UseTls = request.UseTls,
             Username = request.Username.Trim(),
             Password = request.Password,
-            DefaultTopicPattern = request.DefaultTopicPattern.Trim(),
-            DefaultEncryptionKeyBase64 = TopicEncryptionKey.NormalizeToBase64OrNull(request.DefaultEncryptionKeyBase64)!,
             DownlinkTopic = request.DownlinkTopic.Trim(),
             EnableSend = request.EnableSend,
             IsActive = request.IsActive
@@ -182,8 +176,6 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             UseTls = request.UseTls,
             Username = request.Username,
             Password = request.Password,
-            DefaultTopicPattern = request.DefaultTopicPattern,
-            DefaultEncryptionKeyBase64 = request.DefaultEncryptionKeyBase64,
             DownlinkTopic = request.DownlinkTopic,
             EnableSend = request.EnableSend,
             IsActive = request.IsActive

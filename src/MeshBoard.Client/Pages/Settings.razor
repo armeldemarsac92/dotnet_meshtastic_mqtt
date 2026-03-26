@@ -1,0 +1,1257 @@
+@page "/settings"
+@attribute [Authorize]
+@inject AuthApiClient AuthApiClient
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject BrokerPreferenceApiClient BrokerPreferenceApiClient
+@inject IJSRuntime JS
+@inject FavoritePreferenceApiClient FavoritePreferenceApiClient
+@inject LocalVaultService LocalVaultService
+@inject NavigationManager Navigation
+@inject VaultSessionState VaultSessionState
+
+<PageTitle>Settings</PageTitle>
+
+<div class="grid gap-6">
+    <section class="shell-panel rounded-[2rem] p-8">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
+                <h1 class="mt-2 font-display text-4xl text-cinder-950">Saved servers</h1>
+                <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
+                    These values come from the API-safe server read model. Servers own connection metadata. Password values and
+                    client decryption keys are intentionally excluded.
+                </p>
+            </div>
+
+            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    @onclick="ReloadAsync"
+                    disabled="@_isLoading">
+                Refresh
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_brokerCommandError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_brokerCommandError</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_brokerCommandSuccess))
+        {
+            <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_brokerCommandSuccess</p>
+        }
+
+        <div class="mt-6">
+            <button class="shell-button shell-button-accent rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    @onclick="StartNewBrokerAsync"
+                    disabled="@(_isSavingBroker || _isLoading)">
+                Add server
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_loadError))
+        {
+            <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_loadError</p>
+        }
+        else if (_isLoading)
+        {
+            <p class="mt-6 text-sm text-cinder-800/72">Loading server profiles...</p>
+        }
+        else if (_brokers.Count == 0)
+        {
+            <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
+                No server profiles are currently stored for this workspace.
+            </div>
+        }
+        else
+        {
+            <div class="mt-6 grid gap-4">
+                @foreach (var broker in _brokers)
+                {
+                    <article class="shell-subpanel rounded-[1.7rem] p-5">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <h2 class="font-display text-2xl text-cinder-950">@broker.Name</h2>
+                                @if (broker.IsActive)
+                                {
+                                    <span class="rounded-full border border-signal-200 bg-signal-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-signal-700">
+                                        Active
+                                    </span>
+                                }
+                            </div>
+
+                            <div class="flex flex-wrap gap-2">
+                                <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                        @onclick="() => EditBrokerAsync(broker)"
+                                        disabled="@(_isSavingBroker || _isActivatingBroker || _isLoading)">
+                                    Edit
+                                </button>
+                                @if (!broker.IsActive)
+                                {
+                                    <button class="shell-button shell-button-accent rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                            @onclick="() => ActivateBrokerAsync(broker)"
+                                            disabled="@(_isSavingBroker || _isActivatingBroker || _isLoading)">
+                                        @(_activatingBrokerId == broker.Id ? "Activating..." : "Set active")
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </section>
+</div>
+
+@if (_isBrokerPanelOpen)
+{
+    <div class="fixed inset-0 z-[60] flex items-center justify-center bg-cinder-950/45 p-4 pb-[5.5rem] backdrop-blur-sm lg:pb-4"
+         @onclick="CloseBrokerPanelAsync">
+        <article class="shell-panel flex max-h-[calc(100dvh-8rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[1.8rem] lg:max-h-[92vh]"
+                 @onclick:stopPropagation="true">
+            <header class="flex items-center justify-between gap-4 border-b border-sand-100/80 px-5 py-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Server editor</p>
+                    <h2 class="mt-1 font-display text-2xl text-cinder-950">@BrokerEditorTitle</h2>
+                </div>
+
+                <button type="button"
+                        class="shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="CloseBrokerPanelAsync">
+                    Close
+                </button>
+            </header>
+
+            <div class="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4">
+                @if (!string.IsNullOrWhiteSpace(_brokerCommandError))
+                {
+                    <p class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_brokerCommandError</p>
+                }
+
+                <EditForm class="grid gap-4" Model="_brokerForm" OnValidSubmit="SaveBrokerAsync">
+                    <DataAnnotationsValidator />
+
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Name</span>
+                            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                       @bind-Value="_brokerForm.Name" />
+                            <ValidationMessage For="() => _brokerForm.Name" />
+                        </label>
+
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Host</span>
+                            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                       @bind-Value="_brokerForm.Host" />
+                            <ValidationMessage For="() => _brokerForm.Host" />
+                        </label>
+                    </div>
+
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Port</span>
+                            <InputNumber class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                         @bind-Value="_brokerForm.Port" />
+                            <ValidationMessage For="() => _brokerForm.Port" />
+                        </label>
+
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Username</span>
+                            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                       @bind-Value="_brokerForm.Username" />
+                        </label>
+                    </div>
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Downlink topic</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   @bind-Value="_brokerForm.DownlinkTopic" />
+                        <ValidationMessage For="() => _brokerForm.DownlinkTopic" />
+                    </label>
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Password</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   type="password"
+                                   @bind-Value="_brokerForm.Password" />
+                    </label>
+
+                    @if (_editingBrokerHasPasswordConfigured)
+                    {
+                        <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
+                            <InputCheckbox class="size-4 rounded border-slate-300"
+                                           @bind-Value="_brokerForm.ClearPassword" />
+                            <span>Clear the currently stored server password.</span>
+                        </label>
+                    }
+
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
+                            <InputCheckbox class="size-4 rounded border-slate-300"
+                                           @bind-Value="_brokerForm.UseTls" />
+                            <span>Use TLS for the upstream server connection.</span>
+                        </label>
+
+                        <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-cinder-800/82">
+                            <InputCheckbox class="size-4 rounded border-slate-300"
+                                           @bind-Value="_brokerForm.EnableSend" />
+                            <span>Allow downlink send features for this server.</span>
+                        </label>
+                    </div>
+
+                    <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                        <button type="button"
+                                class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="ResetBrokerEditor"
+                                disabled="@(_isSavingBroker || _isLoading)">
+                            Reset
+                        </button>
+
+                        <button type="submit"
+                                class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                disabled="@(_isSavingBroker || _isLoading)">
+                            @(_isSavingBroker ? "Saving..." : BrokerSubmitLabel)
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </article>
+    </div>
+}
+
+<section class="shell-panel mt-6 rounded-[2rem] p-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Local vault</p>
+            <h2 class="mt-2 font-display text-3xl text-cinder-950">Client-side key vault</h2>
+            <p class="mt-3 max-w-3xl text-sm leading-7 text-cinder-800/82">
+                This bootstrap stores only a passphrase-protected local vault envelope in the browser. Decryption keys remain local to the device, the vault locks on logout, and browser persistence is requested explicitly because storage can still be evicted if the browser declines it.
+            </p>
+        </div>
+
+        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                @onclick="RequestPersistentStorageAsync"
+                disabled="@(_isVaultRequestingPersistence || !VaultSessionState.Snapshot.PersistentStorageSupported)">
+            @(_isVaultRequestingPersistence ? "Requesting..." : "Request persistence")
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_vaultCommandError))
+    {
+        <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_vaultCommandError</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_vaultCommandSuccess))
+    {
+        <p class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">@_vaultCommandSuccess</p>
+    }
+
+    <div class="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <article class="shell-subpanel rounded-[1.7rem] p-5">
+            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Status</p>
+            <h3 class="mt-2 font-display text-2xl text-cinder-950">
+                @(VaultSessionState.Snapshot.HasVault
+                    ? (VaultSessionState.Snapshot.IsUnlocked ? "Vault unlocked" : "Vault locked")
+                    : "Vault not configured")
+            </h3>
+
+            <dl class="mt-5 grid gap-3 text-sm text-cinder-800/82">
+                <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                    <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Persistent storage</dt>
+                    <dd class="mt-2 font-medium text-cinder-950">
+                        @if (!VaultSessionState.Snapshot.PersistentStorageSupported)
+                        {
+                            <span>Not supported in this browser context</span>
+                        }
+                        else if (VaultSessionState.Snapshot.PersistentStorageGranted)
+                        {
+                            <span>Granted</span>
+                        }
+                        else
+                        {
+                            <span>Best effort only</span>
+                        }
+                    </dd>
+                </div>
+
+                <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                    <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Stored keys</dt>
+                    <dd class="mt-2 font-medium text-cinder-950">@VaultSessionState.Snapshot.StoredKeyCount</dd>
+                </div>
+
+                <div class="rounded-2xl border border-white/70 bg-white/70 px-4 py-3">
+                    <dt class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">KDF bootstrap</dt>
+                    <dd class="mt-2 font-medium text-cinder-950">@DisplayValue(VaultSessionState.Snapshot.KdfName)</dd>
+                </div>
+            </dl>
+
+            @if (VaultSessionState.Snapshot.HasVault && VaultSessionState.Snapshot.IsUnlocked)
+            {
+                <button class="shell-button mt-5 rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                        @onclick="LockVaultAsync"
+                        disabled="@_isVaultLocking">
+                    @(_isVaultLocking ? "Locking..." : "Lock vault")
+                </button>
+            }
+        </article>
+
+        <article class="shell-subpanel rounded-[1.7rem] p-5">
+            @if (!VaultSessionState.Snapshot.HasVault)
+            {
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Create vault</p>
+                    <h3 class="mt-2 font-display text-2xl text-cinder-950">Dedicated local passphrase</h3>
+                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                        This passphrase is local to the browser vault and is not reused from the API login. The current bootstrap stores only the locked vault envelope so later key-import slices can reuse it without redesigning storage.
+                    </p>
+                </div>
+
+                <EditForm class="mt-6 grid gap-4" Model="_vaultCreateForm" OnValidSubmit="CreateVaultAsync">
+                    <DataAnnotationsValidator />
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Passphrase</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   type="password"
+                                   @bind-Value="_vaultCreateForm.Passphrase" />
+                        <ValidationMessage For="() => _vaultCreateForm.Passphrase" />
+                    </label>
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Confirm passphrase</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   type="password"
+                                   @bind-Value="_vaultCreateForm.ConfirmPassphrase" />
+                        <ValidationMessage For="() => _vaultCreateForm.ConfirmPassphrase" />
+                    </label>
+
+                    <button type="submit"
+                            class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            disabled="@_isVaultCreating">
+                        @(_isVaultCreating ? "Creating..." : "Create vault")
+                    </button>
+                </EditForm>
+            }
+            else if (VaultSessionState.Snapshot.IsLocked)
+            {
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Unlock vault</p>
+                    <h3 class="mt-2 font-display text-2xl text-cinder-950">Unlock local secrets</h3>
+                    <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                        Unlock happens locally in the browser. The passphrase is not sent to the API and is cleared from the UI form after each attempt.
+                    </p>
+                </div>
+
+                <EditForm class="mt-6 grid gap-4" Model="_vaultUnlockForm" OnValidSubmit="UnlockVaultAsync">
+                    <DataAnnotationsValidator />
+
+                    <label class="block space-y-2">
+                        <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Passphrase</span>
+                        <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                   type="password"
+                                   @bind-Value="_vaultUnlockForm.Passphrase" />
+                        <ValidationMessage For="() => _vaultUnlockForm.Passphrase" />
+                    </label>
+
+                    <button type="submit"
+                            class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                            disabled="@_isVaultUnlocking">
+                        @(_isVaultUnlocking ? "Unlocking..." : "Unlock vault")
+                    </button>
+                </EditForm>
+            }
+            else
+            {
+                <div>
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Local key records</p>
+                            <h3 class="mt-2 font-display text-2xl text-cinder-950">@VaultKeyEditorTitle</h3>
+                            <p class="mt-2 text-sm leading-7 text-cinder-800/78">
+                                Wrapped Meshtastic keys are stored locally in IndexedDB only after being encrypted with the unlocked vault session key. Editing metadata does not require re-entering the key; enter a new key value only when rotating it.
+                            </p>
+                        </div>
+
+                        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="ResetVaultKeyEditor"
+                                disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                            New record
+                        </button>
+                    </div>
+
+                    <EditForm class="mt-6 grid gap-4" Model="_vaultKeyForm" OnValidSubmit="SaveVaultKeyAsync">
+                        <DataAnnotationsValidator />
+
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <label class="block space-y-2">
+                                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Label</span>
+                                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                           @bind-Value="_vaultKeyForm.Name" />
+                                <ValidationMessage For="() => _vaultKeyForm.Name" />
+                            </label>
+
+                            <label class="block space-y-2">
+                                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Server scope</span>
+                                <InputSelect class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                             @bind-Value="_vaultKeyForm.BrokerServerProfileId">
+                                    <option value="">All local server scopes</option>
+                                    @foreach (var broker in _brokers.OrderByDescending(item => item.IsActive).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@broker.Id.ToString()">@broker.Name</option>
+                                    }
+                                </InputSelect>
+                            </label>
+                        </div>
+
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Topic pattern</span>
+                            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                       @bind-Value="_vaultKeyForm.TopicPattern" />
+                            <ValidationMessage For="() => _vaultKeyForm.TopicPattern" />
+                        </label>
+
+                        <label class="block space-y-2">
+                            <span class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Meshtastic key</span>
+                            <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                                       type="password"
+                                       @bind-Value="_vaultKeyForm.KeyValue" />
+                            <span class="text-xs leading-6 text-cinder-800/72">
+                                Base64 or hex. Leave blank only when editing metadata for an existing local record.
+                            </span>
+                        </label>
+
+                        <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                            <button type="button"
+                                    class="shell-button rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                    @onclick="ResetVaultKeyEditor"
+                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                Reset
+                            </button>
+
+                            <button type="submit"
+                                    class="shell-button shell-button-accent rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                @(_isSavingVaultKey ? "Saving..." : VaultKeySubmitLabel)
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    @if (_vaultKeyRecords.Count == 0)
+                    {
+                        <div class="mt-6 rounded-2xl border border-white/70 bg-white/70 px-4 py-4 text-sm leading-7 text-cinder-800/78">
+                            No wrapped Meshtastic keys are stored locally yet.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mt-6 grid gap-4">
+                            @foreach (var keyRecord in _vaultKeyRecords)
+                            {
+                                <article class="rounded-2xl border border-white/70 bg-white/70 px-4 py-4 text-sm text-cinder-800/82">
+                                    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                        <div class="space-y-2">
+                                            <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@keyRecord.TopicPattern</p>
+                                            <h4 class="font-display text-2xl text-cinder-950">@keyRecord.Name</h4>
+                                            <p>
+                                                Server scope: <span class="font-medium text-cinder-950">@DisplayServerName(keyRecord.BrokerServerProfileId)</span>
+                                            </p>
+                                            <p>
+                                                Key length: <span class="font-medium text-cinder-950">@keyRecord.KeyLengthBytes bytes</span>
+                                            </p>
+                                        </div>
+
+                                        <div class="flex flex-wrap gap-2">
+                                            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                                    @onclick="() => EditVaultKey(keyRecord)"
+                                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                                Edit
+                                            </button>
+                                            <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                                    @onclick="() => RemoveVaultKeyAsync(keyRecord)"
+                                                    disabled="@(_isSavingVaultKey || _isVaultRemovingKey)">
+                                                @(string.Equals(_removingVaultKeyRecordId, keyRecord.Id, StringComparison.Ordinal) ? "Removing..." : "Remove")
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <p class="mt-4 text-xs uppercase tracking-[0.18em] text-cinder-800/60">
+                                        Created @keyRecord.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm") • Updated @keyRecord.UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                                    </p>
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </article>
+    </div>
+</section>
+
+<section class="shell-panel mt-6 rounded-[2rem] p-8">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Preferences</p>
+            <h2 class="mt-2 font-display text-3xl text-cinder-950">Favorite nodes</h2>
+            <p class="mt-3 max-w-2xl text-sm leading-7 text-cinder-800/82">
+                Favorited nodes are highlighted in the Nodes page and can be used as a filter. Favorites are workspace-scoped and synced to the API.
+            </p>
+        </div>
+
+        <button class="shell-button rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                @onclick="ReloadFavoritesAsync"
+                disabled="@_isFavoritesLoading">
+            Refresh
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_favoritesError))
+    {
+        <p class="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_favoritesError</p>
+    }
+
+    <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5">
+        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">Add favorite</p>
+        <EditForm class="mt-4 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]" Model="_favoriteForm" OnValidSubmit="SaveFavoriteAsync">
+            <DataAnnotationsValidator />
+            <label class="block space-y-1.5">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Node id</span>
+                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                           @bind-Value="_favoriteForm.NodeId"
+                           placeholder="!abc12345" />
+                <ValidationMessage For="() => _favoriteForm.NodeId" />
+            </label>
+            <label class="block space-y-1.5">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Short name</span>
+                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                           @bind-Value="_favoriteForm.ShortName" />
+            </label>
+            <label class="block space-y-1.5">
+                <span class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Long name</span>
+                <InputText class="shell-input w-full rounded-2xl px-4 py-3 text-sm text-cinder-950"
+                           @bind-Value="_favoriteForm.LongName" />
+            </label>
+            <button type="submit"
+                    class="shell-button shell-button-accent self-end rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                    disabled="@_isSavingFavorite">
+                @(_isSavingFavorite ? "Saving..." : "Save")
+            </button>
+        </EditForm>
+    </div>
+
+    @if (_isFavoritesLoading)
+    {
+        <p class="mt-6 text-sm text-cinder-800/72">Loading favorites...</p>
+    }
+    else if (_favorites.Count == 0)
+    {
+        <div class="shell-subpanel mt-6 rounded-[1.7rem] p-5 text-sm leading-7 text-cinder-800/78">
+            No favorites saved yet for this workspace.
+        </div>
+    }
+    else
+    {
+        <div class="mt-6 grid gap-4">
+            @foreach (var favorite in _favorites)
+            {
+                <article class="shell-subpanel flex flex-col gap-4 rounded-[1.7rem] p-5 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="space-y-1">
+                        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@favorite.NodeId</p>
+                        <p class="font-display text-xl text-cinder-950">
+                            @(string.IsNullOrWhiteSpace(favorite.ShortName) ? "Unnamed" : favorite.ShortName)
+                        </p>
+                        @if (!string.IsNullOrWhiteSpace(favorite.LongName))
+                        {
+                            <p class="text-sm text-cinder-800/80">@favorite.LongName</p>
+                        }
+                    </div>
+                    <button class="shell-button shrink-0 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                            @onclick="() => RemoveFavoriteAsync(favorite.NodeId)"
+                            disabled="@_isDeletingFavorite">
+                        Remove
+                    </button>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="shell-panel mt-6 rounded-[2rem] p-8">
+    <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.28em] text-signal-600">Session</p>
+        <h2 class="mt-2 font-display text-3xl text-cinder-950">Account</h2>
+    </div>
+
+    <div class="mt-6 shell-subpanel rounded-[1.7rem] p-5">
+        @if (!string.IsNullOrWhiteSpace(_username))
+        {
+            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-cinder-800/60">Signed in as</p>
+            <p class="mt-2 text-xl font-semibold text-cinder-950">@_username</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_logoutError))
+        {
+            <p class="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">@_logoutError</p>
+        }
+
+        <button class="shell-button mt-5 rounded-full px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                @onclick="LogoutAsync"
+                disabled="@_isSigningOut">
+            @(_isSigningOut ? "Signing out..." : "Sign out")
+        </button>
+    </div>
+</section>
+
+@code {
+    private readonly List<SavedBrokerServerProfile> _brokers = [];
+    private readonly List<LocalVaultKeyRecordSummary> _vaultKeyRecords = [];
+    private BrokerFormModel _brokerForm = BrokerFormModel.CreateDefault();
+    private VaultCreateFormModel _vaultCreateForm = VaultCreateFormModel.CreateDefault();
+    private VaultKeyFormModel _vaultKeyForm = VaultKeyFormModel.CreateDefault();
+    private VaultUnlockFormModel _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+    private Guid? _activatingBrokerId;
+    private Guid? _editingBrokerId;
+    private bool _editingBrokerHasPasswordConfigured;
+    private bool _isBrokerPanelOpen;
+    private bool _isLoading = true;
+    private bool _isActivatingBroker;
+    private bool _isSavingBroker;
+    private bool _isSavingVaultKey;
+    private bool _isVaultCreating;
+    private bool _isVaultRemovingKey;
+    private bool _isVaultLocking;
+    private bool _isVaultRequestingPersistence;
+    private bool _isVaultUnlocking;
+    private string? _editingVaultKeyRecordId;
+    private string? _removingVaultKeyRecordId;
+    private string? _brokerCommandError;
+    private string? _brokerCommandSuccess;
+    private string? _loadError;
+    private string? _vaultCommandError;
+    private string? _vaultCommandSuccess;
+
+    private string BrokerEditorTitle => _editingBrokerId is null ? "Create server profile" : "Edit server profile";
+
+    private string BrokerSubmitLabel => _editingBrokerId is null ? "Create server" : "Save server";
+
+    private string VaultKeyEditorTitle => _editingVaultKeyRecordId is null ? "Add local key record" : "Edit local key record";
+
+    private string VaultKeySubmitLabel => _editingVaultKeyRecordId is null ? "Add key record" : "Save key record";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadAsync(), LoadFavoritesAsync(), LoadUsernameAsync());
+    }
+
+    private static string DisplayValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "Not configured" : value;
+    }
+
+    private static BrokerFormModel CreateBrokerForm(SavedBrokerServerProfile broker)
+    {
+        return new BrokerFormModel
+        {
+            Name = broker.Name,
+            Host = broker.Host,
+            Port = broker.Port,
+            UseTls = broker.UseTls,
+            Username = broker.Username,
+            DownlinkTopic = broker.DownlinkTopic,
+            EnableSend = broker.EnableSend
+        };
+    }
+
+    private string DisplayServerName(Guid? brokerServerProfileId)
+    {
+        if (brokerServerProfileId is null)
+        {
+            return "All local server scopes";
+        }
+
+        var broker = _brokers.FirstOrDefault(item => item.Id == brokerServerProfileId.Value);
+        return broker?.Name ?? brokerServerProfileId.Value.ToString();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _loadError = null;
+
+        try
+        {
+            var brokers = await BrokerPreferenceApiClient.GetAllAsync();
+
+            _brokers.Clear();
+            _brokers.AddRange(brokers.OrderByDescending(item => item.IsActive).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase));
+
+            if (_editingBrokerId is { } editingBrokerId)
+            {
+                var matchingBroker = _brokers.FirstOrDefault(item => item.Id == editingBrokerId);
+                if (matchingBroker is null)
+                {
+                    ResetBrokerEditor();
+                }
+                else
+                {
+                    _editingBrokerHasPasswordConfigured = matchingBroker.HasPasswordConfigured;
+                }
+            }
+
+            await LoadVaultKeyRecordsAsync();
+        }
+        catch (Exception exception)
+        {
+            _loadError = exception.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        await LoadAsync();
+    }
+
+    private VaultKeyFormModel CreateVaultKeyFormDefault()
+    {
+        var activeBroker = _brokers.FirstOrDefault(item => item.IsActive);
+
+        return new VaultKeyFormModel
+        {
+            BrokerServerProfileId = activeBroker?.Id.ToString() ?? string.Empty
+        };
+    }
+
+    private async Task StartNewBrokerAsync()
+    {
+        ResetBrokerEditor();
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+        _isBrokerPanelOpen = true;
+        await JS.InvokeVoidAsync("meshboardUi.lockScroll");
+    }
+
+    private async Task EditBrokerAsync(SavedBrokerServerProfile broker)
+    {
+        _editingBrokerId = broker.Id;
+        _editingBrokerHasPasswordConfigured = broker.HasPasswordConfigured;
+        _brokerForm = CreateBrokerForm(broker);
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+        _isBrokerPanelOpen = true;
+        await JS.InvokeVoidAsync("meshboardUi.lockScroll");
+    }
+
+    private void ResetBrokerEditor()
+    {
+        _editingBrokerId = null;
+        _editingBrokerHasPasswordConfigured = false;
+        _brokerForm = BrokerFormModel.CreateDefault();
+    }
+
+    private async Task CloseBrokerPanelAsync()
+    {
+        _isBrokerPanelOpen = false;
+        ResetBrokerEditor();
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+        await JS.InvokeVoidAsync("meshboardUi.unlockScroll");
+    }
+
+    private async Task SaveBrokerAsync()
+    {
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+        _isSavingBroker = true;
+
+        try
+        {
+            var request = new SaveBrokerPreferenceRequest
+            {
+                Name = _brokerForm.Name.Trim(),
+                Host = _brokerForm.Host.Trim(),
+                Port = _brokerForm.Port,
+                UseTls = _brokerForm.UseTls,
+                Username = _brokerForm.Username.Trim(),
+                Password = string.IsNullOrWhiteSpace(_brokerForm.Password) ? null : _brokerForm.Password,
+                ClearPassword = string.IsNullOrWhiteSpace(_brokerForm.Password) && _brokerForm.ClearPassword,
+                DownlinkTopic = _brokerForm.DownlinkTopic.Trim(),
+                EnableSend = _brokerForm.EnableSend
+            };
+
+            SavedBrokerServerProfile savedProfile;
+
+            if (_editingBrokerId is { } editingBrokerId)
+            {
+                savedProfile = await BrokerPreferenceApiClient.UpdateAsync(editingBrokerId, request);
+                _brokerCommandSuccess = $"Server '{savedProfile.Name}' updated.";
+            }
+            else
+            {
+                savedProfile = await BrokerPreferenceApiClient.CreateAsync(request);
+                _brokerCommandSuccess = $"Server '{savedProfile.Name}' created.";
+            }
+
+            _editingBrokerId = savedProfile.Id;
+            _editingBrokerHasPasswordConfigured = !string.IsNullOrWhiteSpace(request.Password) || (savedProfile.HasPasswordConfigured && !request.ClearPassword);
+            _brokerForm = CreateBrokerForm(savedProfile);
+            _isBrokerPanelOpen = false;
+            await JS.InvokeVoidAsync("meshboardUi.unlockScroll");
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _brokerCommandError = exception.Message;
+        }
+        finally
+        {
+            _isSavingBroker = false;
+        }
+    }
+
+    private async Task ActivateBrokerAsync(SavedBrokerServerProfile broker)
+    {
+        _brokerCommandError = null;
+        _brokerCommandSuccess = null;
+        _isActivatingBroker = true;
+        _activatingBrokerId = broker.Id;
+
+        try
+        {
+            var activeBroker = await BrokerPreferenceApiClient.ActivateAsync(broker.Id);
+            _brokerCommandSuccess = $"Server '{activeBroker.Name}' is now active.";
+            await LoadAsync();
+        }
+        catch (Exception exception)
+        {
+            _brokerCommandError = exception.Message;
+        }
+        finally
+        {
+            _isActivatingBroker = false;
+            _activatingBrokerId = null;
+        }
+    }
+
+    private async Task LoadVaultKeyRecordsAsync()
+    {
+        _vaultKeyRecords.Clear();
+
+        if (!VaultSessionState.Snapshot.IsUnlocked)
+        {
+            ResetVaultKeyEditor();
+            return;
+        }
+
+        var keyRecords = await LocalVaultService.GetKeyRecordsAsync();
+        _vaultKeyRecords.AddRange(keyRecords.OrderByDescending(item => item.UpdatedAtUtc));
+
+        if (_editingVaultKeyRecordId is { } editingVaultKeyRecordId &&
+            _vaultKeyRecords.All(item => !string.Equals(item.Id, editingVaultKeyRecordId, StringComparison.Ordinal)))
+        {
+            ResetVaultKeyEditor();
+        }
+        else if (_editingVaultKeyRecordId is null)
+        {
+            _vaultKeyForm = CreateVaultKeyFormDefault();
+        }
+    }
+
+    private void EditVaultKey(LocalVaultKeyRecordSummary keyRecord)
+    {
+        _editingVaultKeyRecordId = keyRecord.Id;
+        _vaultKeyForm = new VaultKeyFormModel
+        {
+            Name = keyRecord.Name,
+            BrokerServerProfileId = keyRecord.BrokerServerProfileId?.ToString() ?? string.Empty,
+            TopicPattern = keyRecord.TopicPattern
+        };
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+    }
+
+    private async Task CreateVaultAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+
+        if (!string.Equals(_vaultCreateForm.Passphrase, _vaultCreateForm.ConfirmPassphrase, StringComparison.Ordinal))
+        {
+            _vaultCommandError = "The vault passphrase confirmation does not match.";
+            return;
+        }
+
+        _isVaultCreating = true;
+
+        try
+        {
+            await LocalVaultService.CreateVaultAsync(_vaultCreateForm.Passphrase);
+            _vaultCommandSuccess = "The local vault envelope is now stored in the browser.";
+            _vaultCreateForm = VaultCreateFormModel.CreateDefault();
+            _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+            await LoadVaultKeyRecordsAsync();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultCreating = false;
+        }
+    }
+
+    private async Task LockVaultAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultLocking = true;
+
+        try
+        {
+            await LocalVaultService.LockAsync();
+            _vaultCommandSuccess = "The local vault is locked.";
+            _vaultKeyRecords.Clear();
+            ResetVaultKeyEditor();
+            _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultLocking = false;
+        }
+    }
+
+    private async Task RequestPersistentStorageAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultRequestingPersistence = true;
+
+        try
+        {
+            await LocalVaultService.RequestPersistentStorageAsync();
+            _vaultCommandSuccess = VaultSessionState.Snapshot.PersistentStorageGranted
+                ? "Persistent browser storage was granted for the local vault."
+                : "The browser kept the vault in best-effort storage mode.";
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultRequestingPersistence = false;
+        }
+    }
+
+    private async Task UnlockVaultAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultUnlocking = true;
+
+        try
+        {
+            await LocalVaultService.UnlockAsync(_vaultUnlockForm.Passphrase);
+            _vaultCommandSuccess = "The local vault is unlocked for this browser session.";
+            _vaultUnlockForm = VaultUnlockFormModel.CreateDefault();
+            await LoadVaultKeyRecordsAsync();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultUnlocking = false;
+        }
+    }
+
+    private void ResetVaultKeyEditor()
+    {
+        _editingVaultKeyRecordId = null;
+        _vaultKeyForm = CreateVaultKeyFormDefault();
+    }
+
+    private async Task SaveVaultKeyAsync()
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isSavingVaultKey = true;
+
+        try
+        {
+            Guid? brokerServerProfileId = null;
+            if (!string.IsNullOrWhiteSpace(_vaultKeyForm.BrokerServerProfileId))
+            {
+                brokerServerProfileId = Guid.Parse(_vaultKeyForm.BrokerServerProfileId);
+            }
+
+            await LocalVaultService.SaveKeyRecordAsync(
+                new SaveLocalVaultKeyRecordRequest
+                {
+                    Id = _editingVaultKeyRecordId,
+                    Name = _vaultKeyForm.Name,
+                    BrokerServerProfileId = brokerServerProfileId,
+                    TopicPattern = _vaultKeyForm.TopicPattern,
+                    KeyValue = _vaultKeyForm.KeyValue
+                });
+
+            _vaultCommandSuccess = _editingVaultKeyRecordId is null
+                ? "The local key record was added to the browser vault."
+                : "The local key record was updated.";
+
+            ResetVaultKeyEditor();
+            await LoadVaultKeyRecordsAsync();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isSavingVaultKey = false;
+        }
+    }
+
+    private async Task RemoveVaultKeyAsync(LocalVaultKeyRecordSummary keyRecord)
+    {
+        _vaultCommandError = null;
+        _vaultCommandSuccess = null;
+        _isVaultRemovingKey = true;
+        _removingVaultKeyRecordId = keyRecord.Id;
+
+        try
+        {
+            await LocalVaultService.RemoveKeyRecordAsync(keyRecord.Id);
+            _vaultCommandSuccess = $"The local key record '{keyRecord.Name}' was removed.";
+
+            if (string.Equals(_editingVaultKeyRecordId, keyRecord.Id, StringComparison.Ordinal))
+            {
+                ResetVaultKeyEditor();
+            }
+
+            await LoadVaultKeyRecordsAsync();
+        }
+        catch (Exception exception)
+        {
+            _vaultCommandError = exception.Message;
+        }
+        finally
+        {
+            _isVaultRemovingKey = false;
+            _removingVaultKeyRecordId = null;
+        }
+    }
+
+    private sealed class BrokerFormModel
+    {
+        [Required]
+        [MaxLength(128)]
+        public string Name { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(255)]
+        public string Host { get; set; } = string.Empty;
+
+        [Range(1, 65535)]
+        public int Port { get; set; } = 1883;
+
+        public bool UseTls { get; set; }
+
+        [MaxLength(255)]
+        public string Username { get; set; } = string.Empty;
+
+        public string Password { get; set; } = string.Empty;
+
+        public bool ClearPassword { get; set; }
+
+        [Required]
+        [MaxLength(255)]
+        public string DownlinkTopic { get; set; } = "msh/US/2/json/mqtt/";
+
+        public bool EnableSend { get; set; }
+
+        public static BrokerFormModel CreateDefault()
+        {
+            return new BrokerFormModel();
+        }
+    }
+
+    private sealed class VaultCreateFormModel
+    {
+        [Required]
+        [MinLength(12)]
+        public string Passphrase { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(12)]
+        public string ConfirmPassphrase { get; set; } = string.Empty;
+
+        public static VaultCreateFormModel CreateDefault()
+        {
+            return new VaultCreateFormModel();
+        }
+    }
+
+    private sealed class VaultUnlockFormModel
+    {
+        [Required]
+        public string Passphrase { get; set; } = string.Empty;
+
+        public static VaultUnlockFormModel CreateDefault()
+        {
+            return new VaultUnlockFormModel();
+        }
+    }
+
+    private sealed class VaultKeyFormModel
+    {
+        [Required]
+        [MaxLength(128)]
+        public string Name { get; set; } = string.Empty;
+
+        public string BrokerServerProfileId { get; set; } = string.Empty;
+
+        [Required]
+        [MaxLength(255)]
+        public string TopicPattern { get; set; } = string.Empty;
+
+        public string KeyValue { get; set; } = string.Empty;
+
+        public static VaultKeyFormModel CreateDefault()
+        {
+            return new VaultKeyFormModel();
+        }
+    }
+
+    // ---- Favorites ----
+
+    private readonly List<FavoriteNode> _favorites = [];
+    private FavoriteFormModel _favoriteForm = new();
+    private bool _isFavoritesLoading = true;
+    private bool _isSavingFavorite;
+    private bool _isDeletingFavorite;
+    private string? _favoritesError;
+
+    private async Task LoadFavoritesAsync()
+    {
+        _isFavoritesLoading = true;
+        _favoritesError = null;
+
+        try
+        {
+            var favorites = await FavoritePreferenceApiClient.GetFavoritesAsync();
+            _favorites.Clear();
+            _favorites.AddRange(favorites.OrderBy(item => item.NodeId, StringComparer.OrdinalIgnoreCase));
+        }
+        catch (Exception exception)
+        {
+            _favoritesError = exception.Message;
+        }
+        finally
+        {
+            _isFavoritesLoading = false;
+        }
+    }
+
+    private async Task ReloadFavoritesAsync()
+    {
+        await LoadFavoritesAsync();
+    }
+
+    private async Task SaveFavoriteAsync()
+    {
+        _favoritesError = null;
+        _isSavingFavorite = true;
+
+        try
+        {
+            await FavoritePreferenceApiClient.SaveFavoriteAsync(
+                new SaveFavoriteNodeRequest
+                {
+                    NodeId = _favoriteForm.NodeId.Trim(),
+                    ShortName = string.IsNullOrWhiteSpace(_favoriteForm.ShortName) ? null : _favoriteForm.ShortName.Trim(),
+                    LongName = string.IsNullOrWhiteSpace(_favoriteForm.LongName) ? null : _favoriteForm.LongName.Trim()
+                });
+
+            _favoriteForm = new FavoriteFormModel();
+            await LoadFavoritesAsync();
+        }
+        catch (Exception exception)
+        {
+            _favoritesError = exception.Message;
+        }
+        finally
+        {
+            _isSavingFavorite = false;
+        }
+    }
+
+    private async Task RemoveFavoriteAsync(string nodeId)
+    {
+        _favoritesError = null;
+        _isDeletingFavorite = true;
+
+        try
+        {
+            await FavoritePreferenceApiClient.RemoveFavoriteAsync(nodeId);
+            await LoadFavoritesAsync();
+        }
+        catch (Exception exception)
+        {
+            _favoritesError = exception.Message;
+        }
+        finally
+        {
+            _isDeletingFavorite = false;
+        }
+    }
+
+    private sealed class FavoriteFormModel
+    {
+        [Required]
+        public string NodeId { get; set; } = string.Empty;
+
+        public string? ShortName { get; set; }
+
+        public string? LongName { get; set; }
+    }
+
+    // ---- Account ----
+
+    private string? _username;
+    private bool _isSigningOut;
+    private string? _logoutError;
+
+    private async Task LoadUsernameAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _username = state.User.Identity?.Name;
+    }
+
+    private async Task LogoutAsync()
+    {
+        _logoutError = null;
+        _isSigningOut = true;
+
+        try
+        {
+            await AuthApiClient.LogoutAsync();
+            Navigation.NavigateTo("/login", forceLoad: false);
+        }
+        catch (Exception)
+        {
+            _logoutError = "The API did not confirm logout. The local session was cleared.";
+        }
+        finally
+        {
+            _isSigningOut = false;
+        }
+    }
+}

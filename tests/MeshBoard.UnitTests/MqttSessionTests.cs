@@ -15,11 +15,11 @@ public sealed class MqttSessionTests
             Port = 1883
         };
 
-        var firstClientId = MqttSession.CreateClientId("meshboard-worker", connectionSettings);
-        var secondClientId = MqttSession.CreateClientId("meshboard-worker", connectionSettings);
+        var firstClientId = MqttSession.CreateClientId("meshboard-collector", connectionSettings);
+        var secondClientId = MqttSession.CreateClientId("meshboard-collector", connectionSettings);
 
         Assert.Equal(firstClientId, secondClientId);
-        Assert.StartsWith("meshboard-worker-", firstClientId, StringComparison.Ordinal);
+        Assert.StartsWith("meshboard-collector-", firstClientId, StringComparison.Ordinal);
         Assert.True(firstClientId.Length <= 64);
     }
 
@@ -41,8 +41,8 @@ public sealed class MqttSessionTests
             Port = 1883
         };
 
-        var firstClientId = MqttSession.CreateClientId("meshboard-worker", firstConnectionSettings);
-        var secondClientId = MqttSession.CreateClientId("meshboard-worker", secondConnectionSettings);
+        var firstClientId = MqttSession.CreateClientId("meshboard-collector", firstConnectionSettings);
+        var secondClientId = MqttSession.CreateClientId("meshboard-collector", secondConnectionSettings);
 
         Assert.NotEqual(firstClientId, secondClientId);
     }
@@ -58,9 +58,9 @@ public sealed class MqttSessionTests
             Port = 1883
         };
 
-        var clientId = MqttSession.CreateClientId("  MeshBoard Worker / EU  ", connectionSettings);
+        var clientId = MqttSession.CreateClientId("  MeshBoard Collector / EU  ", connectionSettings);
 
-        Assert.StartsWith("meshboard-worker---eu-", clientId, StringComparison.Ordinal);
+        Assert.StartsWith("meshboard-collector---eu-", clientId, StringComparison.Ordinal);
         Assert.True(clientId.Length <= 64);
     }
 }
