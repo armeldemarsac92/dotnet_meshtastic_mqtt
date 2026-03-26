@@ -907,16 +907,100 @@ Acceptance criteria:
 Goals:
 
 - remove graph-wide analysis from the current application hot path
+- use Neo4j Graph Data Science (GDS) to precompute topology properties as graph node attributes
+- make the topology read path a fast property-lookup query rather than an in-memory graph traversal
+
+Decision: **scheduled GDS write-back** (not query-time GDS streaming).
+
+Rationale:
+- The production graph can contain up to 10,000 MeshNodes with up to ~40,000 RADIO_LINK relationships.
+- Loading all links across concurrent API requests for in-memory analysis causes unpredictable memory pressure.
+- Neo4j GDS runs WCC, Degree, and Articulation Point algorithms at native C++ speed against an in-memory graph projection.
+- Precomputing and writing results as node properties decouples analytics latency from read latency entirely.
+- GDS Community Edition is free and open-source (neo4j/graph-data-science on GitHub). It is installed as a plugin JAR alongside Neo4j. No Enterprise license required.
+
+#### GDS Deployment
+
+Add to Neo4j Docker Compose:
+
+    neo4j:
+      image: neo4j:5
+      environment:
+        NEO4J_PLUGINS: '["graph-data-science"]'
+
+Or mount the GDS JAR into the Neo4j plugins/ directory.
+
+#### Neo4j GDS Algorithms Used
+
+| Computed property | GDS procedure | Written to |
+|---|---|---|
+| degree | gds.degree.write | MeshNode.degree |
+| componentId | gds.wcc.write | MeshNode.componentId |
+| isBridgeNode | gds.articulationPoints.write | MeshNode.isBridgeNode |
+
+#### Analysis Cypher (run by the analytics worker on schedule)
+
+    // 1. Project the active subgraph
+    CALL gds.graph.project(
+      'topologyProjection',
+      'MeshNode',
+      { RADIO_LINK: { orientation: 'UNDIRECTED' } }
+    )
+
+    // 2. Degree centrality
+    CALL gds.degree.write('topologyProjection', { writeProperty: 'degree' })
+
+    // 3. Weakly Connected Components
+    CALL gds.wcc.write('topologyProjection', { writeProperty: 'componentId' })
+
+    // 4. Articulation points (bridge nodes)
+    CALL gds.articulationPoints.write('topologyProjection', { writeProperty: 'isBridgeNode' })
+
+    // 5. Drop projection to free memory
+    CALL gds.graph.drop('topologyProjection')
+
+#### Read path after Phase 10
+
+The topology snapshot query becomes a property scan with no relationship streaming:
+
+    MATCH (n:MeshNode)
+    WHERE n.lastHeardAtUtc IS NOT NULL
+      AND n.lastHeardAtUtc >= datetime($notBefore)
+      AND ($brokerServer IS NULL OR n.brokerServer = $brokerServer)
+    RETURN
+      n.nodeId, n.brokerServer, n.shortName, n.longName,
+      n.degree, n.componentId, n.isBridgeNode,
+      n.lastHeardAtUtc, n.lastKnownLatitude, n.lastKnownLongitude
+    ORDER BY n.degree DESC
+    LIMIT $maxNodes
+
+#### New project: MeshBoard.Collector.TopologyAnalyst
+
+A Worker SDK project containing:
+- TopologyAnalysisWorker: a BackgroundService that runs the GDS projection on a configurable schedule (default: every 5 minutes)
+- ITopologyAnalysisService / TopologyAnalysisService: owns the GDS Cypher execution sequence
+- TopologyAnalysisOptions: ScheduleIntervalSeconds (default 300), GraphProjectionName (default "topologyProjection")
+- References: MeshBoard.Infrastructure.Neo4j (for IDriver), MeshBoard.Application (for DI extensions)
+
+#### Changes to MeshBoard.Infrastructure.Neo4j
+
+Modify Neo4jTopologyReadRepository.GetTopologyNodesAsync to read precomputed degree, componentId, isBridgeNode properties from MeshNode nodes instead of deriving them from relationship streaming.
 
 Tasks:
 
-- decide between query-time Neo4j analytics and scheduled derived-property writes
-- add layout precomputation if needed
-- precompute bridge-node and connected-component metadata when beneficial
+- add MeshBoard.Collector.TopologyAnalyst worker project
+- add TopologyAnalysisWorker BackgroundService running GDS Cypher on schedule
+- modify Neo4jTopologyReadRepository to read precomputed degree, componentId, isBridgeNode node properties
+- flip ITopologyReadAdapter binding in MeshBoard.Api from Postgres to Neo4j
+- update Open Decisions section to mark the graph analytics pass decision as resolved
 
 Acceptance criteria:
 
-- topology API no longer needs to load all current links into application memory to compute graph metrics
+- topology API no longer loads RADIO_LINK relationships into application memory
+- degree, componentId, and isBridgeNode are present on active MeshNodes in Neo4j after the analytics worker runs
+- GDS projection is dropped after each run to avoid stale memory in Neo4j
+- topology endpoint response shape is unchanged (CollectorTopologySnapshot)
+- analytics worker schedule is configurable via appsettings.json
 
 ## Testing Plan
 
@@ -1030,6 +1114,6 @@ The following decisions still require explicit resolution during implementation:
 
 - exact Kafka broker target for local and production environments
 - whether the first normalized event surface is one topic or several
-- whether the graph analytics pass is query-time or scheduled
+- ~~whether the graph analytics pass is query-time or scheduled~~ RESOLVED: scheduled GDS write-back via MeshBoard.Collector.TopologyAnalyst (see Phase 10)
 - when to move from current rollup tables to Timescale hypertables / continuous aggregates
 - whether the topology API should cut over all at once or behind a per-endpoint feature flag

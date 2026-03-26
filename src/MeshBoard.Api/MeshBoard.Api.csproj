@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MeshBoard.Application\MeshBoard.Application.csproj" />
     <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Neo4j\MeshBoard.Infrastructure.Neo4j.csproj" />
     <ProjectReference Include="..\MeshBoard.Infrastructure.Persistence\MeshBoard.Infrastructure.Persistence.csproj" />
   </ItemGroup>
 

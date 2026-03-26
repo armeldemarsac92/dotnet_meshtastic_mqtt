@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
                 AuthTokens.Basic(options.Username, options.Password));
         });
         services.AddScoped<IGraphTopologyRepository, GraphTopologyRepository>();
+        services.AddScoped<ITopologyAnalyticsReadRepository, Neo4jTopologyAnalyticsReadRepository>();
         services.AddScoped<Neo4jTopologyReadRepository>();
 
         return services;
