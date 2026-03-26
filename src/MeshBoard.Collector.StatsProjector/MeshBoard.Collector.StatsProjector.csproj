@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <AssemblyName>MeshBoard.Collector.StatsProjector</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>MeshBoard.Collector.StatsProjector</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MeshBoard.Application\MeshBoard.Application.csproj" />
+    <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Eventing\MeshBoard.Infrastructure.Eventing.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Persistence\MeshBoard.Infrastructure.Persistence.csproj" />
+  </ItemGroup>
+</Project>
