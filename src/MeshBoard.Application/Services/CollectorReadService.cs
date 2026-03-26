@@ -1,3 +1,4 @@
+using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Collector;
 using MeshBoard.Contracts.Workspaces;
@@ -68,15 +69,18 @@ public sealed class CollectorReadService : ICollectorReadService
     private const int MaxOverviewTopPacketTypes = 20;
 
     private readonly ICollectorReadRepository _collectorReadRepository;
+    private readonly ITopologyReadAdapter _topologyReadAdapter;
     private readonly ILogger<CollectorReadService> _logger;
     private readonly TimeProvider _timeProvider;
 
     public CollectorReadService(
         ICollectorReadRepository collectorReadRepository,
+        ITopologyReadAdapter topologyReadAdapter,
         TimeProvider timeProvider,
         ILogger<CollectorReadService> logger)
     {
         _collectorReadRepository = collectorReadRepository;
+        _topologyReadAdapter = topologyReadAdapter;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -285,13 +289,11 @@ public sealed class CollectorReadService : ICollectorReadService
             sanitizedQuery.ChannelName,
             sanitizedQuery.ActiveWithinHours);
 
-        var topologyNodesTask = _collectorReadRepository.GetTopologyNodesAsync(
-            WorkspaceConstants.DefaultWorkspaceId,
+        var topologyNodesTask = _topologyReadAdapter.GetTopologyNodesAsync(
             sanitizedQuery,
             notBeforeUtc,
             cancellationToken);
-        var topologyLinksTask = _collectorReadRepository.GetTopologyLinksAsync(
-            WorkspaceConstants.DefaultWorkspaceId,
+        var topologyLinksTask = _topologyReadAdapter.GetTopologyLinksAsync(
             sanitizedQuery,
             notBeforeUtc,
             cancellationToken);
@@ -521,13 +523,11 @@ public sealed class CollectorReadService : ICollectorReadService
             MaxRows = MaxStatsRows
         };
 
-        var nodes = await _collectorReadRepository.GetTopologyNodesAsync(
-            WorkspaceConstants.DefaultWorkspaceId,
+        var nodes = await _topologyReadAdapter.GetTopologyNodesAsync(
             topologyQuery,
             activeNotBeforeUtc,
             cancellationToken);
-        var links = await _collectorReadRepository.GetTopologyLinksAsync(
-            WorkspaceConstants.DefaultWorkspaceId,
+        var links = await _topologyReadAdapter.GetTopologyLinksAsync(
             topologyQuery,
             activeNotBeforeUtc,
             cancellationToken);

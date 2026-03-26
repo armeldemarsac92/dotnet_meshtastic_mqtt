@@ -1,3 +1,4 @@
+using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Realtime;
 using MeshBoard.Application.Meshtastic;
@@ -63,6 +64,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCollectorReadApplicationServices(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddScoped<ITopologyReadAdapter, PostgresTopologyReadAdapter>();
         services.AddScoped<ICollectorReadService, CollectorReadService>();
 
         return services;
