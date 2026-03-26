@@ -5,11 +5,13 @@
     <Project Path="src/MeshBoard.Application/MeshBoard.Application.csproj" />
     <Project Path="src/MeshBoard.Client/MeshBoard.Client.csproj" />
     <Project Path="src/MeshBoard.Contracts/MeshBoard.Contracts.csproj" />
+    <Project Path="src/MeshBoard.Infrastructure.Eventing/MeshBoard.Infrastructure.Eventing.csproj" />
     <Project Path="src/MeshBoard.Infrastructure.Meshtastic/MeshBoard.Infrastructure.Meshtastic.csproj" />
     <Project Path="src/MeshBoard.Infrastructure.Persistence/MeshBoard.Infrastructure.Persistence.csproj" />
     <Project Path="src/MeshBoard.ProductMigrationTool/MeshBoard.ProductMigrationTool.csproj" />
     <Project Path="src/MeshBoard.RealtimeBridge/MeshBoard.RealtimeBridge.csproj" />
     <Project Path="src/MeshBoard.RealtimeLoadTests/MeshBoard.RealtimeLoadTests.csproj" />
+    <Project Path="src/MeshBoard.Collector.Normalizer/MeshBoard.Collector.Normalizer.csproj" />
     <Project Path="src/MeshBoard.Collector/MeshBoard.Collector.csproj" />
   </Folder>
   <Folder Name="/tests/">

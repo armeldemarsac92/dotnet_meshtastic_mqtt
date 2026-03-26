@@ -1,5 +1,6 @@
 using MassTransit;
 using MeshBoard.Contracts.CollectorEvents;
+using MeshBoard.Contracts.CollectorEvents.DeadLetter;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
 using MeshBoard.Contracts.CollectorEvents.RawPackets;
 using MeshBoard.Infrastructure.Eventing.Configuration;
@@ -69,6 +70,7 @@ public static class ServiceCollectionExtensions
         riderRegistrationConfigurator.AddProducer<NodeObserved>(CollectorEventTopicNames.NodeObserved);
         riderRegistrationConfigurator.AddProducer<LinkObserved>(CollectorEventTopicNames.LinkObserved);
         riderRegistrationConfigurator.AddProducer<TelemetryObserved>(CollectorEventTopicNames.TelemetryObserved);
+        riderRegistrationConfigurator.AddProducer<DeadLetterEvent>(CollectorEventTopicNames.DeadLetter);
     }
 
     private static void ConfigureCollectorTopicEndpoints(
@@ -122,6 +124,12 @@ public static class ServiceCollectionExtensions
         if (endpointKey.MessageType == typeof(TelemetryObserved))
         {
             ConfigureCollectorTopicEndpoint<TelemetryObserved>(context, kafkaConfigurator, endpointKey, registrationGroup);
+            return;
+        }
+
+        if (endpointKey.MessageType == typeof(DeadLetterEvent))
+        {
+            ConfigureCollectorTopicEndpoint<DeadLetterEvent>(context, kafkaConfigurator, endpointKey, registrationGroup);
             return;
         }
 
@@ -225,6 +233,17 @@ public static class CollectorTopicConfigurationExtensions
         return AddCollectorTopicConsumer<TConsumer, TelemetryObserved>(
             riderRegistrationConfigurator,
             CollectorEventTopicNames.TelemetryObserved,
+            consumerGroup);
+    }
+
+    public static IRiderRegistrationConfigurator AddCollectorDeadLetterConsumer<TConsumer>(
+        this IRiderRegistrationConfigurator riderRegistrationConfigurator,
+        string consumerGroup)
+        where TConsumer : class, IConsumer<DeadLetterEvent>
+    {
+        return AddCollectorTopicConsumer<TConsumer, DeadLetterEvent>(
+            riderRegistrationConfigurator,
+            CollectorEventTopicNames.DeadLetter,
             consumerGroup);
     }
 

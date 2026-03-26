@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <AssemblyName>MeshBoard.Collector.Normalizer</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>MeshBoard.Collector.Normalizer</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MeshBoard.Application\MeshBoard.Application.csproj" />
+    <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Eventing\MeshBoard.Infrastructure.Eventing.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Meshtastic\MeshBoard.Infrastructure.Meshtastic.csproj" />
+  </ItemGroup>
+</Project>
