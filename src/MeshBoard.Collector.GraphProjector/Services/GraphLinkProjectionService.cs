@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using MeshBoard.Collector.GraphProjector.Observability;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
 using MeshBoard.Infrastructure.Neo4j.Repositories;
 
@@ -19,6 +21,7 @@ public sealed class GraphLinkProjectionService : IGraphLinkProjectionService
     public async Task ProjectAsync(LinkObserved link, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(link);
+        var startedAt = Stopwatch.GetTimestamp();
 
         _logger.LogDebug(
             "Projecting link {SourceNodeId} -> {TargetNodeId} on {ChannelKey}",
@@ -39,5 +42,9 @@ public sealed class GraphLinkProjectionService : IGraphLinkProjectionService
                 LinkOrigin = link.LinkOrigin.ToString()
             },
             ct);
+
+        GraphProjectorObservability.RecordLinkUpserted();
+        GraphProjectorObservability.RecordWriteCompleted(
+            Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
     }
 }

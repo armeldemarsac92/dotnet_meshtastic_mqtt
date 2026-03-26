@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Collector.StatsProjector.Observability;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
 using MeshBoard.Contracts.Meshtastic;
 
@@ -40,5 +41,7 @@ public sealed class StatsLinkProjectionService : IStatsLinkProjectionService
                 }
             ],
             ct);
+
+        StatsProjectorObservability.RecordLinkUpserted();
     }
 }

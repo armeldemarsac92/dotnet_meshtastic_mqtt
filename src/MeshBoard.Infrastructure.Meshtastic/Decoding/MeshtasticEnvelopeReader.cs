@@ -93,8 +93,8 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             ToNodeId = ResolveTargetNodeId(packet.To),
             IsPrivate = IsPrivate(packet.To),
             ReceivedAtUtc = ResolveReceivedAtUtc(packet.RxTime),
-            RxSnr = float.IsFinite(packet.RxSnr) ? packet.RxSnr : null,
-            RxRssi = packet.RxRssi,
+            RxSnr = float.IsFinite(packet.RxSnr) && packet.RxSnr != 0f ? packet.RxSnr : null,
+            RxRssi = packet.RxRssi == 0 ? null : packet.RxRssi,
             HopLimit = packet.HopLimit,
             HopStart = packet.HopStart
         };

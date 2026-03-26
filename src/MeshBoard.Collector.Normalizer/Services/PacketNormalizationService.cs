@@ -1,8 +1,7 @@
-using System.Security.Cryptography;
-using System.Text;
 using MassTransit;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Collector;
+using MeshBoard.Collector.Normalizer.Observability;
 using MeshBoard.Contracts.CollectorEvents;
 using MeshBoard.Contracts.CollectorEvents.DeadLetter;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
@@ -14,18 +13,6 @@ namespace MeshBoard.Collector.Normalizer.Services;
 
 public sealed class PacketNormalizationService : IPacketNormalizationService
 {
-    private static readonly HashSet<string> SupportedPacketTypes =
-    [
-        "Text Message",
-        "Compressed Text Message",
-        "Position Update",
-        "Node Info",
-        "Routing",
-        "Telemetry",
-        "Traceroute",
-        "Neighbor Info"
-    ];
-
     private readonly IMeshtasticEnvelopeReader _envelopeReader;
     private readonly ICollectorChannelResolver _channelResolver;
     private readonly ILinkDerivationService _linkDerivationService;
@@ -93,6 +80,7 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
             };
 
             await ProduceAsync(_deadLetterProducer, deadLetterEvent, partitionKey, cancellationToken);
+            NormalizerObservability.RecordDeadLettered();
             return;
         }
 
@@ -100,8 +88,8 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
         envelope.ReceivedAtUtc = rawPacket.ReceivedAtUtc;
 
         var observedAtUtc = rawPacket.ReceivedAtUtc;
-        var decodeStatus = ResolveDecodeStatus(envelope);
-        var decryptStatus = ResolveDecryptStatus(envelope);
+        var decodeStatus = PacketClassifier.ResolveDecodeStatus(envelope.PacketType);
+        var decryptStatus = PacketClassifier.ResolveDecryptStatus(envelope.PacketType);
         var packetKey = BuildPacketKey(rawPacket, envelope);
         var topicIdentity = TryParseTopicIdentity(rawPacket.Topic);
 
@@ -149,6 +137,12 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
             };
 
             await ProduceAsync(_packetNormalizedProducer, packetNormalized, partitionKey, cancellationToken);
+            NormalizerObservability.RecordDecodeSucceeded();
+
+            if (decryptStatus == CollectorDecryptStatus.Failed)
+            {
+                NormalizerObservability.RecordDecryptFailed();
+            }
 
             if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
             {
@@ -173,7 +167,9 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
                 await ProduceAsync(_nodeObservedProducer, nodeObserved, partitionKey, cancellationToken);
             }
 
-            var linkOrigin = ResolveLinkOrigin(envelope);
+            var linkOrigin = PacketClassifier.ResolveLinkOrigin(
+                envelope.Neighbors?.Count > 0,
+                envelope.TracerouteHops?.Count >= 2);
             var links = _linkDerivationService.DeriveLinks(envelope);
 
             foreach (var link in links)
@@ -337,45 +333,10 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
         };
     }
 
-    private static CollectorLinkOrigin ResolveLinkOrigin(MeshtasticEnvelope envelope)
-    {
-        if (envelope.Neighbors?.Count > 0)
-        {
-            return CollectorLinkOrigin.NeighborInfo;
-        }
-
-        if (envelope.TracerouteHops?.Count >= 2)
-        {
-            return CollectorLinkOrigin.Traceroute;
-        }
-
-        return CollectorLinkOrigin.MeshPacket;
-    }
-
     private static bool IsTextPacketType(string? packetType)
     {
         return string.Equals(packetType, "Text Message", StringComparison.Ordinal) ||
             string.Equals(packetType, "Compressed Text Message", StringComparison.Ordinal);
-    }
-
-    private static CollectorDecodeStatus ResolveDecodeStatus(MeshtasticEnvelope envelope)
-    {
-        if (string.Equals(envelope.PacketType, "Encrypted Packet", StringComparison.Ordinal) ||
-            string.Equals(envelope.PacketType, "Unknown Packet", StringComparison.Ordinal))
-        {
-            return CollectorDecodeStatus.Failed;
-        }
-
-        return SupportedPacketTypes.Contains(envelope.PacketType)
-            ? CollectorDecodeStatus.Succeeded
-            : CollectorDecodeStatus.UnsupportedPayload;
-    }
-
-    private static CollectorDecryptStatus ResolveDecryptStatus(MeshtasticEnvelope envelope)
-    {
-        return string.Equals(envelope.PacketType, "Encrypted Packet", StringComparison.Ordinal)
-            ? CollectorDecryptStatus.Failed
-            : CollectorDecryptStatus.NotRequired;
     }
 
     private static CollectorTopicIdentity? TryParseTopicIdentity(string topic)
@@ -413,15 +374,14 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
 
     private static string BuildPacketKey(RawPacketReceived rawPacket, MeshtasticEnvelope envelope)
     {
-        if (envelope.PacketId.HasValue && !string.IsNullOrWhiteSpace(envelope.FromNodeId))
-        {
-            return $"{rawPacket.BrokerServer}|{envelope.FromNodeId}:{envelope.PacketId.Value:x8}";
-        }
-
-        var rawKey =
-            $"{rawPacket.BrokerServer}|{envelope.PacketType}|{envelope.FromNodeId}|{envelope.ToNodeId}|{envelope.PayloadPreview}|{rawPacket.ReceivedAtUtc:O}";
-
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(rawKey)));
+        return CollectorEventPacketKey.Build(
+            rawPacket.BrokerServer,
+            envelope.FromNodeId,
+            envelope.PacketId,
+            envelope.PacketType,
+            envelope.ToNodeId,
+            envelope.PayloadPreview,
+            rawPacket.ReceivedAtUtc);
     }
 
     private sealed record CollectorTopicIdentity(

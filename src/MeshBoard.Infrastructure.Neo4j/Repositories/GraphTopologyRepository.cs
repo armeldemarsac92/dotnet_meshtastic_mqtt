@@ -1,3 +1,4 @@
+using MeshBoard.Contracts.CollectorEvents;
 using Neo4j.Driver;
 
 namespace MeshBoard.Infrastructure.Neo4j.Repositories;
@@ -167,9 +168,7 @@ public sealed class GraphTopologyRepository : IGraphTopologyRepository
 
     private static (string SourceNodeId, string TargetNodeId) GetCanonicalNodePair(string sourceNodeId, string targetNodeId)
     {
-        return string.CompareOrdinal(sourceNodeId, targetNodeId) <= 0
-            ? (sourceNodeId, targetNodeId)
-            : (targetNodeId, sourceNodeId);
+        return GraphTopologyKeys.CanonicalNodePair(sourceNodeId, targetNodeId);
     }
 
     private static string ToNeo4jDateTimeString(DateTimeOffset value)

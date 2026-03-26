@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Services;
+using MeshBoard.Collector.StatsProjector.Observability;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
 using MeshBoard.Contracts.Messages;
 
@@ -27,6 +29,7 @@ public sealed class StatsPacketProjectionService : IStatsPacketProjectionService
     public async Task ProjectAsync(PacketNormalized packet, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(packet);
+        var startedAt = Stopwatch.GetTimestamp();
 
         _logger.LogDebug(
             "Projecting packet key {PacketKey} from broker {BrokerServer} topic {Topic}",
@@ -60,6 +63,8 @@ public sealed class StatsPacketProjectionService : IStatsPacketProjectionService
                     packet.PacketKey);
 
                 await _unitOfWork.CommitAsync(ct);
+                StatsProjectorObservability.RecordTransactionCompleted(
+                    Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
                 return;
             }
 
@@ -71,6 +76,9 @@ public sealed class StatsPacketProjectionService : IStatsPacketProjectionService
                 ct);
 
             await _unitOfWork.CommitAsync(ct);
+            StatsProjectorObservability.RecordPacketProjected();
+            StatsProjectorObservability.RecordTransactionCompleted(
+                Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
         }
         catch
         {

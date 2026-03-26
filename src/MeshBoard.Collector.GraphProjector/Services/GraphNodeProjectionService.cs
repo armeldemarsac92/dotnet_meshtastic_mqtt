@@ -1,4 +1,5 @@
 using MeshBoard.Contracts.CollectorEvents.Normalized;
+using MeshBoard.Collector.GraphProjector.Observability;
 using MeshBoard.Infrastructure.Neo4j.Repositories;
 
 namespace MeshBoard.Collector.GraphProjector.Services;
@@ -40,5 +41,7 @@ public sealed class GraphNodeProjectionService : IGraphNodeProjectionService
                 ObservedAtUtc = node.ObservedAtUtc
             },
             ct);
+
+        GraphProjectorObservability.RecordNodeUpserted();
     }
 }

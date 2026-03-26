@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
+using MeshBoard.Collector.StatsProjector.Observability;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
 using MeshBoard.Contracts.Nodes;
 
@@ -40,5 +41,7 @@ public sealed class StatsNodeProjectionService : IStatsNodeProjectionService
                 LastKnownLongitude = node.Longitude
             },
             ct);
+
+        StatsProjectorObservability.RecordNodeUpserted();
     }
 }

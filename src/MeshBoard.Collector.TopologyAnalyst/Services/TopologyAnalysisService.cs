@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MeshBoard.Collector.TopologyAnalyst.Observability;
 using MeshBoard.Collector.TopologyAnalyst.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -93,10 +94,12 @@ public sealed class TopologyAnalysisService : ITopologyAnalysisService
 
             cancellationToken.ThrowIfCancellationRequested();
             await ExecuteAsync(session, WriteArticulationPointsCypher, parameters, cancellationToken);
+            TopologyAnalystObservability.RecordRunSucceeded(stopwatch.Elapsed.TotalMilliseconds);
         }
         catch (Exception exception)
         {
             analysisException = exception;
+            TopologyAnalystObservability.RecordRunFailed(stopwatch.Elapsed.TotalMilliseconds);
             _logger.LogError(
                 exception,
                 "Topology analysis run failed for projection {ProjectionName}.",
