@@ -3,6 +3,7 @@ using MeshBoard.Collector.Ingress.Observability;
 using MeshBoard.Contracts.CollectorEvents;
 using MeshBoard.Contracts.CollectorEvents.RawPackets;
 using MeshBoard.Contracts.Meshtastic;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MeshBoard.Collector.Ingress.Services;
 
@@ -10,14 +11,14 @@ public sealed class RawPacketPublisherService : IRawPacketPublisherService
 {
     private static readonly string CollectorInstanceId = Environment.MachineName;
 
-    private readonly ITopicProducer<RawPacketReceived> _producer;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<RawPacketPublisherService> _logger;
 
     public RawPacketPublisherService(
-        ITopicProducer<RawPacketReceived> producer,
+        IServiceScopeFactory scopeFactory,
         ILogger<RawPacketPublisherService> logger)
     {
-        _producer = producer;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -50,10 +51,10 @@ public sealed class RawPacketPublisherService : IRawPacketPublisherService
 
         try
         {
-            await _producer.Produce(
-                message,
-                Pipe.Execute<KafkaSendContext<RawPacketReceived>>(context => context.SetPartitionKey(partitionKey)),
-                cancellationToken);
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var producer = scope.ServiceProvider.GetRequiredService<ITopicProducer<string, RawPacketReceived>>();
+
+            await producer.Produce(partitionKey, message, cancellationToken);
 
             IngressObservability.RecordPublishSucceeded(inboundMessage);
 

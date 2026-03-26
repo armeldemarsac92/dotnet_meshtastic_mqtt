@@ -6,7 +6,7 @@ using MeshBoard.Infrastructure.Meshtastic.DependencyInjection;
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddCollectorApplicationServices();
-builder.Services.AddMeshtasticRuntimeInfrastructure(builder.Configuration);
+builder.Services.AddMeshtasticStaticBrokerRuntimeInfrastructure(builder.Configuration);
 builder.Services.AddCollectorIngressServices();
 builder.Services.AddCollectorEventingInfrastructure(
     builder.Configuration,

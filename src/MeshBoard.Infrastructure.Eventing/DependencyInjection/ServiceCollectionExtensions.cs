@@ -65,7 +65,7 @@ public static class ServiceCollectionExtensions
 
     private static void AddCollectorTopicProducers(IRiderRegistrationConfigurator riderRegistrationConfigurator)
     {
-        riderRegistrationConfigurator.AddProducer<RawPacketReceived>(CollectorEventTopicNames.RawPackets);
+        riderRegistrationConfigurator.AddProducer<string, RawPacketReceived>(CollectorEventTopicNames.RawPackets);
         riderRegistrationConfigurator.AddProducer<PacketNormalized>(CollectorEventTopicNames.PacketNormalized);
         riderRegistrationConfigurator.AddProducer<NodeObserved>(CollectorEventTopicNames.NodeObserved);
         riderRegistrationConfigurator.AddProducer<LinkObserved>(CollectorEventTopicNames.LinkObserved);
