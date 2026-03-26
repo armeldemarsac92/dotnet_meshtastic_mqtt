@@ -16,22 +16,22 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
     private readonly IMeshtasticEnvelopeReader _envelopeReader;
     private readonly ICollectorChannelResolver _channelResolver;
     private readonly ILinkDerivationService _linkDerivationService;
-    private readonly ITopicProducer<PacketNormalized> _packetNormalizedProducer;
-    private readonly ITopicProducer<NodeObserved> _nodeObservedProducer;
-    private readonly ITopicProducer<LinkObserved> _linkObservedProducer;
-    private readonly ITopicProducer<TelemetryObserved> _telemetryObservedProducer;
-    private readonly ITopicProducer<DeadLetterEvent> _deadLetterProducer;
+    private readonly ITopicProducer<string, PacketNormalized> _packetNormalizedProducer;
+    private readonly ITopicProducer<string, NodeObserved> _nodeObservedProducer;
+    private readonly ITopicProducer<string, LinkObserved> _linkObservedProducer;
+    private readonly ITopicProducer<string, TelemetryObserved> _telemetryObservedProducer;
+    private readonly ITopicProducer<string, DeadLetterEvent> _deadLetterProducer;
     private readonly ILogger<PacketNormalizationService> _logger;
 
     public PacketNormalizationService(
         IMeshtasticEnvelopeReader envelopeReader,
         ICollectorChannelResolver channelResolver,
         ILinkDerivationService linkDerivationService,
-        ITopicProducer<PacketNormalized> packetNormalizedProducer,
-        ITopicProducer<NodeObserved> nodeObservedProducer,
-        ITopicProducer<LinkObserved> linkObservedProducer,
-        ITopicProducer<TelemetryObserved> telemetryObservedProducer,
-        ITopicProducer<DeadLetterEvent> deadLetterProducer,
+        ITopicProducer<string, PacketNormalized> packetNormalizedProducer,
+        ITopicProducer<string, NodeObserved> nodeObservedProducer,
+        ITopicProducer<string, LinkObserved> linkObservedProducer,
+        ITopicProducer<string, TelemetryObserved> telemetryObservedProducer,
+        ITopicProducer<string, DeadLetterEvent> deadLetterProducer,
         ILogger<PacketNormalizationService> logger)
     {
         _envelopeReader = envelopeReader;
@@ -360,16 +360,13 @@ public sealed class PacketNormalizationService : IPacketNormalizationService
     }
 
     private static async Task ProduceAsync<TMessage>(
-        ITopicProducer<TMessage> producer,
+        ITopicProducer<string, TMessage> producer,
         TMessage message,
         string partitionKey,
         CancellationToken cancellationToken)
         where TMessage : class
     {
-        await producer.Produce(
-            message,
-            Pipe.Execute<KafkaSendContext<TMessage>>(context => context.SetPartitionKey(partitionKey)),
-            cancellationToken);
+        await producer.Produce(partitionKey, message, cancellationToken);
     }
 
     private static string BuildPacketKey(RawPacketReceived rawPacket, MeshtasticEnvelope envelope)

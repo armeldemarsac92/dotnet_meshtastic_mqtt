@@ -66,11 +66,11 @@ public static class ServiceCollectionExtensions
     private static void AddCollectorTopicProducers(IRiderRegistrationConfigurator riderRegistrationConfigurator)
     {
         riderRegistrationConfigurator.AddProducer<string, RawPacketReceived>(CollectorEventTopicNames.RawPackets);
-        riderRegistrationConfigurator.AddProducer<PacketNormalized>(CollectorEventTopicNames.PacketNormalized);
-        riderRegistrationConfigurator.AddProducer<NodeObserved>(CollectorEventTopicNames.NodeObserved);
-        riderRegistrationConfigurator.AddProducer<LinkObserved>(CollectorEventTopicNames.LinkObserved);
-        riderRegistrationConfigurator.AddProducer<TelemetryObserved>(CollectorEventTopicNames.TelemetryObserved);
-        riderRegistrationConfigurator.AddProducer<DeadLetterEvent>(CollectorEventTopicNames.DeadLetter);
+        riderRegistrationConfigurator.AddProducer<string, PacketNormalized>(CollectorEventTopicNames.PacketNormalized);
+        riderRegistrationConfigurator.AddProducer<string, NodeObserved>(CollectorEventTopicNames.NodeObserved);
+        riderRegistrationConfigurator.AddProducer<string, LinkObserved>(CollectorEventTopicNames.LinkObserved);
+        riderRegistrationConfigurator.AddProducer<string, TelemetryObserved>(CollectorEventTopicNames.TelemetryObserved);
+        riderRegistrationConfigurator.AddProducer<string, DeadLetterEvent>(CollectorEventTopicNames.DeadLetter);
     }
 
     private static void ConfigureCollectorTopicEndpoints(
