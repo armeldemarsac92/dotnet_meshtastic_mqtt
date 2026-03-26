@@ -131,6 +131,153 @@ services:
       Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
     restart: unless-stopped
 
+  kafka:
+    image: confluentinc/cp-kafka:7.9.0
+    container_name: meshboard-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: MeshBoardLocalKafkaCluster01
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    volumes:
+      - meshboard-kafka-data:/var/lib/kafka/data
+
+  neo4j:
+    image: neo4j:5
+    container_name: meshboard-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/meshboard
+      NEO4J_PLUGINS: '["graph-data-science"]'
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    volumes:
+      - meshboard-neo4j-data:/data
+      - meshboard-neo4j-logs:/logs
+
+  meshboard-collector-ingress:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Collector.Ingress/Dockerfile
+    container_name: meshboard-collector-ingress
+    profiles:
+      - collector-v2
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      MeshtasticRuntime__EnableHostedService: "true"
+      MeshtasticRuntime__InboundQueueCapacity: "16384"
+      MeshtasticRuntime__InboundWorkerCount: "8"
+      Broker__Host: ${MESHBOARD_MQTT_HOST:-mqtt.meshtastic.org}
+      Broker__Port: ${MESHBOARD_MQTT_PORT:-1883}
+      Broker__UseTls: "false"
+      Broker__ClientId: meshboard-collector-ingress
+      Broker__Username: ${MESHBOARD_MQTT_USERNAME:-meshdev}
+      Broker__Password: ${MESHBOARD_MQTT_PASSWORD:-large4cats}
+      Broker__DefaultTopicPattern: ${MESHBOARD_MQTT_TOPIC_PATTERN:-msh/US/2/e/#}
+      Broker__DownlinkTopic: msh/US/2/json/mqtt/
+      Broker__EnableSend: "false"
+      Kafka__BootstrapServers: kafka:9092
+    restart: unless-stopped
+
+  meshboard-collector-normalizer:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Collector.Normalizer/Dockerfile
+    container_name: meshboard-collector-normalizer
+    profiles:
+      - collector-v2
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      MeshtasticRuntime__EnableHostedService: "false"
+      Kafka__BootstrapServers: kafka:9092
+    restart: unless-stopped
+
+  meshboard-collector-stats-projector:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Collector.StatsProjector/Dockerfile
+    container_name: meshboard-collector-stats-projector
+    profiles:
+      - collector-v2
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      Kafka__BootstrapServers: kafka:9092
+      Persistence__Provider: PostgreSQL
+      Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
+    restart: unless-stopped
+
+  meshboard-collector-graph-projector:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Collector.GraphProjector/Dockerfile
+    container_name: meshboard-collector-graph-projector
+    profiles:
+      - collector-v2
+    depends_on:
+      kafka:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    environment:
+      Kafka__BootstrapServers: kafka:9092
+      Neo4j__Uri: bolt://neo4j:7687
+      Neo4j__Username: neo4j
+      Neo4j__Password: meshboard
+    restart: unless-stopped
+
+  meshboard-collector-topology-analyst:
+    build:
+      context: ../..
+      dockerfile: src/MeshBoard.Collector.TopologyAnalyst/Dockerfile
+    container_name: meshboard-collector-topology-analyst
+    profiles:
+      - collector-v2
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      Neo4j__Uri: bolt://neo4j:7687
+      Neo4j__Username: neo4j
+      Neo4j__Password: meshboard
+      TopologyAnalysis__ScheduleIntervalSeconds: "300"
+      TopologyAnalysis__GraphProjectionName: topologyProjection
+    restart: unless-stopped
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: meshboard-cloudflared
@@ -151,6 +298,9 @@ services:
 
 volumes:
   meshboard-api-dataprotection:
+  meshboard-kafka-data:
+  meshboard-neo4j-data:
+  meshboard-neo4j-logs:
   meshboard-postgres-data:
   meshboard-vernemq-data:
   meshboard-vernemq-log:
