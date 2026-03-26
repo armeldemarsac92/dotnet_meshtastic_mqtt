@@ -7,6 +7,7 @@ COPY global.json ./
 COPY src/MeshBoard.Contracts/MeshBoard.Contracts.csproj src/MeshBoard.Contracts/
 COPY src/MeshBoard.Application/MeshBoard.Application.csproj src/MeshBoard.Application/
 COPY src/MeshBoard.Infrastructure.Persistence/MeshBoard.Infrastructure.Persistence.csproj src/MeshBoard.Infrastructure.Persistence/
+COPY src/MeshBoard.Infrastructure.Neo4j/MeshBoard.Infrastructure.Neo4j.csproj src/MeshBoard.Infrastructure.Neo4j/
 COPY src/MeshBoard.Api/MeshBoard.Api.csproj src/MeshBoard.Api/
 
 RUN dotnet restore src/MeshBoard.Api/MeshBoard.Api.csproj
