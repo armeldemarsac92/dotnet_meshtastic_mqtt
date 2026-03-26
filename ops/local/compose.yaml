@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17-bookworm
+    image: timescale/timescaledb:latest-pg17
     container_name: meshboard-postgres
     environment:
       POSTGRES_DB: meshboard
