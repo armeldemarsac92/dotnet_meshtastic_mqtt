@@ -40,11 +40,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      neo4j:
+        condition: service_healthy
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       Persistence__Provider: PostgreSQL
       Persistence__ConnectionString: Host=postgres;Port=5432;Database=meshboard;Username=meshboard;Password=meshboard
+      Neo4j__Uri: bolt://neo4j:7687
+      Neo4j__Username: neo4j
+      Neo4j__Password: meshboard
       RealtimeSession__BrokerUrl: ${MESHBOARD_PUBLIC_BROKER_URL:-ws://localhost:8082/mqtt}
       RealtimeSession__UseRequestOriginBrokerUrl: ${MESHBOARD_USE_REQUEST_ORIGIN_BROKER_URL:-true}
       RealtimeSession__BrokerPath: ${MESHBOARD_BROKER_PATH:-/mqtt}
