@@ -53,4 +53,16 @@ public sealed record LiveMessageEnvelope
     public uint? DecodedSourceNodeNumber { get; init; }
 
     public uint? DecodedDestinationNodeNumber { get; init; }
+
+    public float? RxSnr { get; init; }
+
+    public int? RxRssi { get; init; }
+
+    public int? HopLimit { get; init; }
+
+    public int? HopStart { get; init; }
+
+    public string? GatewayNodeId { get; init; }
+
+    public RealtimeRoutingEvent? TracerouteInfo { get; init; }
 }

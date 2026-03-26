@@ -111,14 +111,21 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
             if (_neighborLinkRepository is not null)
             {
                 var neighborLinks = BuildNeighborLinkRecords(envelope);
+                var meshPacketLinks = BuildMeshPacketLinkRecords(envelope);
+                var tracerouteLinks = BuildTracerouteLinkRecords(envelope);
 
-                if (neighborLinks.Count > 0)
+                var allLinks = neighborLinks
+                    .Concat(meshPacketLinks)
+                    .Concat(tracerouteLinks)
+                    .ToList();
+
+                if (allLinks.Count > 0)
                 {
                     await _neighborLinkRepository.UpsertAsync(
                         envelope.BrokerServer,
                         envelope.LastHeardChannel,
-                        neighborLinks,
-                        cancellationToken);
+                        allLinks,
+                        cancellationToken); 
                 }
             }
 
@@ -188,6 +195,64 @@ public sealed class MeshtasticIngestionService : IMeshtasticIngestionService
                     ? canonical.LastSeenAtUtc
                     : existing.LastSeenAtUtc
             };
+        }
+
+        return linksByKey.Values.ToArray();
+    }
+
+    private static IReadOnlyList<NeighborLinkRecord> BuildMeshPacketLinkRecords(MeshtasticEnvelope envelope)
+    {
+        if (envelope.HopStart > 0 && 
+            envelope.HopStart == envelope.HopLimit &&
+            !string.IsNullOrWhiteSpace(envelope.FromNodeId) &&
+            !string.IsNullOrWhiteSpace(envelope.GatewayNodeId) &&
+            !string.Equals(envelope.FromNodeId, envelope.GatewayNodeId, StringComparison.OrdinalIgnoreCase))
+        {
+            var snr = envelope.RxSnr is not null && float.IsFinite(envelope.RxSnr.Value) ? envelope.RxSnr : null;
+            
+            return [CreateCanonicalNeighborLink(
+                envelope.FromNodeId,
+                envelope.GatewayNodeId,
+                snr,
+                envelope.ReceivedAtUtc)];
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<NeighborLinkRecord> BuildTracerouteLinkRecords(MeshtasticEnvelope envelope)
+    {
+        if (envelope.TracerouteHops is null || envelope.TracerouteHops.Count < 2)
+        {
+            return [];
+        }
+
+        var hops = envelope.TracerouteHops;
+        var linksByKey = new Dictionary<string, NeighborLinkRecord>(StringComparer.OrdinalIgnoreCase);
+
+        for (var i = 0; i < hops.Count - 1; i++)
+        {
+            var sourceId = hops[i].NodeId;
+            var targetId = hops[i + 1].NodeId;
+
+            if (string.IsNullOrWhiteSpace(sourceId) || string.IsNullOrWhiteSpace(targetId))
+            {
+                continue;
+            }
+
+            if (string.Equals(sourceId, targetId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var snr = hops[i + 1].SnrDb;
+            var canonical = CreateCanonicalNeighborLink(sourceId, targetId, snr, envelope.ReceivedAtUtc);
+            var linkKey = $"{canonical.SourceNodeId}|{canonical.TargetNodeId}";
+
+            if (!linksByKey.ContainsKey(linkKey))
+            {
+                linksByKey[linkKey] = canonical;
+            }
         }
 
         return linksByKey.Values.ToArray();

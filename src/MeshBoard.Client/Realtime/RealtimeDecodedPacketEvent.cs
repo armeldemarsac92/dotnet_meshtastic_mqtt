@@ -23,4 +23,6 @@ public sealed class RealtimeDecodedPacketEvent
     public RealtimeNeighborInfoEvent? NeighborInfo { get; init; }
 
     public RealtimeRoutingEvent? RoutingInfo { get; init; }
+
+    public RealtimeRoutingEvent? TracerouteInfo { get; init; }
 }

@@ -33,4 +33,14 @@ public sealed class RealtimeRawPacketEvent
     public uint? FromNodeNumber { get; init; }
 
     public uint? PacketId { get; init; }
+
+    public float? RxSnr { get; init; }
+
+    public int? RxRssi { get; init; }
+
+    public int? HopLimit { get; init; }
+
+    public int? HopStart { get; init; }
+
+    public string? GatewayNodeId { get; init; }
 }

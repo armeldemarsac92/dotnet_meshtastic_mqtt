@@ -18,7 +18,15 @@
         <article class="shell-panel flex max-h-[calc(100dvh-8rem)] w-full max-w-6xl flex-col overflow-hidden rounded-[1.8rem] lg:max-h-[92vh]"
                  @onclick:stopPropagation="true">
             <header class="flex items-center justify-between gap-4 border-b border-sand-100/80 px-5 py-4">
-                <div>
+                <div class="flex items-center gap-3">
+                    @if (_historyStack.Count > 0)
+                    {
+                        <button type="button"
+                                class="shell-button rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="NavigateBackAsync">
+                            Back
+                        </button>
+                    }
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cinder-800/68">Node details</p>
                 </div>
 
@@ -40,7 +48,7 @@
                         <h2 class="font-display text-3xl text-cinder-950">Node not found</h2>
                         <p class="text-sm leading-7 text-cinder-800/80">
                             No live node projection or collector-backed data currently matches
-                            <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@NodeId</code>.
+                            <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_currentNodeId</code>.
                         </p>
                     </div>
                 }
@@ -53,7 +61,7 @@
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2 text-sm text-cinder-800/82">
-                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@NodeId</code>
+                                <code class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@_currentNodeId</code>
                                 @if (!string.IsNullOrWhiteSpace(EffectiveChannelKey))
                                 {
                                     <button type="button"
@@ -96,7 +104,7 @@
                             </article>
                         </section>
 
-                        <CollectorNodeStatsPanel NodeId="@NodeId" />
+                        <CollectorNodeStatsPanel NodeId="@_currentNodeId" OnNeighborNodeClicked="OpenNeighborNodeAsync" />
 
                         <section class="grid gap-4 xl:grid-cols-2">
                             <article class="shell-panel rounded-[1.6rem] px-6 pt-7 pb-6">
@@ -148,8 +156,38 @@
                                                     <div class="flex flex-wrap items-center gap-2">
                                                         <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">@FormatPacketType(message.PacketType)</span>
                                                         <span class="text-xs text-cinder-800/70">@FormatTimestamp(message.ReceivedAtUtc)</span>
+                                                        @if (message.HopStart.HasValue && message.HopLimit.HasValue && message.HopStart == message.HopLimit)
+                                                        {
+                                                            <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-800">Direct</span>
+                                                        }
+                                                        else if (message.HopStart.HasValue && message.HopLimit.HasValue)
+                                                        {
+                                                            <span class="rounded-full bg-sky-100 px-3 py-1 text-xs text-sky-800">@(message.HopStart - message.HopLimit) hop@(message.HopStart - message.HopLimit == 1 ? "" : "s")</span>
+                                                        }
+                                                        @if (message.RxSnr.HasValue)
+                                                        {
+                                                            <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">SNR @message.RxSnr.Value.ToString("F1") dB</span>
+                                                        }
+                                                        @if (message.RxRssi.HasValue)
+                                                        {
+                                                            <span class="rounded-full bg-sand-100 px-3 py-1 text-xs text-cinder-900">RSSI @message.RxRssi.Value dBm</span>
+                                                        }
                                                     </div>
                                                     <p class="mt-3 leading-7 text-cinder-900">@FormatPayloadPreview(message.PayloadPreview)</p>
+                                                    @if (message.TracerouteInfo is not null && message.TracerouteInfo.RouteNodeIds.Count > 0)
+                                                    {
+                                                        <div class="mt-2 flex flex-wrap items-center gap-1 text-xs text-cinder-800/68">
+                                                            <span>Route:</span>
+                                                            @for (var i = 0; i < message.TracerouteInfo.RouteNodeIds.Count; i++)
+                                                            {
+                                                                <code class="rounded bg-sand-100 px-2 py-0.5 text-cinder-900">@message.TracerouteInfo.RouteNodeIds[i]</code>
+                                                                @if (i < message.TracerouteInfo.RouteNodeIds.Count - 1)
+                                                                {
+                                                                    <span>→</span>
+                                                                }
+                                                            }
+                                                        </div>
+                                                    }
                                                     <p class="mt-2 text-xs text-cinder-800/68">From @FormatNodeId(message.SourceNodeNumber ?? message.FromNodeNumber) to @(FormatNodeId(message.DestinationNodeNumber) ?? "Broadcast")</p>
                                                 </li>
                                             }
@@ -199,19 +237,26 @@
     [Parameter]
     public EventCallback<string> OnOpenChannel { get; set; }
 
+    [Parameter]
+    public EventCallback<string> OnOpenNode { get; set; }
+
     private bool HasNodeData => _node is not null || _collectorNode is not null;
 
     private string EffectiveBrokerServer => _node?.BrokerServer ?? _collectorNode?.BrokerServer ?? "Unknown";
 
     private string? EffectiveChannelKey => _node?.LastHeardChannel ?? _collectorNode?.LastHeardChannel;
 
-    private string EffectiveDisplayName => _node?.DisplayName ?? _collectorNode?.LongName ?? _collectorNode?.ShortName ?? NodeId;
+    private string EffectiveDisplayName => _node?.DisplayName ?? _collectorNode?.LongName ?? _collectorNode?.ShortName ?? _currentNodeId;
 
     private DateTimeOffset? EffectiveLastHeardAtUtc => _node?.LastHeardAtUtc ?? _collectorNode?.LastHeardAtUtc;
 
     private double? EffectiveLatitude => _node?.LastKnownLatitude ?? _collectorNode?.LastKnownLatitude;
 
     private double? EffectiveLongitude => _node?.LastKnownLongitude ?? _collectorNode?.LastKnownLongitude;
+
+    private readonly Stack<string> _historyStack = new();
+    private string _currentNodeId = string.Empty;
+    private string _lastExternalNodeId = string.Empty;
 
     private NodeSummary? _collectorNode;
     private NodeSummary? _apiNode;
@@ -239,6 +284,16 @@
             await DisposeMiniMapAsync();
         }
 
+        // Detect external node change from parent — reset internal navigation history
+        if (!string.Equals(_lastExternalNodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastExternalNodeId = NodeId;
+            _historyStack.Clear();
+            _currentNodeId = NodeId;
+            _miniMapRendered = false;
+            _lastMiniMapNodeId = null;
+        }
+
         RefreshProjectionData();
         await SyncScrollLockAsync();
     }
@@ -250,7 +305,7 @@
             return;
         }
 
-        if (_miniMapRendered && string.Equals(_lastMiniMapNodeId, NodeId, StringComparison.Ordinal))
+        if (_miniMapRendered && string.Equals(_lastMiniMapNodeId, _currentNodeId, StringComparison.Ordinal))
         {
             return;
         }
@@ -260,7 +315,7 @@
             var module = await GetMapModuleAsync();
             await module.InvokeVoidAsync("renderMiniMap", MiniMapElementId, EffectiveLatitude.Value, EffectiveLongitude.Value);
             _miniMapRendered = true;
-            _lastMiniMapNodeId = NodeId;
+            _lastMiniMapNodeId = _currentNodeId;
         }
         catch (JSDisconnectedException)
         {
@@ -352,7 +407,7 @@
 
     private void RefreshProjectionData()
     {
-        if (!IsOpen || string.IsNullOrWhiteSpace(NodeId))
+        if (!IsOpen || string.IsNullOrWhiteSpace(_currentNodeId))
         {
             _node = null;
             _collectorNode = null;
@@ -363,26 +418,26 @@
             return;
         }
 
-        // Clear cached API node if NodeId changed
-        if (!string.Equals(_lastApiNodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+        // Clear cached API node if current node changed
+        if (!string.Equals(_lastApiNodeId, _currentNodeId, StringComparison.OrdinalIgnoreCase))
         {
             _apiNode = null;
         }
 
         _node = NodeProjectionStore.Current.Nodes
-            .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(node => string.Equals(node.NodeId, _currentNodeId, StringComparison.OrdinalIgnoreCase));
 
         // Prefer map snapshot; fall back to previously fetched API node
         _collectorNode = PublicCollectorService.State.MapSnapshot?.Nodes
-            .FirstOrDefault(node => string.Equals(node.NodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(node => string.Equals(node.NodeId, _currentNodeId, StringComparison.OrdinalIgnoreCase))
             ?? _apiNode;
 
         // Kick off API fetch when neither live nor snapshot has the node
         if (_node is null && _collectorNode is null
             && !_isLoadingCollectorNode
-            && !string.Equals(_lastApiNodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(_lastApiNodeId, _currentNodeId, StringComparison.OrdinalIgnoreCase))
         {
-            _ = LoadCollectorNodeAsync(NodeId);
+            _ = LoadCollectorNodeAsync(_currentNodeId);
         }
 
         var effectiveNodeId = _node?.NodeId ?? _collectorNode?.NodeId;
@@ -413,8 +468,8 @@
                 PageSize = 10
             });
 
-            // Verify NodeId hasn't changed while we were fetching
-            if (!string.Equals(nodeId, NodeId, StringComparison.OrdinalIgnoreCase))
+            // Verify node hasn't changed while we were fetching
+            if (!string.Equals(nodeId, _currentNodeId, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -434,6 +489,31 @@
             _isLoadingCollectorNode = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private async Task OpenNeighborNodeAsync(string nodeId)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId)) return;
+
+        if (!string.IsNullOrWhiteSpace(_currentNodeId))
+            _historyStack.Push(_currentNodeId);
+
+        _currentNodeId = nodeId;
+        _miniMapRendered = false;
+        _lastMiniMapNodeId = null;
+        RefreshProjectionData();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task NavigateBackAsync()
+    {
+        if (_historyStack.Count == 0) return;
+
+        _currentNodeId = _historyStack.Pop();
+        _miniMapRendered = false;
+        _lastMiniMapNodeId = null;
+        RefreshProjectionData();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task CloseAsync()

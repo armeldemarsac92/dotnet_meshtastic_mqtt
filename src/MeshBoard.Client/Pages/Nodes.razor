@@ -258,7 +258,8 @@
 <NodeDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedNodeId))"
                   NodeId="@(_selectedNodeId ?? string.Empty)"
                   OnClose="CloseNodeDetails"
-                  OnOpenChannel="OpenChannelDetailsAsync" />
+                  OnOpenChannel="OpenChannelDetailsAsync"
+                  OnOpenNode="OpenNodeDetailsAsync" />
 
 <ChannelDetailsModal IsOpen="@(!string.IsNullOrWhiteSpace(_selectedChannelKey))"
                      ChannelKey="@(_selectedChannelKey ?? string.Empty)"

@@ -1,0 +1,26 @@
+<div class="inline-flex rounded-full bg-white/50 p-1 backdrop-blur-sm ring-1 ring-inset ring-sand-100/80 shadow-sm">
+    <button type="button"
+            class="rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-150 @(!Value ? "bg-white shadow text-cinder-950" : "text-cinder-800/55 hover:text-cinder-800")"
+            @onclick="() => SetValue(false)">
+        Live
+    </button>
+    <button type="button"
+            class="rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition-all duration-150 @(Value ? "bg-white shadow text-cinder-950" : "text-cinder-800/55 hover:text-cinder-800")"
+            @onclick="() => SetValue(true)">
+        Public history
+    </button>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public bool Value { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<bool> ValueChanged { get; set; }
+
+    private async Task SetValue(bool value)
+    {
+        if (value != Value)
+            await ValueChanged.InvokeAsync(value);
+    }
+}

@@ -71,6 +71,161 @@ public sealed class MeshtasticIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestEnvelope_ShouldPersistMeshPacketLink_WhenZeroHop()
+    {
+        var messageRepository = new FakeMessageRepository { AddResult = true };
+        var nodeRepository = new FakeNodeRepository();
+        var neighborLinkRepository = new FakeNeighborLinkRepository();
+        var topicDiscoveryService = new FakeTopicDiscoveryService();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new MeshtasticIngestionService(
+            messageRepository,
+            nodeRepository,
+            topicDiscoveryService,
+            unitOfWork,
+            NullLogger<MeshtasticIngestionService>.Instance,
+            neighborLinkRepository);
+
+        await service.IngestEnvelope(
+            new MeshtasticEnvelope
+            {
+                BrokerServer = "broker.meshboard.test",
+                Topic = "msh/US/2/e/LongFast/!aabbccdd",
+                PacketType = "Text Message",
+                PayloadPreview = "hello",
+                FromNodeId = "!11223344",
+                GatewayNodeId = "!aabbccdd",
+                HopStart = 3,
+                HopLimit = 3,
+                RxSnr = -2.5f,
+                LastHeardChannel = "US/LongFast",
+                ReceivedAtUtc = DateTimeOffset.Parse("2026-03-23T10:00:00Z")
+            });
+
+        Assert.Equal(1, neighborLinkRepository.UpsertCalls);
+        var link = Assert.Single(neighborLinkRepository.LastLinks);
+        Assert.Equal("!11223344", link.SourceNodeId);
+        Assert.Equal("!aabbccdd", link.TargetNodeId);
+        Assert.Equal(-2.5f, link.SnrDb);
+    }
+
+    [Fact]
+    public async Task IngestEnvelope_ShouldNotPersistMeshPacketLink_WhenMultiHop()
+    {
+        var messageRepository = new FakeMessageRepository { AddResult = true };
+        var nodeRepository = new FakeNodeRepository();
+        var neighborLinkRepository = new FakeNeighborLinkRepository();
+        var topicDiscoveryService = new FakeTopicDiscoveryService();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new MeshtasticIngestionService(
+            messageRepository,
+            nodeRepository,
+            topicDiscoveryService,
+            unitOfWork,
+            NullLogger<MeshtasticIngestionService>.Instance,
+            neighborLinkRepository);
+
+        await service.IngestEnvelope(
+            new MeshtasticEnvelope
+            {
+                BrokerServer = "broker.meshboard.test",
+                Topic = "msh/US/2/e/LongFast/!aabbccdd",
+                PacketType = "Text Message",
+                PayloadPreview = "relayed",
+                FromNodeId = "!11223344",
+                GatewayNodeId = "!aabbccdd",
+                HopStart = 3,
+                HopLimit = 1,
+                LastHeardChannel = "US/LongFast",
+                ReceivedAtUtc = DateTimeOffset.Parse("2026-03-23T10:00:00Z")
+            });
+
+        Assert.Equal(0, neighborLinkRepository.UpsertCalls);
+    }
+
+    [Fact]
+    public async Task IngestEnvelope_ShouldNotPersistMeshPacketLink_WhenGatewayNodeIdIsMissing()
+    {
+        var messageRepository = new FakeMessageRepository { AddResult = true };
+        var nodeRepository = new FakeNodeRepository();
+        var neighborLinkRepository = new FakeNeighborLinkRepository();
+        var topicDiscoveryService = new FakeTopicDiscoveryService();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new MeshtasticIngestionService(
+            messageRepository,
+            nodeRepository,
+            topicDiscoveryService,
+            unitOfWork,
+            NullLogger<MeshtasticIngestionService>.Instance,
+            neighborLinkRepository);
+
+        await service.IngestEnvelope(
+            new MeshtasticEnvelope
+            {
+                BrokerServer = "broker.meshboard.test",
+                Topic = "msh/US/2/e/LongFast/!aabbccdd",
+                PacketType = "Text Message",
+                PayloadPreview = "test",
+                FromNodeId = "!11223344",
+                GatewayNodeId = null,
+                HopStart = 3,
+                HopLimit = 3,
+                LastHeardChannel = "US/LongFast",
+                ReceivedAtUtc = DateTimeOffset.Parse("2026-03-23T10:00:00Z")
+            });
+
+        Assert.Equal(0, neighborLinkRepository.UpsertCalls);
+    }
+
+    [Fact]
+    public async Task IngestEnvelope_ShouldPersistTracerouteLinks_WhenTracerouteHopsPresent()
+    {
+        var messageRepository = new FakeMessageRepository { AddResult = true };
+        var nodeRepository = new FakeNodeRepository();
+        var neighborLinkRepository = new FakeNeighborLinkRepository();
+        var topicDiscoveryService = new FakeTopicDiscoveryService();
+        var unitOfWork = new FakeUnitOfWork();
+        var service = new MeshtasticIngestionService(
+            messageRepository,
+            nodeRepository,
+            topicDiscoveryService,
+            unitOfWork,
+            NullLogger<MeshtasticIngestionService>.Instance,
+            neighborLinkRepository);
+
+        await service.IngestEnvelope(
+            new MeshtasticEnvelope
+            {
+                BrokerServer = "broker.meshboard.test",
+                Topic = "msh/US/2/e/LongFast/!aabbccdd",
+                PacketType = "Traceroute",
+                PayloadPreview = "Traceroute: !11223344 -> !55667788 -> !99aabbcc (2 hops)",
+                FromNodeId = "!11223344",
+                LastHeardChannel = "US/LongFast",
+                ReceivedAtUtc = DateTimeOffset.Parse("2026-03-23T10:00:00Z"),
+                TracerouteHops =
+                [
+                    new MeshtasticTracerouteHop { NodeId = "!11223344", SnrDb = null },
+                    new MeshtasticTracerouteHop { NodeId = "!55667788", SnrDb = 5.0f },
+                    new MeshtasticTracerouteHop { NodeId = "!99aabbcc", SnrDb = -1.5f }
+                ]
+            });
+
+        Assert.Equal(1, neighborLinkRepository.UpsertCalls);
+        Assert.Equal(2, neighborLinkRepository.LastLinks.Count);
+
+        var link1 = neighborLinkRepository.LastLinks.Single(l =>
+            (l.SourceNodeId == "!11223344" && l.TargetNodeId == "!55667788") ||
+            (l.SourceNodeId == "!55667788" && l.TargetNodeId == "!11223344"));
+        Assert.Equal(5.0f, link1.SnrDb);
+
+        var link2 = neighborLinkRepository.LastLinks.Single(l =>
+            (l.SourceNodeId == "!55667788" && l.TargetNodeId == "!99aabbcc") ||
+            (l.SourceNodeId == "!99aabbcc" && l.TargetNodeId == "!55667788"));
+        Assert.Equal(-1.5f, link2.SnrDb);
+    }
+
+    [Fact]
     public async Task IngestEnvelope_ShouldSkipNeighborLinkPersistence_WhenMessageIsDuplicate()
     {
         var messageRepository = new FakeMessageRepository { AddResult = false };

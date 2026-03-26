@@ -20,6 +20,7 @@ const portNums = Object.freeze({
   textMessageCompressedApp: 7,
   waypointApp: 8,
   telemetryApp: 67,
+  tracerouteApp: 70,
   neighborinfoApp: 71,
   mapReportApp: 73
 });
@@ -51,6 +52,10 @@ const packetTypesByPortNum = Object.freeze({
   [portNums.telemetryApp]: {
     name: "TELEMETRY_APP",
     packetType: "Telemetry"
+  },
+  [portNums.tracerouteApp]: {
+    name: "TRACEROUTE_APP",
+    packetType: "Traceroute"
   },
   [portNums.neighborinfoApp]: {
     name: "NEIGHBORINFO_APP",
@@ -189,6 +194,11 @@ export async function processPacketRequest(request, currentKeyRecords) {
   rawPacket.packetId = packetMetadata.packetId;
   rawPacket.fromNodeNumber = packetMetadata.fromNodeNumber;
   rawPacket.isEncrypted = packetMetadata.payloadVariant === "encrypted";
+  rawPacket.rxSnr = packetMetadata.rxSnr ?? null;
+  rawPacket.rxRssi = packetMetadata.rxRssi ?? null;
+  rawPacket.hopLimit = packetMetadata.hopLimit ?? null;
+  rawPacket.hopStart = packetMetadata.hopStart ?? null;
+  rawPacket.gatewayNodeId = packetMetadata.gatewayNodeId ?? null;
 
   if (packetMetadata.payloadVariant === "decoded") {
     return createDecodedPacketResult(
@@ -524,6 +534,7 @@ function tryParseMeshtasticPacket(payloadBytes) {
 function tryParseServiceEnvelope(payloadBytes) {
   let offset = 0;
   let packetBytes = null;
+  let gatewayNodeId = null;
 
   while (offset < payloadBytes.length) {
     const tag = readVarint(payloadBytes, offset);
@@ -546,6 +557,21 @@ function tryParseServiceEnvelope(payloadBytes) {
       continue;
     }
 
+    if (fieldNumber === 3 && wireType === 2) {
+      const fieldBytes = readLengthDelimited(payloadBytes, offset);
+      if (!fieldBytes) {
+        return null;
+      }
+
+      const decoded = textDecoder.decode(fieldBytes.value);
+      if (decoded && decoded.trim().length > 0) {
+        gatewayNodeId = decoded.trim();
+      }
+
+      offset = fieldBytes.nextOffset;
+      continue;
+    }
+
     const nextOffset = skipField(payloadBytes, offset, wireType);
     if (nextOffset < 0) {
       return null;
@@ -554,7 +580,20 @@ function tryParseServiceEnvelope(payloadBytes) {
     offset = nextOffset;
   }
 
-  return packetBytes ? tryParseMeshPacket(packetBytes) : null;
+  if (!packetBytes) {
+    return null;
+  }
+
+  const packet = tryParseMeshPacket(packetBytes);
+  if (!packet) {
+    return null;
+  }
+
+  if (gatewayNodeId) {
+    packet.gatewayNodeId = gatewayNodeId;
+  }
+
+  return packet;
 }
 
 function tryParseMeshPacket(payloadBytes) {
@@ -563,6 +602,10 @@ function tryParseMeshPacket(payloadBytes) {
   let packetId = null;
   let encryptedBytes = null;
   let decodedBytes = null;
+  let rxSnr = null;
+  let hopLimit = null;
+  let rxRssi = null;
+  let hopStart = null;
 
   while (offset < payloadBytes.length) {
     const tag = readVarint(payloadBytes, offset);
@@ -627,6 +670,60 @@ function tryParseMeshPacket(payloadBytes) {
           packetId = field.value;
         }
         break;
+      case 8:
+        if (wireType === 5) {
+          const field = readFloat32(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          rxSnr = field.value !== 0 && isFinite(field.value) ? field.value : null;
+        } else {
+          const nextOffset = skipField(payloadBytes, offset, wireType);
+          if (nextOffset < 0) {
+            return null;
+          }
+
+          offset = nextOffset;
+        }
+        break;
+      case 9:
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          hopLimit = numberOrNull(field.value);
+        }
+        break;
+      case 12:
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          rxRssi = int32OrNull(field.value);
+          if (rxRssi === 0) {
+            rxRssi = null;
+          }
+        }
+        break;
+      case 15:
+        {
+          const field = readVarint(payloadBytes, offset);
+          if (!field) {
+            return null;
+          }
+
+          offset = field.nextOffset;
+          hopStart = numberOrNull(field.value);
+        }
+        break;
       default:
         {
           const nextOffset = skipField(payloadBytes, offset, wireType);
@@ -640,13 +737,16 @@ function tryParseMeshPacket(payloadBytes) {
     }
   }
 
+  const signalQuality = { rxSnr, rxRssi, hopLimit, hopStart, gatewayNodeId: null };
+
   if (encryptedBytes && encryptedBytes.length > 0) {
     return {
       payloadVariant: "encrypted",
       fromNodeNumber,
       packetId,
       encryptedBytes,
-      decodedBytes: null
+      decodedBytes: null,
+      ...signalQuality
     };
   }
 
@@ -656,7 +756,8 @@ function tryParseMeshPacket(payloadBytes) {
       fromNodeNumber,
       packetId,
       encryptedBytes: null,
-      decodedBytes
+      decodedBytes,
+      ...signalQuality
     };
   }
 
@@ -665,7 +766,8 @@ function tryParseMeshPacket(payloadBytes) {
     fromNodeNumber,
     packetId,
     encryptedBytes: null,
-    decodedBytes: null
+    decodedBytes: null,
+    ...signalQuality
   };
 }
 
@@ -712,8 +814,12 @@ function tryCreateDecodedPacketEvent(rawPacket, decodedBytes) {
   const nodeProjectionOutcome = tryCreateNodeProjectionEvent(rawPacket, dataMessage, portMetadata);
   const neighborInfoOutcome = tryCreateNeighborInfoEvent(rawPacket, dataMessage);
   const routingInfoOutcome = tryCreateRoutingInfoEvent(dataMessage);
+  const fromNodeId = rawPacket.fromNodeNumber ? `!${rawPacket.fromNodeNumber.toString(16).padStart(8, "0")}` : null;
+  const toNodeId = dataMessage.destinationNodeNumber ? `!${dataMessage.destinationNodeNumber.toString(16).padStart(8, "0")}` : null;
+  const tracerouteInfoOutcome = tryCreateTracerouteInfoEvent(dataMessage, fromNodeId, toNodeId);
   const payloadPreview = neighborInfoOutcome?.payloadPreview ??
     routingInfoOutcome?.payloadPreview ??
+    tracerouteInfoOutcome?.payloadPreview ??
     nodeProjectionOutcome?.payloadPreview ??
     buildPayloadPreview(portMetadata, dataMessage.payloadBytes);
 
@@ -730,7 +836,8 @@ function tryCreateDecodedPacketEvent(rawPacket, decodedBytes) {
       destinationNodeNumber: dataMessage.destinationNodeNumber,
       nodeProjection: nodeProjectionOutcome?.nodeProjection ?? null,
       neighborInfo: neighborInfoOutcome?.neighborInfo ?? null,
-      routingInfo: routingInfoOutcome?.routingInfo ?? null
+      routingInfo: routingInfoOutcome?.routingInfo ?? null,
+      tracerouteInfo: tracerouteInfoOutcome?.tracerouteInfo ?? null
     }
   };
 }
@@ -779,8 +886,18 @@ function tryCreateJsonDecodedPacketEvent(rawPacket, payloadBytes) {
     payloadBytesForEvent,
     payloadContext.isBinaryPayload,
     payloadValue);
+  const jsonFromNodeId = sourceNodeNumber ? `!${sourceNodeNumber.toString(16).padStart(8, "0")}` : null;
+  const jsonToNodeId = destinationNodeNumber ? `!${destinationNodeNumber.toString(16).padStart(8, "0")}` : null;
+  const tracerouteInfoOutcome = tryCreateJsonTracerouteInfoEvent(
+    portNumValue,
+    payloadBytesForEvent,
+    payloadContext.isBinaryPayload,
+    payloadValue,
+    jsonFromNodeId,
+    jsonToNodeId);
   const payloadPreview = neighborInfoOutcome?.payloadPreview ??
     routingInfoOutcome?.payloadPreview ??
+    tracerouteInfoOutcome?.payloadPreview ??
     nodeProjectionOutcome?.payloadPreview ??
     buildJsonDecodedPayloadPreview(
       portNumValue,
@@ -802,7 +919,8 @@ function tryCreateJsonDecodedPacketEvent(rawPacket, payloadBytes) {
       destinationNodeNumber,
       nodeProjection: nodeProjectionOutcome?.nodeProjection ?? null,
       neighborInfo: neighborInfoOutcome?.neighborInfo ?? null,
-      routingInfo: routingInfoOutcome?.routingInfo ?? null
+      routingInfo: routingInfoOutcome?.routingInfo ?? null,
+      tracerouteInfo: tracerouteInfoOutcome?.tracerouteInfo ?? null
     }
   };
 }
@@ -1014,6 +1132,80 @@ function tryCreateJsonRoutingInfoEvent(portNumValue, payloadBytes, isBinaryPaylo
       snrBack: routingInfo.snrBack
     },
     payloadPreview: buildRoutingPreview(routingInfo)
+  };
+}
+
+function buildTraceroutePreview(routeDiscovery, fromNodeId, toNodeId) {
+  const allNodes = [];
+
+  if (fromNodeId) {
+    allNodes.push(fromNodeId);
+  }
+
+  allNodes.push(...routeDiscovery.routeNodeIds);
+
+  if (toNodeId) {
+    allNodes.push(toNodeId);
+  }
+
+  if (allNodes.length < 2) {
+    return "Traceroute";
+  }
+
+  const hopCount = routeDiscovery.routeNodeIds.length;
+  const suffix = hopCount === 1 ? "hop" : "hops";
+  return `Traceroute: ${allNodes.join(" -> ")} (${hopCount} ${suffix})`;
+}
+
+function tryCreateTracerouteInfoEvent(dataMessage, fromNodeId, toNodeId) {
+  if (!dataMessage || typeof dataMessage !== "object" || dataMessage.portNumValue !== portNums.tracerouteApp) {
+    return null;
+  }
+
+  const routeDiscovery = parseRouteDiscoveryPayload(dataMessage.payloadBytes);
+
+  if (!routeDiscovery) {
+    return null;
+  }
+
+  return {
+    tracerouteInfo: {
+      kind: "traceroute",
+      errorCode: null,
+      errorName: null,
+      routeNodeIds: routeDiscovery.routeNodeIds,
+      snrTowards: routeDiscovery.snrTowards,
+      routeBackNodeIds: routeDiscovery.routeBackNodeIds,
+      snrBack: routeDiscovery.snrBack
+    },
+    payloadPreview: buildTraceroutePreview(routeDiscovery, fromNodeId, toNodeId)
+  };
+}
+
+function tryCreateJsonTracerouteInfoEvent(portNumValue, payloadBytes, isBinaryPayload, payloadValue, fromNodeId, toNodeId) {
+  if (portNumValue !== portNums.tracerouteApp) {
+    return null;
+  }
+
+  const routeDiscovery = isBinaryPayload && payloadBytes.length > 0
+    ? parseRouteDiscoveryPayload(payloadBytes)
+    : null;
+
+  if (!routeDiscovery) {
+    return null;
+  }
+
+  return {
+    tracerouteInfo: {
+      kind: "traceroute",
+      errorCode: null,
+      errorName: null,
+      routeNodeIds: routeDiscovery.routeNodeIds,
+      snrTowards: routeDiscovery.snrTowards,
+      routeBackNodeIds: routeDiscovery.routeBackNodeIds,
+      snrBack: routeDiscovery.snrBack
+    },
+    payloadPreview: buildTraceroutePreview(routeDiscovery, fromNodeId, toNodeId)
   };
 }
 
@@ -1456,6 +1648,9 @@ function parseJsonPortNumValue(value) {
       case "telemetryapp":
       case "telemetry":
         return portNums.telemetryApp;
+      case "tracerouteapp":
+      case "traceroute":
+        return portNums.tracerouteApp;
       case "neighborinfoapp":
       case "neighborinfo":
         return portNums.neighborinfoApp;
@@ -1489,6 +1684,9 @@ function mapJsonTypeToPortNum(value) {
     case "telemetry":
     case "telemetryapp":
       return portNums.telemetryApp;
+    case "traceroute":
+    case "tracerouteapp":
+      return portNums.tracerouteApp;
     case "neighborinfo":
     case "neighborinfoapp":
       return portNums.neighborinfoApp;
@@ -3072,6 +3270,13 @@ function buildPayloadPreview(portMetadata, payloadBytes) {
     return routingInfo
       ? buildRoutingPreview(routingInfo)
       : "Routing update";
+  }
+
+  if (portMetadata.portNumValue === portNums.tracerouteApp) {
+    const routeDiscovery = parseRouteDiscoveryPayload(payloadBytes);
+    return routeDiscovery
+      ? buildTraceroutePreview(routeDiscovery, null, null)
+      : "Traceroute";
   }
 
   if (portMetadata.portNumValue === portNums.neighborinfoApp) {

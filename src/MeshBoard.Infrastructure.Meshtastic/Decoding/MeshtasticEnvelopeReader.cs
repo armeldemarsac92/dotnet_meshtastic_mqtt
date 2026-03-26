@@ -56,7 +56,9 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             serviceEnvelope.Packet is not null &&
             HasPacketContent(serviceEnvelope.Packet))
         {
-            return await MapEnvelope(workspaceId, topic, serviceEnvelope.Packet, payload.Length, cancellationToken);
+            var serviceEnvelopeResult = await MapEnvelope(workspaceId, topic, serviceEnvelope.Packet, payload.Length, cancellationToken);
+            serviceEnvelopeResult.GatewayNodeId = NullIfWhiteSpace(serviceEnvelope.GatewayId);
+            return serviceEnvelopeResult;
         }
 
         if (TryParseMeshPacket(payload, out var directPacket) &&
@@ -90,7 +92,11 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             LastHeardChannel = TryExtractChannelFromTopic(topic),
             ToNodeId = ResolveTargetNodeId(packet.To),
             IsPrivate = IsPrivate(packet.To),
-            ReceivedAtUtc = ResolveReceivedAtUtc(packet.RxTime)
+            ReceivedAtUtc = ResolveReceivedAtUtc(packet.RxTime),
+            RxSnr = float.IsFinite(packet.RxSnr) ? packet.RxSnr : null,
+            RxRssi = packet.RxRssi,
+            HopLimit = packet.HopLimit,
+            HopStart = packet.HopStart
         };
 
         var decodedPayload = packet.PayloadVariantCase switch
@@ -228,6 +234,12 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
 
         envelope.FromNodeId ??= TryExtractNodeIdFromTopic(topic);
 
+        envelope.RxSnr = TryGetSingle(root, "rxSnr", "rx_snr");
+        envelope.RxRssi = TryGetInt(root, "rxRssi", "rx_rssi");
+        envelope.HopLimit = TryGetUInt(root, "hopLimit", "hop_limit");
+        envelope.HopStart = TryGetUInt(root, "hopStart", "hop_start");
+        envelope.GatewayNodeId = NullIfWhiteSpace(TryGetString(root, "gatewayId", "gateway_id", "from"));
+
         if (IsBroadcastNodeId(envelope.ToNodeId))
         {
             envelope.ToNodeId = null;
@@ -247,6 +259,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         envelope.PayloadPreview = envelope.PacketType switch
         {
             "Neighbor Info" => DecodeJsonNeighborInfoPayload(envelope, root, payloadLength),
+            "Traceroute" => BuildJsonTraceroutePayloadPreview(envelope, root, payloadLength),
             _ => BuildJsonPayloadPreview(envelope.PacketType, root, payloadLength)
         };
 
@@ -322,6 +335,22 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             "Routing" => BuildJsonRoutingPayloadPreview(root, payloadLength),
             _ => $"JSON {packetType.ToLowerInvariant()} payload ({payloadLength} bytes)"
         };
+    }
+
+    private string BuildJsonTraceroutePayloadPreview(MeshtasticEnvelope envelope, JsonElement root, int payloadLength)
+    {
+        if (TryGetProperty(root, out var payloadElement, "payload") &&
+            payloadElement.ValueKind == JsonValueKind.String)
+        {
+            var payloadText = payloadElement.GetString() ?? string.Empty;
+
+            if (TryDecodeBase64(payloadText, out var decodedBytes))
+            {
+                return DecodeTraceroutePayload(envelope, ByteString.CopyFrom(decodedBytes));
+            }
+        }
+
+        return $"Traceroute payload ({payloadLength} bytes)";
     }
 
     private string DecodeJsonNeighborInfoPayload(MeshtasticEnvelope envelope, JsonElement root, int payloadLength)
@@ -424,6 +453,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             PortNum.NodeinfoApp => DecodeNodeInfoPayload(envelope, decoded.Payload),
             PortNum.RoutingApp => DecodeRoutingPayload(decoded.Payload),
             PortNum.TelemetryApp => DecodeTelemetryPayload(envelope, decoded.Payload),
+            PortNum.TracerouteApp => DecodeTraceroutePayload(envelope, decoded.Payload),
             PortNum.NeighborinfoApp => DecodeNeighborInfoPayload(envelope, decoded.Payload),
             _ => $"{GetPacketType(decoded.Portnum)} payload ({decoded.Payload.Length} bytes)"
         };
@@ -539,6 +569,58 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
         }
     }
 
+    private string DecodeTraceroutePayload(MeshtasticEnvelope envelope, ByteString payload)
+    {
+        try
+        {
+            var routeDiscovery = RouteDiscovery.Parser.ParseFrom(payload);
+
+            var hops = new List<MeshtasticTracerouteHop>();
+
+            if (!string.IsNullOrWhiteSpace(envelope.FromNodeId))
+            {
+                hops.Add(new MeshtasticTracerouteHop { NodeId = envelope.FromNodeId });
+            }
+
+            for (var i = 0; i < routeDiscovery.Route.Count; i++)
+            {
+                var nodeId = FormatNodeId(routeDiscovery.Route[i]);
+
+                if (string.IsNullOrWhiteSpace(nodeId))
+                {
+                    continue;
+                }
+
+                // snr_towards is stored as int32 with 0.25 dB resolution (multiply by 0.25 to get dB)
+                float? snr = i < routeDiscovery.SnrTowards.Count
+                    ? routeDiscovery.SnrTowards[i] * 0.25f
+                    : null;
+
+                hops.Add(new MeshtasticTracerouteHop { NodeId = nodeId, SnrDb = snr });
+            }
+
+            if (!string.IsNullOrWhiteSpace(envelope.ToNodeId))
+            {
+                float? lastSnr = routeDiscovery.SnrTowards.Count > routeDiscovery.Route.Count
+                    ? routeDiscovery.SnrTowards[routeDiscovery.Route.Count] * 0.25f
+                    : null;
+
+                hops.Add(new MeshtasticTracerouteHop { NodeId = envelope.ToNodeId, SnrDb = lastSnr });
+            }
+
+            envelope.TracerouteHops = hops;
+
+            var hopCount = routeDiscovery.Route.Count;
+            var suffix = hopCount == 1 ? "hop" : "hops";
+            return $"Traceroute: {string.Join(" -> ", hops.Select(static h => h.NodeId))} ({hopCount} {suffix})";
+        }
+        catch (InvalidProtocolBufferException exception)
+        {
+            _logger.LogDebug(exception, "Unable to decode Meshtastic traceroute payload");
+            return $"Traceroute payload ({payload.Length} bytes)";
+        }
+    }
+
     private string DecodeRoutingPayload(ByteString payload)
     {
         try
@@ -651,6 +733,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             PortNum.NodeinfoApp => "Node Info",
             PortNum.RoutingApp => "Routing",
             PortNum.TelemetryApp => "Telemetry",
+            PortNum.TracerouteApp => "Traceroute",
             PortNum.NeighborinfoApp => "Neighbor Info",
             _ => portNum.ToString()
         };
@@ -809,6 +892,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
             "position" or "positionupdate" or "positionapp" => "Position Update",
             "routing" or "routingapp" => "Routing",
             "telemetry" or "telemetryapp" => "Telemetry",
+            "traceroute" or "tracerouteapp" => "Traceroute",
             "neighborinfo" or "neighborinfoapp" => "Neighbor Info",
             "encrypted" or "encryptedpacket" => "Encrypted Packet",
             _ => jsonType
@@ -846,6 +930,7 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
                 "nodeinfo" or "nodeinfoapp" => PortNum.NodeinfoApp,
                 "routing" or "routingapp" => PortNum.RoutingApp,
                 "telemetry" or "telemetryapp" => PortNum.TelemetryApp,
+                "traceroute" or "tracerouteapp" => PortNum.TracerouteApp,
                 "neighborinfo" or "neighborinfoapp" => PortNum.NeighborinfoApp,
                 _ => PortNum.UnknownApp
             };
@@ -914,6 +999,27 @@ internal sealed class MeshtasticEnvelopeReader : IMeshtasticEnvelopeReader
 
         if (valueElement.ValueKind == JsonValueKind.String &&
             uint.TryParse(valueElement.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out numericValue))
+        {
+            return numericValue;
+        }
+
+        return null;
+    }
+
+    private static int? TryGetInt(JsonElement element, params string[] propertyNames)
+    {
+        if (!TryGetProperty(element, out var valueElement, propertyNames))
+        {
+            return null;
+        }
+
+        if (valueElement.ValueKind == JsonValueKind.Number && valueElement.TryGetInt32(out var numericValue))
+        {
+            return numericValue;
+        }
+
+        if (valueElement.ValueKind == JsonValueKind.String &&
+            int.TryParse(valueElement.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out numericValue))
         {
             return numericValue;
         }

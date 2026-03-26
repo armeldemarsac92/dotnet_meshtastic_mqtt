@@ -134,8 +134,9 @@
 
             <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <article class="shell-subpanel rounded-[1.4rem] p-4">
-                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Components</p>
-                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@(_topology?.ConnectedComponentCount ?? 0)</p>
+                    <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Clusters</p>
+                    <p class="mt-3 text-2xl font-semibold text-cinder-950">@((_topology?.ConnectedComponentCount ?? 0) - (_topology?.IsolatedNodeCount ?? 0))</p>
+                    <p class="mt-1 text-xs text-cinder-800/50">@(_topology?.ConnectedComponentCount ?? 0) total incl. isolated</p>
                 </article>
                 <article class="shell-subpanel rounded-[1.4rem] p-4">
                     <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Largest component</p>

@@ -67,7 +67,13 @@ public sealed class DecryptedMessageStore
             PayloadBase64 = decodedPacket.PayloadBase64?.Trim() ?? string.Empty,
             PayloadSizeBytes = decodedPacket.PayloadSizeBytes,
             SourceNodeNumber = decodedPacket.SourceNodeNumber,
-            DestinationNodeNumber = decodedPacket.DestinationNodeNumber
+            DestinationNodeNumber = decodedPacket.DestinationNodeNumber,
+            RxSnr = rawPacket.RxSnr,
+            RxRssi = rawPacket.RxRssi,
+            HopLimit = rawPacket.HopLimit,
+            HopStart = rawPacket.HopStart,
+            GatewayNodeId = string.IsNullOrWhiteSpace(rawPacket.GatewayNodeId) ? null : rawPacket.GatewayNodeId.Trim(),
+            TracerouteInfo = decodedPacket.TracerouteInfo
         };
 
         var current = _state.Snapshot;

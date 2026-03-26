@@ -1,0 +1,86 @@
+@using MeshBoard.Client.Channels
+
+<div class="grid gap-4">
+    @foreach (var channel in Channels)
+    {
+        <article class="shell-subpanel rounded-[1.7rem] p-5">
+            <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div class="space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-signal-600">@channel.Region</p>
+                    <button type="button"
+                            class="text-left"
+                            @onclick="() => OnOpenChannel.InvokeAsync(channel.ChannelKey)">
+                        <h3 class="font-display text-3xl text-cinder-950">@channel.ChannelName</h3>
+                    </button>
+                    <p class="text-sm text-cinder-800/80">@channel.ServerAddress</p>
+                </div>
+
+                <div class="grid gap-2 text-sm text-cinder-800/78 sm:text-right">
+                    <span>@channel.NodeCount nodes</span>
+                    <span>@channel.PacketCount packets</span>
+                    @if (channel.NeighborLinkCount > 0)
+                    {
+                        <span>@channel.NeighborLinkCount neighbor links</span>
+                    }
+                    <span>@FormatTimestamp(channel.LastObservedAtUtc)</span>
+                </div>
+            </div>
+
+            <div class="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                <div class="space-y-3">
+                    @if (!string.IsNullOrWhiteSpace(channel.LastPacketType))
+                    {
+                        <div>
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Last packet</p>
+                            <p class="mt-2 text-sm text-cinder-900">@channel.LastPacketType</p>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(channel.LatestSourceTopic))
+                    {
+                        <div>
+                            <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">@(channel.LastPacketType is not null ? "Latest topic" : "Topic pattern")</p>
+                            <code class="mt-2 block break-all rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-xs leading-6 text-cinder-900">
+                                @channel.LatestSourceTopic
+                            </code>
+                        </div>
+                    }
+                </div>
+
+                <div class="flex flex-col gap-4">
+                    <div>
+                        <p class="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-cinder-800/60">Latest payload preview</p>
+                        <div class="mt-2 rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-7 text-cinder-900">
+                            @(string.IsNullOrWhiteSpace(channel.LastPayloadPreview)
+                                ? "No decoded payload preview available."
+                                : channel.LastPayloadPreview)
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button type="button"
+                                class="shell-button shell-button-accent rounded-full px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em]"
+                                @onclick="() => OnOpenChannel.InvokeAsync(channel.ChannelKey)">
+                            Open details
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </article>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ChannelRowViewModel> Channels { get; set; } = Array.Empty<ChannelRowViewModel>();
+
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnOpenChannel { get; set; }
+
+    private static string FormatTimestamp(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "No packets yet";
+    }
+}

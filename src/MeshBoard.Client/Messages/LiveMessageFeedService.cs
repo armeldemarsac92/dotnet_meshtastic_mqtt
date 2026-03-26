@@ -64,6 +64,11 @@ public sealed class LiveMessageFeedService
                 : rawPacket.MatchedKeyId.Trim(),
             FromNodeNumber = rawPacket.FromNodeNumber,
             PacketId = rawPacket.PacketId,
+            RxSnr = rawPacket.RxSnr,
+            RxRssi = rawPacket.RxRssi,
+            HopLimit = rawPacket.HopLimit,
+            HopStart = rawPacket.HopStart,
+            GatewayNodeId = string.IsNullOrWhiteSpace(rawPacket.GatewayNodeId) ? null : rawPacket.GatewayNodeId.Trim(),
             PortNumValue = decodedPacket?.PortNumValue,
             PortNumName = string.IsNullOrWhiteSpace(decodedPacket?.PortNumName)
                 ? null
@@ -79,7 +84,8 @@ public sealed class LiveMessageFeedService
                 : decodedPacket.PayloadBase64.Trim(),
             DecodedPayloadSizeBytes = decodedPacket?.PayloadSizeBytes,
             DecodedSourceNodeNumber = decodedPacket?.SourceNodeNumber,
-            DecodedDestinationNodeNumber = decodedPacket?.DestinationNodeNumber
+            DecodedDestinationNodeNumber = decodedPacket?.DestinationNodeNumber,
+            TracerouteInfo = decodedPacket?.TracerouteInfo
         };
 
         var messages = current.Messages

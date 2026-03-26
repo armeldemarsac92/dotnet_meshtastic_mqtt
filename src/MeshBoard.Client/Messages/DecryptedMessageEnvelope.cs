@@ -39,4 +39,16 @@ public sealed record DecryptedMessageEnvelope
     public uint? SourceNodeNumber { get; init; }
 
     public uint? DestinationNodeNumber { get; init; }
+
+    public float? RxSnr { get; init; }
+
+    public int? RxRssi { get; init; }
+
+    public int? HopLimit { get; init; }
+
+    public int? HopStart { get; init; }
+
+    public string? GatewayNodeId { get; init; }
+
+    public RealtimeRoutingEvent? TracerouteInfo { get; init; }
 }

@@ -48,5 +48,17 @@ public sealed class MeshtasticEnvelope
 
     public List<MeshtasticNeighborEntry>? Neighbors { get; set; }
 
+    public List<MeshtasticTracerouteHop>? TracerouteHops { get; set; }
+
+    public float? RxSnr { get; set; }
+
+    public int? RxRssi { get; set; }
+
+    public uint? HopLimit { get; set; }
+
+    public uint? HopStart { get; set; }
+
+    public string? GatewayNodeId { get; set; }
+
     public DateTimeOffset ReceivedAtUtc { get; set; }
 }

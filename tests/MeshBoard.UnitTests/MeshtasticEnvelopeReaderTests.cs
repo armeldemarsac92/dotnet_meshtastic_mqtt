@@ -413,6 +413,127 @@ public sealed class MeshtasticEnvelopeReaderTests
     }
 
     [Fact]
+    public async Task Read_ShouldExtractHopAndSignalFields_FromDirectMeshPacket()
+    {
+        var reader = CreateReader();
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            Id = 0x00AABBCC,
+            RxTime = 1_762_112_400,
+            RxSnr = -3.5f,
+            RxRssi = -92,
+            HopLimit = 2,
+            HopStart = 3,
+            Decoded = new Data
+            {
+                Portnum = PortNum.TextMessageApp,
+                Payload = Google.Protobuf.ByteString.CopyFromUtf8("hello")
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal(-3.5f, envelope.RxSnr);
+        Assert.Equal(-92, envelope.RxRssi);
+        Assert.Equal(2u, envelope.HopLimit);
+        Assert.Equal(3u, envelope.HopStart);
+    }
+
+    [Fact]
+    public async Task Read_ShouldExtractGatewayNodeId_FromServiceEnvelope()
+    {
+        var reader = CreateReader();
+        var textPayload = Google.Protobuf.ByteString.CopyFromUtf8("hello via gateway");
+        var serviceEnvelope = new ServiceEnvelope
+        {
+            GatewayId = "!aabbccdd",
+            Packet = new MeshPacket
+            {
+                From = 0x11223344,
+                Id = 0x55667788,
+                RxSnr = 4.25f,
+                HopLimit = 3,
+                HopStart = 3,
+                Decoded = new Data
+                {
+                    Portnum = PortNum.TextMessageApp,
+                    Payload = textPayload
+                }
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/LongFast/!11223344", serviceEnvelope.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("!aabbccdd", envelope.GatewayNodeId);
+        Assert.Equal(4.25f, envelope.RxSnr);
+        Assert.Equal(3u, envelope.HopStart);
+        Assert.Equal(3u, envelope.HopLimit);
+    }
+
+    [Fact]
+    public async Task Read_ShouldDecodeTraceroutePayload_FromDirectMeshPacket()
+    {
+        var reader = CreateReader();
+        var routeDiscovery = new RouteDiscovery();
+        routeDiscovery.Route.Add(0x87654321);
+        routeDiscovery.SnrTowards.Add(8);
+        routeDiscovery.SnrTowards.Add(12);
+
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            To = 0xAABBCCDD,
+            Id = 0x99887766,
+            Decoded = new Data
+            {
+                Portnum = PortNum.TracerouteApp,
+                Payload = routeDiscovery.ToByteString()
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Equal("Traceroute", envelope.PacketType);
+        Assert.NotNull(envelope.TracerouteHops);
+        Assert.Equal(3, envelope.TracerouteHops.Count);
+        Assert.Equal("!12345678", envelope.TracerouteHops[0].NodeId);
+        Assert.Equal("!87654321", envelope.TracerouteHops[1].NodeId);
+        Assert.Equal(8 * 0.25f, envelope.TracerouteHops[1].SnrDb);
+        Assert.Equal("!aabbccdd", envelope.TracerouteHops[2].NodeId);
+        Assert.Equal(12 * 0.25f, envelope.TracerouteHops[2].SnrDb);
+        Assert.Contains("Traceroute:", envelope.PayloadPreview);
+        Assert.Contains("!87654321", envelope.PayloadPreview);
+    }
+
+    [Fact]
+    public async Task Read_ShouldReturnNullSnrAndRssi_WhenFieldsAreZero()
+    {
+        var reader = CreateReader();
+        var meshPacket = new MeshPacket
+        {
+            From = 0x12345678,
+            Id = 0x00AABBCC,
+            RxSnr = 0f,
+            RxRssi = 0,
+            Decoded = new Data
+            {
+                Portnum = PortNum.TextMessageApp,
+                Payload = Google.Protobuf.ByteString.CopyFromUtf8("test")
+            }
+        };
+
+        var envelope = await reader.Read("workspace-tests", "msh/US/2/e/Test/!12345678", meshPacket.ToByteArray());
+
+        Assert.NotNull(envelope);
+        Assert.Null(envelope.RxSnr);
+        Assert.Null(envelope.RxRssi);
+    }
+
+    [Fact]
     public async Task Read_ShouldIgnorePayload_WhenMeshPacketHasNoKnownFields()
     {
         var reader = CreateReader();

@@ -60,7 +60,7 @@ public sealed class CollectorReadService : ICollectorReadService
     private const int DefaultStatsMaxRows = 500;
     private const int MaxStatsRows = 5_000;
     private const int DefaultTopologyTopCount = 10;
-    private const int MaxTopologyTopCount = 100;
+    private const int MaxTopologyTopCount = 5_000;
     private const int MaxTopologyRollupRows = 20_000;
     private const int DefaultOverviewMaxChannels = 20;
     private const int MaxOverviewMaxChannels = 100;
@@ -957,6 +957,7 @@ public sealed class CollectorReadService : ICollectorReadService
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
 
         return currentLinks
+            .DistinctBy(link => CreateLinkKey(link.SourceNodeId, link.TargetNodeId), StringComparer.Ordinal)
             .Select(link =>
             {
                 var linkKey = CreateLinkKey(link.SourceNodeId, link.TargetNodeId);
