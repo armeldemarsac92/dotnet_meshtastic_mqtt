@@ -10,11 +10,11 @@ internal static class BrokerPreferenceEndpointMappings
 {
     public static IEndpointRouteBuilder MapBrokerPreferenceEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/preferences/brokers")
+        var group = endpoints.MapGroup(ApiRoutes.Preferences.Brokers.Group)
             .RequireAuthorization();
 
         group.MapGet(
-            "/",
+            ApiRoutes.Preferences.Brokers.Root,
             async Task<IResult> (
                 IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
@@ -24,7 +24,7 @@ internal static class BrokerPreferenceEndpointMappings
             });
 
         group.MapPost(
-            "/",
+            ApiRoutes.Preferences.Brokers.Root,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
@@ -41,7 +41,7 @@ internal static class BrokerPreferenceEndpointMappings
                         cancellationToken);
 
                     return Results.Created(
-                        $"/api/preferences/brokers/{savedProfile.Id}",
+                        ApiRoutes.Preferences.Brokers.CreatedLocation(savedProfile.Id),
                         savedProfile);
                 }
                 catch (BadRequestException exception)
@@ -52,7 +52,7 @@ internal static class BrokerPreferenceEndpointMappings
             });
 
         group.MapPut(
-            "/{id:guid}",
+            ApiRoutes.Preferences.Brokers.ById,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
@@ -90,7 +90,7 @@ internal static class BrokerPreferenceEndpointMappings
             });
 
         group.MapGet(
-            "/active",
+            ApiRoutes.Preferences.Brokers.Active,
             async Task<IResult> (
                 IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
@@ -112,7 +112,7 @@ internal static class BrokerPreferenceEndpointMappings
             });
 
         group.MapPost(
-            "/{id:guid}/activate",
+            ApiRoutes.Preferences.Brokers.Activate,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,

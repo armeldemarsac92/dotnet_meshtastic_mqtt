@@ -7,11 +7,11 @@ internal static class VernemqWebhookEndpointMappings
 {
     public static IEndpointRouteBuilder MapVernemqWebhookEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/internal/realtime/vernemq")
+        var group = endpoints.MapGroup(ApiRoutes.VernemqWebhook.Group)
             .AllowAnonymous();
 
         group.MapPost(
-            "/auth-on-register-m5",
+            ApiRoutes.VernemqWebhook.AuthOnRegisterM5,
             (VernemqAuthOnRegisterM5Request request, IVernemqWebhookAuthorizationService authorizationService) =>
             {
                 return authorizationService.IsRegisterAuthorized(request.ClientId, request.Username, request.Password)
@@ -20,7 +20,7 @@ internal static class VernemqWebhookEndpointMappings
             });
 
         group.MapPost(
-            "/auth-on-subscribe-m5",
+            ApiRoutes.VernemqWebhook.AuthOnSubscribeM5,
             (VernemqAuthOnSubscribeM5Request request, IVernemqWebhookAuthorizationService authorizationService) =>
             {
                 var decisions = authorizationService.AuthorizeSubscriptions(
@@ -47,7 +47,7 @@ internal static class VernemqWebhookEndpointMappings
             });
 
         group.MapPost(
-            "/auth-on-publish-m5",
+            ApiRoutes.VernemqWebhook.AuthOnPublishM5,
             (VernemqAuthOnPublishM5Request request, IVernemqWebhookAuthorizationService authorizationService) =>
             {
                 return authorizationService.IsPublishAuthorized(request.ClientId, request.Username, request.Topic)

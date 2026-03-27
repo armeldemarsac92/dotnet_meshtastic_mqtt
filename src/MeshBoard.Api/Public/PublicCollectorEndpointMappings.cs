@@ -8,10 +8,10 @@ internal static class PublicCollectorEndpointMappings
 {
     public static IEndpointRouteBuilder MapPublicCollectorEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/public/collector");
+        var group = endpoints.MapGroup(ApiRoutes.PublicCollector.Group);
 
         group.MapGet(
-            "/servers",
+            ApiRoutes.PublicCollector.Servers,
             async Task<IResult> (
                 ICollectorReadService collectorReadService,
                 CancellationToken cancellationToken) =>
@@ -21,7 +21,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/channels",
+            ApiRoutes.PublicCollector.Channels,
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
                 [FromQuery] string? region,
@@ -39,7 +39,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/snapshot",
+            ApiRoutes.PublicCollector.Snapshot,
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
                 [FromQuery] string? region,
@@ -57,7 +57,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/stats/channel-packets",
+            ApiRoutes.PublicCollector.StatsChannelPackets,
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
                 [FromQuery] string? region,
@@ -75,7 +75,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/stats/node-packets",
+            ApiRoutes.PublicCollector.StatsNodePackets,
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
                 [FromQuery] string? region,
@@ -94,7 +94,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/stats/neighbor-links",
+            ApiRoutes.PublicCollector.StatsNeighborLinks,
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
                 [FromQuery] string? region,
@@ -113,7 +113,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/overview",
+            ApiRoutes.PublicCollector.Overview,
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
                 [FromQuery] string? region,
@@ -132,7 +132,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/nodes",
+            ApiRoutes.PublicCollector.Nodes,
             async Task<IResult> (
                 [FromQuery] string? searchText,
                 [FromQuery] CollectorNodeSortOption? sortBy,
@@ -154,7 +154,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/channels-page",
+            ApiRoutes.PublicCollector.ChannelsPage,
             async Task<IResult> (
                 [FromQuery] string? searchText,
                 [FromQuery] CollectorChannelSortOption? sortBy,
@@ -176,7 +176,7 @@ internal static class PublicCollectorEndpointMappings
             });
 
         group.MapGet(
-            "/topology",
+            ApiRoutes.PublicCollector.Topology,
             async Task<IResult> (
                 [FromQuery(Name = "serverAddress")] string? serverAddress,
                 [FromQuery] string? region,

@@ -13,10 +13,10 @@ internal static class ApiAuthEndpointMappings
 {
     public static IEndpointRouteBuilder MapApiAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/auth");
+        var group = endpoints.MapGroup(ApiRoutes.Auth.Group);
 
         group.MapGet(
-                "/antiforgery",
+                ApiRoutes.Auth.Antiforgery,
                 (HttpContext httpContext, IAntiforgery antiforgery) =>
                 {
                     var tokens = antiforgery.GetAndStoreTokens(httpContext);
@@ -30,7 +30,7 @@ internal static class ApiAuthEndpointMappings
             .AllowAnonymous();
 
         group.MapPost(
-                "/register",
+                ApiRoutes.Auth.Register,
                 async Task<IResult> (
                     HttpContext httpContext,
                     IAntiforgery antiforgery,
@@ -58,7 +58,7 @@ internal static class ApiAuthEndpointMappings
             .AllowAnonymous();
 
         group.MapPost(
-                "/login",
+                ApiRoutes.Auth.Login,
                 async Task<IResult> (
                     HttpContext httpContext,
                     IAntiforgery antiforgery,
@@ -84,7 +84,7 @@ internal static class ApiAuthEndpointMappings
             .AllowAnonymous();
 
         group.MapPost(
-                "/logout",
+                ApiRoutes.Auth.Logout,
                 async Task<IResult> (
                     HttpContext httpContext,
                     IAntiforgery antiforgery) =>
@@ -96,7 +96,7 @@ internal static class ApiAuthEndpointMappings
             .RequireAuthorization();
 
         group.MapGet(
-                "/me",
+                ApiRoutes.Auth.Me,
                 async Task<IResult> (
                     HttpContext httpContext,
                     IUserAccountService userAccountService,

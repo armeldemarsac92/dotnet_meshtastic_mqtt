@@ -10,11 +10,11 @@ internal static class FavoritePreferenceEndpointMappings
 {
     public static IEndpointRouteBuilder MapFavoritePreferenceEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/preferences/favorites")
+        var group = endpoints.MapGroup(ApiRoutes.Preferences.Favorites.Group)
             .RequireAuthorization();
 
         group.MapGet(
-            "/",
+            ApiRoutes.Preferences.Favorites.Root,
             async Task<IResult> (
                 IFavoriteNodeService favoriteNodeService,
                 CancellationToken cancellationToken) =>
@@ -24,7 +24,7 @@ internal static class FavoritePreferenceEndpointMappings
             });
 
         group.MapPost(
-            "/",
+            ApiRoutes.Preferences.Favorites.Root,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
@@ -46,7 +46,7 @@ internal static class FavoritePreferenceEndpointMappings
             });
 
         group.MapDelete(
-            "/{nodeId}",
+            ApiRoutes.Preferences.Favorites.ByNodeId,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,

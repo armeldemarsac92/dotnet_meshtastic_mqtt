@@ -7,10 +7,10 @@ internal static class RealtimeSessionEndpointMappings
 {
     public static IEndpointRouteBuilder MapRealtimeSessionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/realtime");
+        var group = endpoints.MapGroup(ApiRoutes.Realtime.Group);
 
         endpoints.MapGet(
-            "/.well-known/jwks.json",
+            ApiRoutes.Realtime.Jwks,
             (HttpContext httpContext, IRealtimeJwksService realtimeJwksService) =>
             {
                 httpContext.Response.Headers.CacheControl = "public,max-age=300";
@@ -18,7 +18,7 @@ internal static class RealtimeSessionEndpointMappings
             });
 
         group.MapPost(
-                "/session",
+                ApiRoutes.Realtime.Session,
                 async Task<IResult> (
                     HttpContext httpContext,
                     IAntiforgery antiforgery,
