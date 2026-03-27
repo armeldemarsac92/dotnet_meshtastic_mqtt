@@ -68,51 +68,13 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
         CancellationToken cancellationToken = default)
     {
         var workspaceId = GetWorkspaceId();
-
-        if (request is null)
-        {
-            throw new BadRequestException("A server profile request is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            throw new BadRequestException("Server name is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Host))
-        {
-            throw new BadRequestException("Server host is required.");
-        }
-
-        if (request.Port is < 1 or > 65535)
-        {
-            throw new BadRequestException("Server port must be between 1 and 65535.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.DownlinkTopic))
-        {
-            throw new BadRequestException("A downlink topic is required.");
-        }
-
-        var normalizedRequest = new SaveBrokerServerProfileRequest
-        {
-            Id = request.Id,
-            Name = request.Name.Trim(),
-            Host = request.Host.Trim(),
-            Port = request.Port,
-            UseTls = request.UseTls,
-            Username = request.Username.Trim(),
-            Password = request.Password,
-            DownlinkTopic = request.DownlinkTopic.Trim(),
-            EnableSend = request.EnableSend,
-            IsActive = request.IsActive
-        };
+        var normalizedRequest = request.Normalize();
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            var upsertRequest = CloneRequest(normalizedRequest);
+            var upsertRequest = normalizedRequest.Clone();
             upsertRequest.IsActive = false;
 
             var savedProfile = await _repository.UpsertAsync(workspaceId, upsertRequest, cancellationToken);
@@ -164,24 +126,6 @@ public sealed class BrokerServerProfileService : IBrokerServerProfileService
             throw;
         }
     }
-
-    private static SaveBrokerServerProfileRequest CloneRequest(SaveBrokerServerProfileRequest request)
-    {
-        return new SaveBrokerServerProfileRequest
-        {
-            Id = request.Id,
-            Name = request.Name,
-            Host = request.Host,
-            Port = request.Port,
-            UseTls = request.UseTls,
-            Username = request.Username,
-            Password = request.Password,
-            DownlinkTopic = request.DownlinkTopic,
-            EnableSend = request.EnableSend,
-            IsActive = request.IsActive
-        };
-    }
-
     private string GetWorkspaceId()
     {
         return _workspaceContextAccessor.GetWorkspaceId();

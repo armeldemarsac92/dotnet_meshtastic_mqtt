@@ -1,7 +1,7 @@
+using FluentValidation;
 using MeshBoard.Api.Authentication;
-using MeshBoard.Api.Preferences;
-using MeshBoard.Api.Public;
-using MeshBoard.Api.Realtime;
+using MeshBoard.Api.Extensions;
+using MeshBoard.Api.Middlewares.ExceptionHandlers;
 using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Authentication;
 using MeshBoard.Application.Abstractions.Workspaces;
@@ -19,7 +19,12 @@ using Microsoft.AspNetCore.HttpOverrides;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<BadRequestExceptionHandler>();
+builder.Services.AddExceptionHandler<NotFoundExceptionHandler>();
+builder.Services.AddExceptionHandler<ConflictExceptionHandler>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 builder.Services.AddApiApplicationServices();
 builder.Services.AddCollectorReadApplicationServices();
 builder.Services.AddNeo4jInfrastructure(builder.Configuration);
@@ -84,9 +89,9 @@ forwardedHeadersOptions.KnownIPNetworks.Clear();
 forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
 
+app.UseExceptionHandler();
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler();
     app.UseHsts();
     app.UseHttpsRedirection();
 }
@@ -95,13 +100,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
-app.MapApiAuthEndpoints();
-app.MapBrokerPreferenceEndpoints();
-app.MapFavoritePreferenceEndpoints();
-app.MapPublicCollectorEndpoints();
-app.MapRealtimeSessionEndpoints();
-app.MapVernemqWebhookEndpoints();
+app.MapApiEndpoints();
 
 app.Run();
 

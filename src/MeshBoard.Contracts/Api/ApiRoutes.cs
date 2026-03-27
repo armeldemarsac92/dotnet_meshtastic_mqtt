@@ -4,6 +4,7 @@ public static class ApiRoutes
 {
     private const string ApiBase = "/api";
     private const string InternalBase = "/internal";
+    public const string Health = $"{ApiBase}/health";
 
     public static class Auth
     {
