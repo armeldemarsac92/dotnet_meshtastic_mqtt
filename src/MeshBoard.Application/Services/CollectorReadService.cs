@@ -772,7 +772,7 @@ public sealed class CollectorReadService : ICollectorReadService
         IReadOnlyCollection<CollectorNeighborLinkHourlyRollup> rollups,
         int strongestLinkCount)
     {
-        var nodeById = nodes.ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+        var nodeById = nodes.DistinctBy(node => node.NodeId, StringComparer.Ordinal).ToDictionary(node => node.NodeId, StringComparer.Ordinal);
         var adjacency = BuildAdjacency(nodes.Select(node => node.NodeId), links);
         var components = BuildComponents(adjacency);
         var componentSizes = components
