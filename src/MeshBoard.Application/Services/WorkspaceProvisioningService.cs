@@ -47,18 +47,7 @@ public sealed class WorkspaceProvisioningService : IWorkspaceProvisioningService
 
         await _brokerServerProfileRepository.UpsertAsync(
             workspaceId,
-            new SaveBrokerServerProfileRequest
-            {
-                Name = "Default server",
-                Host = _brokerOptions.Host,
-                Port = _brokerOptions.Port,
-                UseTls = _brokerOptions.UseTls,
-                Username = _brokerOptions.Username,
-                Password = _brokerOptions.Password,
-                DownlinkTopic = _brokerOptions.DownlinkTopic,
-                EnableSend = _brokerOptions.EnableSend,
-                IsActive = true
-            },
+            _brokerOptions.ToDefaultSaveBrokerServerProfileRequest(),
             cancellationToken);
 
         _logger.LogInformation(

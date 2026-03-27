@@ -75,11 +75,6 @@ internal sealed class UserAccountRepository : IUserAccountRepository
             throw new ConflictException($"Username '{request.Username}' is already taken.");
         }
 
-        return new AppUser
-        {
-            Id = request.Id,
-            Username = request.Username,
-            CreatedAtUtc = request.CreatedAtUtc
-        };
+        return request.ToAppUser();
     }
 }

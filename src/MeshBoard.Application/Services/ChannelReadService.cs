@@ -51,7 +51,7 @@ public sealed class ChannelReadService : IChannelReadService
     {
         if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(channel))
         {
-            return new MessagePageResult();
+            return Array.Empty<MessageSummary>().ToMessagePageResult(0);
         }
 
         var normalizedRegion = region.Trim();
@@ -79,11 +79,7 @@ public sealed class ChannelReadService : IChannelReadService
 
         await Task.WhenAll(totalCountTask, itemsTask);
 
-        return new MessagePageResult
-        {
-            TotalCount = await totalCountTask,
-            Items = await itemsTask
-        };
+        return (await itemsTask).ToMessagePageResult(await totalCountTask);
     }
 
     public async Task<ChannelSummary> GetChannelSummary(
@@ -93,7 +89,7 @@ public sealed class ChannelReadService : IChannelReadService
     {
         if (string.IsNullOrWhiteSpace(region) || string.IsNullOrWhiteSpace(channel))
         {
-            return new ChannelSummary();
+            return (region, channel).ToEmptyChannelSummary();
         }
 
         var normalizedRegion = region.Trim();

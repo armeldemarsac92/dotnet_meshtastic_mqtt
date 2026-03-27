@@ -58,14 +58,7 @@ public sealed class TopicExplorerService : ITopicExplorerService
             .SelectMany(
                 region =>
                     RecommendedChannels.Select(
-                        channel => new TopicCatalogEntry
-                        {
-                            Label = $"{region} · {channel}",
-                            TopicPattern = $"msh/{region}/2/e/{channel}/#",
-                            Region = region,
-                            Channel = channel,
-                            IsRecommended = true
-                        }))
+                        channel => (region, channel, $"msh/{region}/2/e/{channel}/#", true).ToTopicCatalogEntry()))
             .ToList();
     }
 
@@ -109,13 +102,6 @@ public sealed class TopicExplorerService : ITopicExplorerService
             return null;
         }
 
-        return new TopicCatalogEntry
-        {
-            Label = $"{region} · {channel}",
-            TopicPattern = $"msh/{region}/{version}/e/{channel}/#",
-            Region = region,
-            Channel = channel,
-            IsRecommended = false
-        };
+        return (region, channel, $"msh/{region}/{version}/e/{channel}/#", false).ToTopicCatalogEntry();
     }
 }

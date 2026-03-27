@@ -1,4 +1,3 @@
-using System.Globalization;
 using Dapper;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Collector;
@@ -197,7 +196,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             null,
             cancellationToken);
 
-        return responses.Select(MapServer).ToArray();
+        return responses.MapToCollectorServerSummaries();
     }
 
     public async Task<IReadOnlyCollection<CollectorChannelSummary>> GetChannelsAsync(
@@ -239,7 +238,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             CreateFilterParameters(workspaceId, query),
             cancellationToken);
 
-        return responses.Select(MapChannel).ToArray();
+        return responses.MapToCollectorChannelSummaries();
     }
 
     public async Task<IReadOnlyCollection<NodeSummary>> GetMapNodesAsync(
@@ -308,7 +307,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             parameters,
             cancellationToken);
 
-        return responses.Select(MapLink).ToArray();
+        return responses.MapToCollectorMapLinkSummaries();
     }
 
     public async Task<IReadOnlyCollection<NodeSummary>> GetTopologyNodesAsync(
@@ -377,7 +376,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             parameters,
             cancellationToken);
 
-        return responses.Select(MapLink).ToArray();
+        return responses.MapToCollectorMapLinkSummaries();
     }
 
     public async Task<IReadOnlyCollection<CollectorChannelPacketHourlyRollup>> GetChannelPacketRollupsAsync(
@@ -436,7 +435,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             parameters,
             cancellationToken);
 
-        return responses.Select(MapChannelPacketRollup).ToArray();
+        return responses.MapToCollectorChannelPacketHourlyRollups();
     }
 
     public async Task<IReadOnlyCollection<CollectorNodePacketHourlyRollup>> GetNodePacketRollupsAsync(
@@ -485,7 +484,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             parameters,
             cancellationToken);
 
-        return responses.Select(MapNodePacketRollup).ToArray();
+        return responses.MapToCollectorNodePacketHourlyRollups();
     }
 
     public async Task<IReadOnlyCollection<CollectorOverviewPacketTypeSummary>> GetChannelPacketTypeTotalsAsync(
@@ -515,7 +514,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             parameters,
             cancellationToken);
 
-        return responses.Select(MapPacketTypeCount).ToArray();
+        return responses.MapToCollectorOverviewPacketTypeSummaries();
     }
 
     public async Task<IReadOnlyCollection<CollectorNeighborLinkHourlyRollup>> GetNeighborLinkRollupsAsync(
@@ -575,7 +574,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
             parameters,
             cancellationToken);
 
-        return responses.Select(MapNeighborLinkRollup).ToArray();
+        return responses.MapToCollectorNeighborLinkHourlyRollups();
     }
 
     public async Task<int> GetNeighborObservationCountAsync(
@@ -664,16 +663,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         parameters.Add("Offset", offset);
 
         var responses = (await _dbContext.QueryAsync<CollectorNodePageSqlResponse>(sql, parameters, cancellationToken)).ToArray();
-        var items = responses.Select(MapPageNode).ToArray();
-        var totalCount = responses.Length > 0 ? responses[0].TotalCount : 0;
-
-        return new CollectorNodePage
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = Math.Max(1, query.Page),
-            PageSize = query.PageSize
-        };
+        return responses.ToCollectorNodePage(query.Page, query.PageSize);
     }
 
     public async Task<CollectorChannelPage> GetChannelPageAsync(
@@ -737,16 +727,7 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         parameters.Add("Offset", offset);
 
         var responses = (await _dbContext.QueryAsync<CollectorChannelPageSqlResponse>(sql, parameters, cancellationToken)).ToArray();
-        var items = responses.Select(MapChannelPage).ToArray();
-        var totalCount = responses.Length > 0 ? responses[0].TotalCount : 0;
-
-        return new CollectorChannelPage
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = Math.Max(1, query.Page),
-            PageSize = query.PageSize
-        };
+        return responses.ToCollectorChannelPage(query.Page, query.PageSize);
     }
 
     private static DynamicParameters CreateFilterParameters(string workspaceId, CollectorMapQuery query)
@@ -789,176 +770,4 @@ internal sealed class CollectorReadRepository : ICollectorReadRepository
         return parameters;
     }
 
-    private static CollectorServerSummary MapServer(CollectorServerSummarySqlResponse response)
-    {
-        return new CollectorServerSummary
-        {
-            ServerAddress = response.ServerAddress,
-            FirstObservedAtUtc = ParseTimestamp(response.FirstObservedAtUtc),
-            LastObservedAtUtc = ParseTimestamp(response.LastObservedAtUtc),
-            ChannelCount = response.ChannelCount,
-            NodeCount = response.NodeCount,
-            MessageCount = response.MessageCount,
-            NeighborLinkCount = response.NeighborLinkCount
-        };
-    }
-
-    private static CollectorChannelSummary MapChannel(CollectorChannelSummarySqlResponse response)
-    {
-        return new CollectorChannelSummary
-        {
-            ServerAddress = response.ServerAddress,
-            Region = response.Region,
-            MeshVersion = response.MeshVersion,
-            ChannelName = response.ChannelName,
-            TopicPattern = response.TopicPattern,
-            FirstObservedAtUtc = ParseTimestamp(response.FirstObservedAtUtc),
-            LastObservedAtUtc = ParseTimestamp(response.LastObservedAtUtc),
-            NodeCount = response.NodeCount,
-            MessageCount = response.MessageCount,
-            NeighborLinkCount = response.NeighborLinkCount
-        };
-    }
-
-    private static CollectorMapLinkSummary MapLink(CollectorMapLinkSqlResponse response)
-    {
-        return new CollectorMapLinkSummary
-        {
-            SourceNodeId = response.SourceNodeId,
-            TargetNodeId = response.TargetNodeId,
-            SnrDb = response.SnrDb,
-            LastSeenAtUtc = ParseTimestamp(response.LastSeenAtUtc),
-            ServerAddress = response.ServerAddress,
-            Region = response.Region,
-            MeshVersion = response.MeshVersion,
-            ChannelName = response.ChannelName
-        };
-    }
-
-    private static CollectorChannelPacketHourlyRollup MapChannelPacketRollup(CollectorChannelPacketHourlyRollupSqlResponse response)
-    {
-        return new CollectorChannelPacketHourlyRollup
-        {
-            BucketStartUtc = ParseTimestamp(response.BucketStartUtc),
-            ServerAddress = response.ServerAddress,
-            Region = response.Region,
-            MeshVersion = response.MeshVersion,
-            ChannelName = response.ChannelName,
-            PacketType = response.PacketType,
-            PacketCount = response.PacketCount,
-            ActiveNodeCount = response.ActiveNodeCount,
-            FirstSeenAtUtc = ParseTimestamp(response.FirstSeenAtUtc),
-            LastSeenAtUtc = ParseTimestamp(response.LastSeenAtUtc)
-        };
-    }
-
-    private static CollectorNodePacketHourlyRollup MapNodePacketRollup(CollectorNodePacketHourlyRollupSqlResponse response)
-    {
-        return new CollectorNodePacketHourlyRollup
-        {
-            BucketStartUtc = ParseTimestamp(response.BucketStartUtc),
-            ServerAddress = response.ServerAddress,
-            Region = response.Region,
-            MeshVersion = response.MeshVersion,
-            ChannelName = response.ChannelName,
-            NodeId = response.NodeId,
-            ShortName = response.ShortName,
-            LongName = response.LongName,
-            PacketType = response.PacketType,
-            PacketCount = response.PacketCount,
-            FirstSeenAtUtc = ParseTimestamp(response.FirstSeenAtUtc),
-            LastSeenAtUtc = ParseTimestamp(response.LastSeenAtUtc)
-        };
-    }
-
-    private static CollectorNeighborLinkHourlyRollup MapNeighborLinkRollup(CollectorNeighborLinkHourlyRollupSqlResponse response)
-    {
-        return new CollectorNeighborLinkHourlyRollup
-        {
-            BucketStartUtc = ParseTimestamp(response.BucketStartUtc),
-            ServerAddress = response.ServerAddress,
-            Region = response.Region,
-            MeshVersion = response.MeshVersion,
-            ChannelName = response.ChannelName,
-            SourceNodeId = response.SourceNodeId,
-            TargetNodeId = response.TargetNodeId,
-            SourceShortName = response.SourceShortName,
-            SourceLongName = response.SourceLongName,
-            TargetShortName = response.TargetShortName,
-            TargetLongName = response.TargetLongName,
-            ObservationCount = response.ObservationCount,
-            AverageSnrDb = response.AverageSnrDb,
-            MaxSnrDb = response.MaxSnrDb,
-            LastSnrDb = response.LastSnrDb,
-            FirstSeenAtUtc = ParseTimestamp(response.FirstSeenAtUtc),
-            LastSeenAtUtc = ParseTimestamp(response.LastSeenAtUtc)
-        };
-    }
-
-    private static CollectorOverviewPacketTypeSummary MapPacketTypeCount(CollectorPacketTypeCountSqlResponse response)
-    {
-        return new CollectorOverviewPacketTypeSummary
-        {
-            PacketType = response.PacketType,
-            PacketCount = response.PacketCount
-        };
-    }
-
-    private static NodeSummary MapPageNode(CollectorNodePageSqlResponse response)
-    {
-        return new NodeSummary
-        {
-            NodeId = response.NodeId,
-            BrokerServer = response.BrokerServer,
-            ShortName = response.ShortName,
-            LongName = response.LongName,
-            LastHeardAtUtc = ParseNullableTimestamp(response.LastHeardAtUtc),
-            LastHeardChannel = response.LastHeardChannel,
-            LastTextMessageAtUtc = ParseNullableTimestamp(response.LastTextMessageAtUtc),
-            LastKnownLatitude = response.LastKnownLatitude,
-            LastKnownLongitude = response.LastKnownLongitude,
-            BatteryLevelPercent = response.BatteryLevelPercent,
-            Voltage = response.Voltage,
-            ChannelUtilization = response.ChannelUtilization,
-            AirUtilTx = response.AirUtilTx,
-            UptimeSeconds = response.UptimeSeconds,
-            TemperatureCelsius = response.TemperatureCelsius,
-            RelativeHumidity = response.RelativeHumidity,
-            BarometricPressure = response.BarometricPressure
-        };
-    }
-
-    private static CollectorChannelSummary MapChannelPage(CollectorChannelPageSqlResponse response)
-    {
-        return new CollectorChannelSummary
-        {
-            ServerAddress = response.ServerAddress,
-            Region = response.Region,
-            MeshVersion = response.MeshVersion,
-            ChannelName = response.ChannelName,
-            TopicPattern = response.TopicPattern,
-            FirstObservedAtUtc = ParseTimestamp(response.FirstObservedAtUtc),
-            LastObservedAtUtc = ParseTimestamp(response.LastObservedAtUtc),
-            NodeCount = response.NodeCount,
-            MessageCount = response.MessageCount,
-            NeighborLinkCount = response.NeighborLinkCount
-        };
-    }
-
-    private static DateTimeOffset ParseTimestamp(string value)
-    {
-        return DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-    }
-
-    private static DateTimeOffset? ParseNullableTimestamp(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var result)
-            ? result
-            : null;
-    }
 }

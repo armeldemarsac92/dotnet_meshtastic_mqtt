@@ -1,6 +1,7 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Infrastructure.Persistence.Context;
+using MeshBoard.Infrastructure.Persistence.Mapping;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 
 namespace MeshBoard.Infrastructure.Persistence.Repositories;
@@ -98,15 +99,7 @@ internal sealed class CollectorNeighborLinkRepository : INeighborLinkRepository
             new { NotBeforeUtc = notBeforeUtc },
             cancellationToken);
 
-        return responses
-            .Select(response => new NeighborLinkRecord
-            {
-                SourceNodeId = response.SourceNodeId,
-                TargetNodeId = response.TargetNodeId,
-                SnrDb = response.SnrDb,
-                LastSeenAtUtc = DateTimeOffset.Parse(response.LastSeenAtUtc, null, System.Globalization.DateTimeStyles.RoundtripKind)
-            })
-            .ToArray();
+        return responses.MapToNeighborLinkRecords();
     }
 
     private static IReadOnlyList<NeighborLinkRecord> CanonicalizeLinks(IReadOnlyList<NeighborLinkRecord> links)

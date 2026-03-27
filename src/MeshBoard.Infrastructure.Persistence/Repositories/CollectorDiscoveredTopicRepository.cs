@@ -1,6 +1,7 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Persistence.Context;
+using MeshBoard.Infrastructure.Persistence.Mapping;
 using MeshBoard.Infrastructure.Persistence.SQL;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Extensions.Logging;
@@ -40,17 +41,7 @@ internal sealed class CollectorDiscoveredTopicRepository : IDiscoveredTopicRepos
             },
             cancellationToken);
 
-        return responses
-            .Select(
-                response => new TopicCatalogEntry
-                {
-                    Label = $"{response.Region} · {response.Channel}",
-                    TopicPattern = response.TopicPattern,
-                    Region = response.Region,
-                    Channel = response.Channel,
-                    IsRecommended = false
-                })
-            .ToList();
+        return responses.MapToTopicCatalogEntries();
     }
 
     public async Task UpsertAsync(

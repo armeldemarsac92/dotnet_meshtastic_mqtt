@@ -14,15 +14,7 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
 
     public InMemoryBrokerRuntimeRegistry(IOptions<BrokerOptions> brokerOptions)
     {
-        var options = brokerOptions.Value;
-
-        _defaultSnapshot = new BrokerRuntimeSnapshot
-        {
-            ActiveServerName = "Default server",
-            ActiveServerAddress = $"{options.Host}:{options.Port}",
-            IsConnected = false,
-            TopicFilters = []
-        };
+        _defaultSnapshot = brokerOptions.Value.ToDefaultBrokerRuntimeSnapshot();
     }
 
     public BrokerRuntimeSnapshot GetSnapshot(string workspaceId)
@@ -32,8 +24,8 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
         lock (_sync)
         {
             return _snapshotsByWorkspace.TryGetValue(workspaceId, out var snapshot)
-                ? Clone(snapshot)
-                : Clone(_defaultSnapshot);
+                ? snapshot.CloneSnapshot()
+                : _defaultSnapshot.CloneSnapshot();
         }
     }
 
@@ -44,7 +36,7 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
 
         lock (_sync)
         {
-            _snapshotsByWorkspace[workspaceId] = Clone(snapshot);
+            _snapshotsByWorkspace[workspaceId] = snapshot.CloneSnapshot();
         }
     }
 
@@ -55,7 +47,7 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
         lock (_sync)
         {
             return _pipelineSnapshotsByWorkspace.TryGetValue(workspaceId, out var snapshot)
-                ? Clone(snapshot)
+                ? snapshot.CloneSnapshot()
                 : new RuntimePipelineSnapshot();
         }
     }
@@ -67,35 +59,7 @@ internal sealed class InMemoryBrokerRuntimeRegistry : IBrokerRuntimeRegistry
 
         lock (_sync)
         {
-            _pipelineSnapshotsByWorkspace[workspaceId] = Clone(snapshot);
+            _pipelineSnapshotsByWorkspace[workspaceId] = snapshot.CloneSnapshot();
         }
-    }
-
-    private static BrokerRuntimeSnapshot Clone(BrokerRuntimeSnapshot snapshot)
-    {
-        return new BrokerRuntimeSnapshot
-        {
-            ActiveServerProfileId = snapshot.ActiveServerProfileId,
-            ActiveServerName = snapshot.ActiveServerName,
-            ActiveServerAddress = snapshot.ActiveServerAddress,
-            IsConnected = snapshot.IsConnected,
-            LastStatusMessage = snapshot.LastStatusMessage,
-            TopicFilters = [..snapshot.TopicFilters]
-        };
-    }
-
-    private static RuntimePipelineSnapshot Clone(RuntimePipelineSnapshot snapshot)
-    {
-        return new RuntimePipelineSnapshot
-        {
-            InboundQueueCapacity = snapshot.InboundQueueCapacity,
-            InboundWorkerCount = snapshot.InboundWorkerCount,
-            InboundQueueDepth = snapshot.InboundQueueDepth,
-            InboundOldestMessageAgeMilliseconds = snapshot.InboundOldestMessageAgeMilliseconds,
-            InboundEnqueuedCount = snapshot.InboundEnqueuedCount,
-            InboundDequeuedCount = snapshot.InboundDequeuedCount,
-            InboundDroppedCount = snapshot.InboundDroppedCount,
-            UpdatedAtUtc = snapshot.UpdatedAtUtc
-        };
     }
 }

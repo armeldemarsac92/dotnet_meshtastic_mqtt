@@ -59,14 +59,12 @@ public sealed class RealtimeSessionService : IRealtimeSessionService
         var expiresAtUtc = issuedAtUtc.AddMinutes(_options.TokenLifetimeMinutes);
         var clientId = CreateClientId(_options.ClientIdPrefix);
 
-        return Task.FromResult(new RealtimeSessionResponse
-        {
-            BrokerUrl = brokerUri.ToString(),
-            ClientId = clientId,
-            Token = CreateToken(userId, workspaceId, clientId, issuedAtUtc, expiresAtUtc, accessPolicy),
-            ExpiresAtUtc = expiresAtUtc,
-            AllowedTopicPatterns = accessPolicy.SubscribeTopicPatterns
-        });
+        return Task.FromResult(
+            accessPolicy.ToRealtimeSessionResponse(
+                brokerUri,
+                clientId,
+                CreateToken(userId, workspaceId, clientId, issuedAtUtc, expiresAtUtc, accessPolicy),
+                expiresAtUtc));
     }
 
     private static string Base64UrlEncode(byte[] value)

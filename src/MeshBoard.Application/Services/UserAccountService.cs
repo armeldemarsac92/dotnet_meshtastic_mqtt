@@ -69,12 +69,10 @@ public sealed partial class UserAccountService : IUserAccountService
             throw new ConflictException($"Username '{username}' is already taken.");
         }
 
-        var createRequest = new CreateUserAccountRequest
-        {
-            Username = username,
-            NormalizedUsername = normalizedUsername,
-            PasswordHash = _passwordHashingService.HashPassword(request.Password)
-        };
+        var createRequest = request.ToCreateUserAccountRequest(
+            username,
+            normalizedUsername,
+            _passwordHashingService.HashPassword(request.Password));
 
         await _unitOfWork.BeginTransactionAsync(cancellationToken);
 

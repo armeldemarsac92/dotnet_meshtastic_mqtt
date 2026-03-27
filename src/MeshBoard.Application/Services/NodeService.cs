@@ -125,11 +125,7 @@ public sealed class NodeService : INodeService
 
         await Task.WhenAll(totalCountTask, itemsTask);
 
-        return new NodePageResult
-        {
-            TotalCount = await totalCountTask,
-            Items = await itemsTask
-        };
+        return (await itemsTask).ToNodePageResult(await totalCountTask);
     }
 
     private static int SanitizeTake(int take)

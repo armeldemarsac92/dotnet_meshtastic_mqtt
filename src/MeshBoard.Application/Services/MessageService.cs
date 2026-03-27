@@ -74,11 +74,7 @@ public sealed class MessageService : IMessageService
 
         await Task.WhenAll(totalCountTask, itemsTask);
 
-        return new MessagePageResult
-        {
-            TotalCount = await totalCountTask,
-            Items = await itemsTask
-        };
+        return (await itemsTask).ToMessagePageResult(await totalCountTask);
     }
 
     public async Task<MessagePageResult> GetMessagesPageBySender(
@@ -89,7 +85,7 @@ public sealed class MessageService : IMessageService
     {
         if (string.IsNullOrWhiteSpace(senderNodeId))
         {
-            return new MessagePageResult();
+            return Array.Empty<MessageSummary>().ToMessagePageResult(0);
         }
 
         var normalizedSenderNodeId = senderNodeId.Trim();
@@ -111,11 +107,7 @@ public sealed class MessageService : IMessageService
 
         await Task.WhenAll(totalCountTask, itemsTask);
 
-        return new MessagePageResult
-        {
-            TotalCount = await totalCountTask,
-            Items = await itemsTask
-        };
+        return (await itemsTask).ToMessagePageResult(await totalCountTask);
     }
 
     public async Task<IReadOnlyCollection<MessageSummary>> GetRecentMessages(

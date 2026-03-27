@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Workspaces;
@@ -19,12 +17,8 @@ internal sealed class CollectorBrokerServerProfileRepository : IBrokerServerProf
         ILogger<CollectorBrokerServerProfileRepository> logger)
     {
         _logger = logger;
-        _activeProfile = CreateActiveProfile(brokerOptions.Value);
-        _workspaceBrokerServerProfile = new WorkspaceBrokerServerProfile
-        {
-            WorkspaceId = WorkspaceConstants.DefaultWorkspaceId,
-            Profile = _activeProfile
-        };
+        _activeProfile = brokerOptions.Value.ToCollectorBrokerServerProfile();
+        _workspaceBrokerServerProfile = _activeProfile.ToWorkspaceBrokerServerProfile(WorkspaceConstants.DefaultWorkspaceId);
     }
 
     public Task<IReadOnlyCollection<WorkspaceBrokerServerProfile>> GetAllActiveAsync(
@@ -88,42 +82,6 @@ internal sealed class CollectorBrokerServerProfileRepository : IBrokerServerProf
         CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException("The collector broker profile is configuration-backed and cannot be modified through persistence.");
-    }
-
-    private static BrokerServerProfile CreateActiveProfile(BrokerOptions options)
-    {
-        var profileId = CreateDeterministicId(options);
-
-        return new BrokerServerProfile
-        {
-            Id = profileId,
-            Name = $"Collector upstream ({options.Host}:{options.Port})",
-            Host = options.Host,
-            Port = options.Port,
-            UseTls = options.UseTls,
-            Username = options.Username,
-            Password = options.Password,
-            DownlinkTopic = options.DownlinkTopic,
-            EnableSend = options.EnableSend,
-            IsActive = true,
-            CreatedAtUtc = DateTimeOffset.UnixEpoch
-        };
-    }
-
-    private static Guid CreateDeterministicId(BrokerOptions options)
-    {
-        var material = string.Join(
-            '|',
-            options.Host.Trim(),
-            options.Port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            options.UseTls ? "tls" : "plain",
-            options.Username.Trim(),
-            options.DownlinkTopic.Trim(),
-            options.EnableSend ? "send" : "recv");
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
-        var bytes = new byte[16];
-        Array.Copy(hash, bytes, bytes.Length);
-        return new Guid(bytes);
     }
 
     private static bool IsCollectorWorkspace(string workspaceId)

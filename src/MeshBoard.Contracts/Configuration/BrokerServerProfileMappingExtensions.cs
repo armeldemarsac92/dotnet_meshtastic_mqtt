@@ -22,4 +22,17 @@ public static class BrokerServerProfileMappingExtensions
             ServerAddress = profile.ServerAddress
         };
     }
+
+    public static WorkspaceBrokerServerProfile ToWorkspaceBrokerServerProfile(
+        this BrokerServerProfile profile,
+        string workspaceId)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return new WorkspaceBrokerServerProfile
+        {
+            WorkspaceId = workspaceId,
+            Profile = profile
+        };
+    }
 }

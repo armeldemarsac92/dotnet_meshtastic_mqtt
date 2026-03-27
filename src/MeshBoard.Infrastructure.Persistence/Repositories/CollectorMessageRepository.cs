@@ -1,9 +1,9 @@
-using System.Globalization;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Collector;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
 using MeshBoard.Infrastructure.Persistence.Context;
+using MeshBoard.Infrastructure.Persistence.Mapping;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Extensions.Logging;
 
@@ -43,13 +43,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             cancellationToken);
 
         await _collectorPacketRollupRepository.RecordObservedMessageAsync(
-            new CollectorObservedPacketRollupRequest
-            {
-                ChannelId = resolvedChannel.ChannelId,
-                NodeId = request.FromNodeId,
-                PacketType = request.PacketType,
-                ObservedAtUtc = request.ReceivedAtUtc
-            },
+            request.ToCollectorObservedPacketRollupRequest(resolvedChannel.ChannelId),
             cancellationToken);
 
         return true;
@@ -155,19 +149,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             },
             cancellationToken);
 
-        if (response is null)
-        {
-            return new ChannelSummary();
-        }
-
-        return new ChannelSummary
-        {
-            PacketCount = response.PacketCount,
-            UniqueSenderCount = response.UniqueSenderCount,
-            DecodedPacketCount = response.DecodedPacketCount,
-            LastSeenAtUtc = ParseNullableDateTimeOffset(response.LastSeenAtUtc),
-            ObservedBrokerServers = ParseBrokerServers(response.BrokerServersCsv)
-        };
+        return response.ToChannelSummary();
     }
 
     public Task<int> CountByChannelAsync(
@@ -228,14 +210,7 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             },
             cancellationToken);
 
-        return responses
-            .Select(response => new ChannelTopNode
-            {
-                NodeId = response.NodeId,
-                DisplayName = response.DisplayName,
-                PacketCount = response.PacketCount
-            })
-            .ToArray();
+        return responses.MapToChannelTopNodes();
     }
 
     public Task<IReadOnlyCollection<MessageSummary>> GetPageByChannelAsync(
@@ -286,35 +261,5 @@ internal sealed class CollectorMessageRepository : IMessageRepository
             "Collector message history is disabled; returning no paged sender messages for {SenderNodeId}.",
             senderNodeId);
         return Task.FromResult<IReadOnlyCollection<MessageSummary>>([]);
-    }
-
-    private static DateTimeOffset? ParseNullableDateTimeOffset(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        return DateTimeOffset.TryParse(
-            value,
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.RoundtripKind,
-            out var parsedValue)
-            ? parsedValue
-            : null;
-    }
-
-    private static IReadOnlyCollection<string> ParseBrokerServers(string? brokerServersCsv)
-    {
-        if (string.IsNullOrWhiteSpace(brokerServersCsv))
-        {
-            return [];
-        }
-
-        return brokerServersCsv
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(server => server, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
     }
 }
