@@ -8,8 +8,6 @@ internal static class RealtimeSessionEndpointMappings
 {
     public static IEndpointRouteBuilder MapRealtimeSessionEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup(ApiRoutes.Realtime.Group);
-
         endpoints.MapGet(
             ApiRoutes.Realtime.Jwks,
             (HttpContext httpContext, IRealtimeJwksService realtimeJwksService) =>
@@ -18,8 +16,8 @@ internal static class RealtimeSessionEndpointMappings
                 return Results.Ok(realtimeJwksService.GetDocument());
             });
 
-        group.MapPost(
-                ApiRoutes.Realtime.Session,
+        endpoints.MapPost(
+                ApiRoutes.Realtime.CreateSession,
                 async Task<IResult> (
                     HttpContext httpContext,
                     IAntiforgery antiforgery,

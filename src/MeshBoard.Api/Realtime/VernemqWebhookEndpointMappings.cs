@@ -8,19 +8,17 @@ internal static class VernemqWebhookEndpointMappings
 {
     public static IEndpointRouteBuilder MapVernemqWebhookEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup(ApiRoutes.VernemqWebhook.Group)
-            .AllowAnonymous();
-
-        group.MapPost(
+        endpoints.MapPost(
             ApiRoutes.VernemqWebhook.AuthOnRegisterM5,
             (VernemqAuthOnRegisterM5Request request, IVernemqWebhookAuthorizationService authorizationService) =>
             {
                 return authorizationService.IsRegisterAuthorized(request.ClientId, request.Username, request.Password)
                     ? Results.Json(new { result = "ok" })
                     : Results.Json(new { result = new { error = "not_allowed" } });
-            });
+            })
+            .AllowAnonymous();
 
-        group.MapPost(
+        endpoints.MapPost(
             ApiRoutes.VernemqWebhook.AuthOnSubscribeM5,
             (VernemqAuthOnSubscribeM5Request request, IVernemqWebhookAuthorizationService authorizationService) =>
             {
@@ -45,16 +43,18 @@ internal static class VernemqWebhookEndpointMappings
                                 })
                         }
                     });
-            });
+            })
+            .AllowAnonymous();
 
-        group.MapPost(
+        endpoints.MapPost(
             ApiRoutes.VernemqWebhook.AuthOnPublishM5,
             (VernemqAuthOnPublishM5Request request, IVernemqWebhookAuthorizationService authorizationService) =>
             {
                 return authorizationService.IsPublishAuthorized(request.ClientId, request.Username, request.Topic)
                     ? Results.Json(new { result = "ok" })
                     : Results.Json(new { result = new { error = "not_allowed" } });
-            });
+            })
+            .AllowAnonymous();
 
         return endpoints;
     }

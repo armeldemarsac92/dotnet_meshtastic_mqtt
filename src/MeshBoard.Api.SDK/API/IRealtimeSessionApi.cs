@@ -6,6 +6,6 @@ namespace MeshBoard.Api.SDK.API;
 
 public interface IRealtimeSessionApi
 {
-    [Post(ApiRoutes.Realtime.Group + ApiRoutes.Realtime.Session)]
+    [Post(ApiRoutes.Realtime.CreateSession)]
     Task<IApiResponse<RealtimeSessionResponse>> CreateSessionAsync(CancellationToken cancellationToken = default);
 }

@@ -11,21 +11,19 @@ internal static class FavoritePreferenceEndpointMappings
 {
     public static IEndpointRouteBuilder MapFavoritePreferenceEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup(ApiRoutes.Preferences.Favorites.Group)
-            .RequireAuthorization();
-
-        group.MapGet(
-            ApiRoutes.Preferences.Favorites.Root,
+        endpoints.MapGet(
+            ApiRoutes.Preferences.Favorites.GetAll,
             async Task<IResult> (
                 IFavoriteNodeService favoriteNodeService,
                 CancellationToken cancellationToken) =>
             {
                 var favorites = await favoriteNodeService.GetFavoriteNodes(cancellationToken);
                 return Results.Ok(favorites);
-            });
+            })
+            .RequireAuthorization();
 
-        group.MapPost(
-            ApiRoutes.Preferences.Favorites.Root,
+        endpoints.MapPost(
+            ApiRoutes.Preferences.Favorites.Save,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
@@ -44,10 +42,11 @@ internal static class FavoritePreferenceEndpointMappings
                 {
                     return Results.BadRequest(CreateProblemDetails(StatusCodes.Status400BadRequest, "Favorite save failed", exception.Message));
                 }
-            });
+            })
+            .RequireAuthorization();
 
-        group.MapDelete(
-            ApiRoutes.Preferences.Favorites.ByNodeId,
+        endpoints.MapDelete(
+            ApiRoutes.Preferences.Favorites.Remove,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
@@ -66,7 +65,8 @@ internal static class FavoritePreferenceEndpointMappings
                 {
                     return Results.NotFound(CreateProblemDetails(StatusCodes.Status404NotFound, "Favorite not found", exception.Message));
                 }
-            });
+            })
+            .RequireAuthorization();
 
         return endpoints;
     }

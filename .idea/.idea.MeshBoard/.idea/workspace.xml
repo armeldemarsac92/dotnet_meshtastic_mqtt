@@ -25,7 +25,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="3dbd6494-32e0-4d44-be40-20e56a37b78d" name="Changes" comment="" />
+    <list default="true" id="3dbd6494-32e0-4d44-be40-20e56a37b78d" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.MeshBoard/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.MeshBoard/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -50,6 +52,11 @@
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="mock:///home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/src/MeshBoard.Api.SDK/API/IAntiforgeryApi.cs" root0="SKIP_HIGHLIGHTING" />
+    <setting file="mock:///home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/src/MeshBoard.Api.SDK/API/IAuthApi.cs" root0="SKIP_HIGHLIGHTING" />
+    <setting file="mock:///home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/src/MeshBoard.Api/Authentication/ApiAuthEndpointMappings.cs" root0="SKIP_HIGHLIGHTING" />
+    <setting file="mock:///home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/src/MeshBoard.Api/Preferences/BrokerPreferenceEndpointMappings.cs" root0="SKIP_HIGHLIGHTING" />
+    <setting file="mock:///home/armeldemarsac/Documents/Personnal/Development/Projects/School/Virus/Server/src/MeshBoard.Api/Preferences/FavoritePreferenceEndpointMappings.cs" root0="SKIP_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/src/MeshBoard.Collector.Ingress/Program.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/src/MeshBoard.Collector.Ingress/Services/IRawPacketPublisherService.cs" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$PROJECT_DIR$/src/MeshBoard.Collector.Ingress/Services/RawPacketPublisherService.cs" root0="FORCE_HIGHLIGHTING" />
@@ -480,7 +487,7 @@
       <workItem from="1773947223296" duration="27713000" />
       <workItem from="1774299613242" duration="14244000" />
       <workItem from="1774520525530" duration="17982000" />
-      <workItem from="1774554082257" duration="16755000" />
+      <workItem from="1774554082257" duration="17890000" />
     </task>
     <task id="LOCAL-00001" summary="feat: refactor in progress, step2 almost done">
       <option name="closed" value="true" />

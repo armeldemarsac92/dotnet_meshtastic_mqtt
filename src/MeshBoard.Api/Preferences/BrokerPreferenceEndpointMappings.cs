@@ -11,21 +11,19 @@ internal static class BrokerPreferenceEndpointMappings
 {
     public static IEndpointRouteBuilder MapBrokerPreferenceEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup(ApiRoutes.Preferences.Brokers.Group)
-            .RequireAuthorization();
-
-        group.MapGet(
-            ApiRoutes.Preferences.Brokers.Root,
+        endpoints.MapGet(
+            ApiRoutes.Preferences.Brokers.GetAll,
             async Task<IResult> (
                 IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
             {
                 var profiles = await brokerPreferenceService.GetBrokerPreferences(cancellationToken);
                 return Results.Ok(profiles);
-            });
+            })
+            .RequireAuthorization();
 
-        group.MapPost(
-            ApiRoutes.Preferences.Brokers.Root,
+        endpoints.MapPost(
+            ApiRoutes.Preferences.Brokers.Create,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
@@ -42,7 +40,7 @@ internal static class BrokerPreferenceEndpointMappings
                         cancellationToken);
 
                     return Results.Created(
-                        $"{ApiRoutes.Preferences.Brokers.Group}/{savedProfile.Id}",
+                        $"{ApiRoutes.Preferences.Brokers.GetAll}/{savedProfile.Id}",
                         savedProfile);
                 }
                 catch (BadRequestException exception)
@@ -50,10 +48,11 @@ internal static class BrokerPreferenceEndpointMappings
                     return Results.BadRequest(
                         CreateProblemDetails(StatusCodes.Status400BadRequest, "Server save failed", exception.Message));
                 }
-            });
+            })
+            .RequireAuthorization();
 
-        group.MapPut(
-            ApiRoutes.Preferences.Brokers.ById,
+        endpoints.MapPut(
+            ApiRoutes.Preferences.Brokers.Update,
             async Task<IResult> (
                 HttpContext httpContext,
                 IAntiforgery antiforgery,
@@ -88,10 +87,11 @@ internal static class BrokerPreferenceEndpointMappings
                     return Results.BadRequest(
                         CreateProblemDetails(StatusCodes.Status400BadRequest, "Server save failed", exception.Message));
                 }
-            });
+            })
+            .RequireAuthorization();
 
-        group.MapGet(
-            ApiRoutes.Preferences.Brokers.Active,
+        endpoints.MapGet(
+            ApiRoutes.Preferences.Brokers.GetActive,
             async Task<IResult> (
                 IProductBrokerPreferenceService brokerPreferenceService,
                 CancellationToken cancellationToken) =>
@@ -110,9 +110,10 @@ internal static class BrokerPreferenceEndpointMappings
                             detail = exception.Message
                         });
                 }
-            });
+            })
+            .RequireAuthorization();
 
-        group.MapPost(
+        endpoints.MapPost(
             ApiRoutes.Preferences.Brokers.Activate,
             async Task<IResult> (
                 HttpContext httpContext,
@@ -133,7 +134,8 @@ internal static class BrokerPreferenceEndpointMappings
                     return Results.NotFound(
                         CreateProblemDetails(StatusCodes.Status404NotFound, "Server not found", exception.Message));
                 }
-            });
+            })
+            .RequireAuthorization();
 
         return endpoints;
     }

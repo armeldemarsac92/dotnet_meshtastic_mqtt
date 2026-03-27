@@ -6,18 +6,18 @@ namespace MeshBoard.Api.SDK.API;
 
 public interface IBrokerPreferenceApi
 {
-    [Get(ApiRoutes.Preferences.Brokers.Group + ApiRoutes.Preferences.Brokers.Root)]
+    [Get(ApiRoutes.Preferences.Brokers.GetAll)]
     Task<IApiResponse<List<SavedBrokerServerProfile>>> GetAllAsync(CancellationToken cancellationToken = default);
 
-    [Get(ApiRoutes.Preferences.Brokers.Group + ApiRoutes.Preferences.Brokers.Active)]
+    [Get(ApiRoutes.Preferences.Brokers.GetActive)]
     Task<IApiResponse<SavedBrokerServerProfile>> GetActiveAsync(CancellationToken cancellationToken = default);
 
-    [Post(ApiRoutes.Preferences.Brokers.Group + ApiRoutes.Preferences.Brokers.Root)]
+    [Post(ApiRoutes.Preferences.Brokers.Create)]
     Task<IApiResponse<SavedBrokerServerProfile>> CreateAsync([Body] SaveBrokerPreferenceRequest request, CancellationToken cancellationToken = default);
 
-    [Put(ApiRoutes.Preferences.Brokers.Group + ApiRoutes.Preferences.Brokers.ById)]
+    [Put(ApiRoutes.Preferences.Brokers.Update)]
     Task<IApiResponse<SavedBrokerServerProfile>> UpdateAsync(Guid id, [Body] SaveBrokerPreferenceRequest request, CancellationToken cancellationToken = default);
 
-    [Post(ApiRoutes.Preferences.Brokers.Group + ApiRoutes.Preferences.Brokers.Activate)]
+    [Post(ApiRoutes.Preferences.Brokers.Activate)]
     Task<IApiResponse<SavedBrokerServerProfile>> ActivateAsync(Guid id, CancellationToken cancellationToken = default);
 }

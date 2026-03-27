@@ -6,6 +6,6 @@ namespace MeshBoard.Api.SDK.API;
 
 public interface IAntiforgeryApi
 {
-    [Get(ApiRoutes.Auth.Group + ApiRoutes.Auth.Antiforgery)]
+    [Get(ApiRoutes.Auth.GetAntiforgery)]
     Task<IApiResponse<AntiforgeryTokenResponse>> GetAntiforgeryTokenAsync(CancellationToken cancellationToken = default);
 }
