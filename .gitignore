@@ -13,5 +13,6 @@ src/**/obj/
 tests/**/bin/
 tests/**/obj/
 
+.idea/
 .DS_Store
 *.db
