@@ -312,7 +312,9 @@ public sealed class CollectorReadService : ICollectorReadService
 
         await Task.WhenAll(topologyNodesTask, topologyLinksTask, rollupsTask);
 
-        var nodes = await topologyNodesTask;
+        var nodes = (await topologyNodesTask)
+            .DistinctBy(n => n.NodeId, StringComparer.Ordinal)
+            .ToArray();
         var links = await topologyLinksTask;
         var rollups = await rollupsTask;
         var analysis = AnalyzeTopology(nodes, links, rollups, sanitizedQuery.TopCount);
@@ -324,7 +326,7 @@ public sealed class CollectorReadService : ICollectorReadService
             Region = NullIfEmpty(sanitizedQuery.Region),
             ChannelName = NullIfEmpty(sanitizedQuery.ChannelName),
             ActiveWithinHours = sanitizedQuery.ActiveWithinHours,
-            NodeCount = nodes.Count,
+            NodeCount = nodes.Length,
             LinkCount = links.Count,
             ConnectedComponentCount = analysis.ConnectedComponentCount,
             LargestConnectedComponentSize = analysis.LargestConnectedComponentSize,

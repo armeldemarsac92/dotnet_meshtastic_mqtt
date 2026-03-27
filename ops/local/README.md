@@ -3,12 +3,32 @@
 This stack launches the active browser-first runtime locally:
 
 - `meshboard-client`
-- `postgres`
+- `postgres` (TimescaleDB)
 - `meshboard-api`
 - `meshboard-vernemq`
 - `meshboard-realtime-bridge`
+- `neo4j`
 
 `meshboard-client` is an edge container. It serves the published Blazor WebAssembly app and proxies same-origin `/api/*` and `/.well-known/*` requests to `meshboard-api`, so the current cookie-auth and antiforgery model keeps working without a cross-origin client rewrite.
+
+## Collector Pipeline (collector-v2 profile)
+
+The `collector-v2` profile adds the full event-driven collector pipeline on top of the base stack:
+
+- `kafka` — KRaft-mode Kafka broker (no ZooKeeper)
+- `meshboard-collector-ingress` — subscribes to an upstream MQTT broker, publishes `RawPacketReceived` events
+- `meshboard-collector-normalizer` — decodes and decrypts packets, emits `NodeObserved`, `LinkObserved`, `TelemetryObserved`
+- `meshboard-collector-stats-projector` — upserts hourly stats rollups in PostgreSQL (TimescaleDB hypertables)
+- `meshboard-collector-graph-projector` — writes nodes and links into Neo4j
+- `meshboard-collector-topology-analyst` — runs scheduled GDS graph projections and community detection
+
+Enable with:
+
+```bash
+docker compose --env-file ops/local/.env.local -f ops/local/compose.yaml --profile collector-v2 up --build
+```
+
+The MQTT broker and credentials are configured via environment variables in `.env.local`. See `.env.example` for available keys (`MESHBOARD_MQTT_HOST`, `MESHBOARD_MQTT_PORT`, `MESHBOARD_MQTT_USERNAME`, `MESHBOARD_MQTT_PASSWORD`, `MESHBOARD_MQTT_TOPIC_PATTERN`).
 
 ## Why The VerneMQ Image Is Built Locally
 
