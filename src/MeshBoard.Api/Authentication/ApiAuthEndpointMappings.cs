@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Api;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Exceptions;
 using Microsoft.AspNetCore.Antiforgery;

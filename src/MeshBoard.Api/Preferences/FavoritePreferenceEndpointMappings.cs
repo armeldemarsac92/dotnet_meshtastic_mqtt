@@ -1,4 +1,5 @@
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Api;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Favorites;
 using Microsoft.AspNetCore.Antiforgery;

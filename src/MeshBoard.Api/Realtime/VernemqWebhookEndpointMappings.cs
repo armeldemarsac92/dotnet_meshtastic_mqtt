@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Api;
 
 namespace MeshBoard.Api.Realtime;
 

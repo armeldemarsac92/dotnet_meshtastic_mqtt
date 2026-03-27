@@ -1,4 +1,5 @@
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Api;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using Microsoft.AspNetCore.Antiforgery;
@@ -41,7 +42,7 @@ internal static class BrokerPreferenceEndpointMappings
                         cancellationToken);
 
                     return Results.Created(
-                        ApiRoutes.Preferences.Brokers.CreatedLocation(savedProfile.Id),
+                        $"{ApiRoutes.Preferences.Brokers.Group}/{savedProfile.Id}",
                         savedProfile);
                 }
                 catch (BadRequestException exception)

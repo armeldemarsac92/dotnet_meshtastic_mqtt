@@ -1,4 +1,5 @@
 using MeshBoard.Application.Services;
+using MeshBoard.Contracts.Api;
 using Microsoft.AspNetCore.Antiforgery;
 
 namespace MeshBoard.Api.Realtime;

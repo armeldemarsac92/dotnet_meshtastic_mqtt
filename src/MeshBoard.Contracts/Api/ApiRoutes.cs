@@ -1,8 +1,8 @@
-namespace MeshBoard.Api;
+namespace MeshBoard.Contracts.Api;
 
-internal static class ApiRoutes
+public static class ApiRoutes
 {
-    internal static class Auth
+    public static class Auth
     {
         public const string Group = "/api/auth";
         public const string Antiforgery = "/antiforgery";
@@ -12,20 +12,18 @@ internal static class ApiRoutes
         public const string Me = "/me";
     }
 
-    internal static class Preferences
+    public static class Preferences
     {
-        internal static class Brokers
+        public static class Brokers
         {
             public const string Group = "/api/preferences/brokers";
             public const string Root = "/";
-            public const string ById = "/{id:guid}";
+            public const string ById = "/{id}";
             public const string Active = "/active";
-            public const string Activate = "/{id:guid}/activate";
-
-            public static string CreatedLocation(Guid id) => $"{Group}/{id}";
+            public const string Activate = "/{id}/activate";
         }
 
-        internal static class Favorites
+        public static class Favorites
         {
             public const string Group = "/api/preferences/favorites";
             public const string Root = "/";
@@ -33,14 +31,14 @@ internal static class ApiRoutes
         }
     }
 
-    internal static class Realtime
+    public static class Realtime
     {
         public const string Group = "/api/realtime";
         public const string Jwks = "/.well-known/jwks.json";
         public const string Session = "/session";
     }
 
-    internal static class VernemqWebhook
+    public static class VernemqWebhook
     {
         public const string Group = "/internal/realtime/vernemq";
         public const string AuthOnRegisterM5 = "/auth-on-register-m5";
@@ -48,7 +46,7 @@ internal static class ApiRoutes
         public const string AuthOnPublishM5 = "/auth-on-publish-m5";
     }
 
-    internal static class PublicCollector
+    public static class PublicCollector
     {
         public const string Group = "/api/public/collector";
         public const string Servers = "/servers";
