@@ -1,4 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Meshtastic.Decoding;
 using MeshBoard.Infrastructure.Meshtastic.Hosted;
@@ -35,6 +36,22 @@ public static class ServiceCollectionExtensions
     {
         AddMeshtasticOptions(services, configuration);
         AddMeshtasticDirectRuntimeCoreServices(services);
+
+        if (AreHostedServicesEnabled(configuration))
+        {
+            AddMeshtasticDirectRuntimeHostedServices(services);
+        }
+
+        return services;
+    }
+
+    public static IServiceCollection AddMeshtasticStaticBrokerRuntimeInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        AddMeshtasticOptions(services, configuration);
+        AddMeshtasticDirectRuntimeCoreServices(services);
+        services.TryAddSingleton<IBrokerServerProfileRepository, StaticBrokerServerProfileRepository>();
 
         if (AreHostedServicesEnabled(configuration))
         {

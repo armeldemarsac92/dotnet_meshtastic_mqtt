@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using MeshBoard.Api;
+using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Meshtastic;
+using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Topics;
@@ -119,6 +121,9 @@ internal sealed class ApiIntegrationTestHost : WebApplicationFactory<Program>, I
                 services.AddSingleton<IBrokerRuntimeService, NoOpBrokerRuntimeService>();
                 services.AddSingleton<IBrokerRuntimeRegistry, InMemoryBrokerRuntimeRegistry>();
                 services.AddSingleton<ITopicEncryptionKeyResolver, NoOpTopicEncryptionKeyResolver>();
+                // Override the Neo4j topology adapter with the Postgres-backed one for integration tests
+                // (no Neo4j container is available in the test environment)
+                services.AddScoped<ITopologyReadAdapter, PostgresTopologyReadAdapter>();
             });
     }
 

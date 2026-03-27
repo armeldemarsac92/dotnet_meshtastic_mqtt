@@ -35,6 +35,29 @@ internal sealed class PostgresCollectorSchemaInitializer : IPersistenceInitializ
                     cancellationToken: cancellationToken));
         }
 
+        try
+        {
+            var extensionName = await connection.QuerySingleOrDefaultAsync<string?>(
+                new CommandDefinition(
+                    "SELECT extname FROM pg_extension WHERE extname = 'timescaledb'",
+                    cancellationToken: cancellationToken));
+
+            if (extensionName is null)
+            {
+                _logger.LogWarning("TimescaleDB extension is not present — time-series operations will not be available");
+            }
+            else
+            {
+                _logger.LogInformation("TimescaleDB extension verified");
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Unable to verify whether the TimescaleDB extension is present");
+        }
+
         _logger.LogInformation("Initialized the PostgreSQL collector schema migrations successfully");
     }
 }

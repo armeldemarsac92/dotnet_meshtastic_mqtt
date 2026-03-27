@@ -118,7 +118,9 @@ public static class CollectorMapViewBuilder
             return [];
         }
 
-        var visibleNodesById = visibleNodes.ToDictionary(node => node.NodeId, StringComparer.OrdinalIgnoreCase);
+        var visibleNodesById = visibleNodes
+            .DistinctBy(node => node.NodeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(node => node.NodeId, StringComparer.OrdinalIgnoreCase);
 
         return links
             .Select(link => TryResolveCoordinates(link, visibleNodesById))

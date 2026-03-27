@@ -328,7 +328,9 @@
     private void BuildGraphData(CollectorTopologySnapshot topology)
     {
         var bridgeIds = topology.BridgeNodes.Select(n => n.NodeId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var degreeMap = topology.TopDegreeNodes.ToDictionary(n => n.NodeId, n => n.Degree, StringComparer.OrdinalIgnoreCase);
+        var degreeMap = topology.TopDegreeNodes
+            .DistinctBy(n => n.NodeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(n => n.NodeId, n => n.Degree, StringComparer.OrdinalIgnoreCase);
 
         var nodeDict = new Dictionary<string, GraphNode>(StringComparer.OrdinalIgnoreCase);
         GraphNode GetOrAddNode(string nodeId, string? shortName, string? longName)

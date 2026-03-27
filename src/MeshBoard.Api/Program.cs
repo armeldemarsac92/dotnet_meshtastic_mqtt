@@ -2,12 +2,15 @@ using MeshBoard.Api.Authentication;
 using MeshBoard.Api.Preferences;
 using MeshBoard.Api.Public;
 using MeshBoard.Api.Realtime;
+using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Authentication;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
 using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Configuration;
+using MeshBoard.Infrastructure.Neo4j.DependencyInjection;
+using MeshBoard.Infrastructure.Neo4j.Repositories;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -19,6 +22,8 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddApiApplicationServices();
 builder.Services.AddCollectorReadApplicationServices();
+builder.Services.AddNeo4jInfrastructure(builder.Configuration);
+builder.Services.AddScoped<ITopologyReadAdapter, Neo4jTopologyReadRepository>();
 builder.Services.AddProductPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddCollectorReadPersistenceInfrastructure(builder.Configuration);
 builder.Services.AddOptions<RealtimeSessionOptions>()
@@ -75,7 +80,7 @@ var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 };
-forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownIPNetworks.Clear();
 forwardedHeadersOptions.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeadersOptions);
 

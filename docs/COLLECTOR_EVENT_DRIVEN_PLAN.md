@@ -71,7 +71,39 @@ The following decisions are fixed for this plan unless a later ADR changes them:
 - Queue and event contracts live in `MeshBoard.Contracts`, not in worker projects.
 - Worker consumers stay thin and call services.
 - Repository SQL stays out of worker entrypoints and service constructors.
-- Workspace scoping must remain explicit in every event and persistence model even if the current collector runtime still uses the default workspace.
+- Collector data is public network observation data. It has no user or workspace owner. Workspace and user concepts belong exclusively to the product side of the system (`MeshBoard.Api`, product repositories, user-facing DTOs). No collector event, collector persistence model, or collector worker may reference a workspace or user identity. The collector pipeline observes the Meshtastic network as a whole.
+
+## Git Guidance
+
+The collector refactor must be delivered as small, reviewable slices.
+
+Rules:
+
+- every slice must land as one or more atomic commits
+- each commit must describe one coherent change, not a grab bag of unrelated edits
+- documentation-only updates should be committed separately from code when they are independently reviewable
+- tests should be committed with the slice that introduces or changes the behavior
+- large slices must be developed on dedicated branches created from the current integration branch
+- branch names should describe the workstream, for example:
+  - `refactor/collector-pipeline-contracts`
+  - `refactor/collector-ingress-worker`
+  - `refactor/collector-stats-projector`
+- avoid mixing worker scaffolding, storage changes, and API cutovers in the same commit unless the code would not compile or run without the paired change
+- prefer merge commits when integrating large refactor branches so workstream boundaries remain visible in history
+
+Recommended commit shape:
+
+- commit 1: shared contracts or shared abstractions
+- commit 2: worker host or transport wiring
+- commit 3: persistence or projection behavior
+- commit 4: tests and fixture follow-through when they cannot be kept inside the earlier commit cleanly
+
+Every meaningful slice handoff should record:
+
+- branch name
+- commit range
+- scope of the slice
+- follow-up slice expected next
 
 ## Target Runtime Topology
 
@@ -128,7 +160,10 @@ Responsibility:
 - decrypt collector-owned traffic when applicable
 - parse Meshtastic payloads using shared decoding logic
 - classify event shape
+- derive canonical link observations from neighbor reports, direct mesh packets, and traceroute hops
 - publish canonical normalized events
+
+The link derivation logic currently lives in `MeshtasticIngestionService` as `BuildNeighborLinkRecords`, `BuildMeshPacketLinkRecords`, and `BuildTracerouteLinkRecords`. These methods must be extracted into the normalizer's service layer during Phase 2 so that `LinkObserved` events can be emitted independently of any PostgreSQL write. The stats projector and graph projector must both be able to consume `LinkObserved` without duplicating this derivation logic.
 
 Does not own:
 
@@ -324,7 +359,7 @@ The initial partition key must prefer ordering by channel-local topology over gl
 
 Recommended first key:
 
-- `workspaceId|brokerServer|topicPattern`
+- `brokerServer|topicPattern`
 
 Why:
 
@@ -365,7 +400,6 @@ Required fields:
 
 - `EventId`
 - `SchemaVersion`
-- `WorkspaceId`
 - `BrokerServer`
 - `Topic`
 - `PayloadBase64` or binary payload
@@ -389,7 +423,6 @@ Required fields:
 
 - `EventId`
 - `SchemaVersion`
-- `WorkspaceId`
 - `BrokerServer`
 - `Topic`
 - `TopicPattern`
@@ -419,11 +452,12 @@ Optional fields:
 
 ### NodeObserved
 
+`NodeObserved` carries node identity and last-known state. It does not carry time-series telemetry metrics. When a packet also contains telemetry values (battery, temperature, RF utilization, etc.) the normalizer emits a separate `TelemetryObserved` event for each relevant metric in addition to this event. This keeps `NodeObserved` stable as the stats projector's node-upsert trigger, while `TelemetryObserved` remains the sole seam for time-series rollups. Do not add telemetry scalar fields to `NodeObserved` in future iterations.
+
 Required fields:
 
 - `EventId`
 - `SchemaVersion`
-- `WorkspaceId`
 - `BrokerServer`
 - `TopicPattern`
 - `NodeId`
@@ -432,14 +466,6 @@ Required fields:
 - `LongName`
 - `Latitude`
 - `Longitude`
-- `BatteryLevelPercent`
-- `Voltage`
-- `ChannelUtilization`
-- `AirUtilTx`
-- `UptimeSeconds`
-- `TemperatureCelsius`
-- `RelativeHumidity`
-- `BarometricPressure`
 - `LastHeardChannel`
 - `IsTextMessage`
 
@@ -449,7 +475,6 @@ Required fields:
 
 - `EventId`
 - `SchemaVersion`
-- `WorkspaceId`
 - `BrokerServer`
 - `TopicPattern`
 - `ChannelKey`
@@ -471,7 +496,6 @@ Required fields:
 
 - `EventId`
 - `SchemaVersion`
-- `WorkspaceId`
 - `BrokerServer`
 - `TopicPattern`
 - `NodeId`
@@ -491,6 +515,15 @@ That means:
 - every PostgreSQL projector write must be idempotent
 - every Neo4j projector write must be idempotent
 - consumer retry must never produce duplicate logical state
+
+### EventId And Message Key Relationship
+
+Two distinct identity fields exist across the pipeline and must not be confused:
+
+- `EventId` on `RawPacketReceived` — a new UUID assigned by the ingress worker at the moment of Kafka publish. It identifies the Kafka event itself and is used for distributed tracing and dead-letter correlation. It has no Meshtastic semantics.
+- Message key — the dedup key currently computed by `MeshtasticIngestionService.BuildMessageKey`. This is derived from `BrokerServer|FromNodeId:PacketId` when a packet ID is present, or a SHA-256 hash of packet fields otherwise. It identifies a unique Meshtastic packet and is used by the stats projector to skip duplicate writes.
+
+The normalizer must propagate the derived message key onto `PacketNormalized` as a dedicated field (e.g. `PacketKey`). The stats projector then uses `PacketKey` for its `ON CONFLICT` guard. The ingress `EventId` must not be used as the stats dedup key.
 
 ### Postgres Projector Idempotency
 
@@ -514,9 +547,9 @@ Instead:
 
 Use deterministic graph keys:
 
-- node key: `workspaceId + brokerServer + nodeId`
-- channel key: `workspaceId + brokerServer + topicPattern`
-- link key: `workspaceId + brokerServer + channelKey + canonicalSourceNodeId + canonicalTargetNodeId`
+- node key: `brokerServer + nodeId`
+- channel key: `brokerServer + topicPattern`
+- link key: `brokerServer + channelKey + canonicalSourceNodeId + canonicalTargetNodeId`
 
 Graph writes must use `MERGE`-style semantics, not blind creates.
 
@@ -556,21 +589,18 @@ The first graph model should stay minimal.
 
 Required node labels:
 
-- `CollectorWorkspace`
 - `BrokerServer`
 - `CollectorChannel`
 - `MeshNode`
 
 Required relationship types:
 
-- `(:CollectorWorkspace)-[:HAS_SERVER]->(:BrokerServer)`
 - `(:BrokerServer)-[:HAS_CHANNEL]->(:CollectorChannel)`
 - `(:MeshNode)-[:OBSERVED_ON]->(:CollectorChannel)`
 - `(:MeshNode)-[:RADIO_LINK]->(:MeshNode)`
 
 `RADIO_LINK` relationship properties:
 
-- `workspaceId`
 - `brokerServer`
 - `channelKey`
 - `topicPattern`
@@ -732,10 +762,13 @@ Tasks:
 - extract channel resolution logic into reusable service seams
 - extract normalized-envelope mapping into services independent from PostgreSQL write flow
 - remove hard dependency between decode and `MeshtasticIngestionService`
+- extract `BuildNeighborLinkRecords`, `BuildMeshPacketLinkRecords`, and `BuildTracerouteLinkRecords` from `MeshtasticIngestionService` into a dedicated link derivation service under `MeshBoard.Application`. This service takes a `MeshtasticEnvelope` and returns a list of canonical `LinkObservedRecord` value types. It must have no dependency on any repository or unit of work.
 
 Acceptance criteria:
 
 - a normalization service can produce normalized event contracts without writing PostgreSQL
+- link derivation logic is reachable from the normalizer without importing any persistence assembly
+- the extracted link derivation service is covered by unit tests that exercise the neighbor, mesh-packet, and traceroute code paths independently
 
 ### Phase 3: Build Collector Ingress Worker
 
@@ -874,16 +907,100 @@ Acceptance criteria:
 Goals:
 
 - remove graph-wide analysis from the current application hot path
+- use Neo4j Graph Data Science (GDS) to precompute topology properties as graph node attributes
+- make the topology read path a fast property-lookup query rather than an in-memory graph traversal
+
+Decision: **scheduled GDS write-back** (not query-time GDS streaming).
+
+Rationale:
+- The production graph can contain up to 10,000 MeshNodes with up to ~40,000 RADIO_LINK relationships.
+- Loading all links across concurrent API requests for in-memory analysis causes unpredictable memory pressure.
+- Neo4j GDS runs WCC, Degree, and Articulation Point algorithms at native C++ speed against an in-memory graph projection.
+- Precomputing and writing results as node properties decouples analytics latency from read latency entirely.
+- GDS Community Edition is free and open-source (neo4j/graph-data-science on GitHub). It is installed as a plugin JAR alongside Neo4j. No Enterprise license required.
+
+#### GDS Deployment
+
+Add to Neo4j Docker Compose:
+
+    neo4j:
+      image: neo4j:5
+      environment:
+        NEO4J_PLUGINS: '["graph-data-science"]'
+
+Or mount the GDS JAR into the Neo4j plugins/ directory.
+
+#### Neo4j GDS Algorithms Used
+
+| Computed property | GDS procedure | Written to |
+|---|---|---|
+| degree | gds.degree.write | MeshNode.degree |
+| componentId | gds.wcc.write | MeshNode.componentId |
+| isBridgeNode | gds.articulationPoints.write | MeshNode.isBridgeNode |
+
+#### Analysis Cypher (run by the analytics worker on schedule)
+
+    // 1. Project the active subgraph
+    CALL gds.graph.project(
+      'topologyProjection',
+      'MeshNode',
+      { RADIO_LINK: { orientation: 'UNDIRECTED' } }
+    )
+
+    // 2. Degree centrality
+    CALL gds.degree.write('topologyProjection', { writeProperty: 'degree' })
+
+    // 3. Weakly Connected Components
+    CALL gds.wcc.write('topologyProjection', { writeProperty: 'componentId' })
+
+    // 4. Articulation points (bridge nodes)
+    CALL gds.articulationPoints.write('topologyProjection', { writeProperty: 'isBridgeNode' })
+
+    // 5. Drop projection to free memory
+    CALL gds.graph.drop('topologyProjection')
+
+#### Read path after Phase 10
+
+The topology snapshot query becomes a property scan with no relationship streaming:
+
+    MATCH (n:MeshNode)
+    WHERE n.lastHeardAtUtc IS NOT NULL
+      AND n.lastHeardAtUtc >= datetime($notBefore)
+      AND ($brokerServer IS NULL OR n.brokerServer = $brokerServer)
+    RETURN
+      n.nodeId, n.brokerServer, n.shortName, n.longName,
+      n.degree, n.componentId, n.isBridgeNode,
+      n.lastHeardAtUtc, n.lastKnownLatitude, n.lastKnownLongitude
+    ORDER BY n.degree DESC
+    LIMIT $maxNodes
+
+#### New project: MeshBoard.Collector.TopologyAnalyst
+
+A Worker SDK project containing:
+- TopologyAnalysisWorker: a BackgroundService that runs the GDS projection on a configurable schedule (default: every 5 minutes)
+- ITopologyAnalysisService / TopologyAnalysisService: owns the GDS Cypher execution sequence
+- TopologyAnalysisOptions: ScheduleIntervalSeconds (default 300), GraphProjectionName (default "topologyProjection")
+- References: MeshBoard.Infrastructure.Neo4j (for IDriver), MeshBoard.Application (for DI extensions)
+
+#### Changes to MeshBoard.Infrastructure.Neo4j
+
+Modify Neo4jTopologyReadRepository.GetTopologyNodesAsync to read precomputed degree, componentId, isBridgeNode properties from MeshNode nodes instead of deriving them from relationship streaming.
 
 Tasks:
 
-- decide between query-time Neo4j analytics and scheduled derived-property writes
-- add layout precomputation if needed
-- precompute bridge-node and connected-component metadata when beneficial
+- add MeshBoard.Collector.TopologyAnalyst worker project
+- add TopologyAnalysisWorker BackgroundService running GDS Cypher on schedule
+- modify Neo4jTopologyReadRepository to read precomputed degree, componentId, isBridgeNode node properties
+- flip ITopologyReadAdapter binding in MeshBoard.Api from Postgres to Neo4j
+- update Open Decisions section to mark the graph analytics pass decision as resolved
 
 Acceptance criteria:
 
-- topology API no longer needs to load all current links into application memory to compute graph metrics
+- topology API no longer loads RADIO_LINK relationships into application memory
+- degree, componentId, and isBridgeNode are present on active MeshNodes in Neo4j after the analytics worker runs
+- GDS projection is dropped after each run to avoid stale memory in Neo4j
+- topology endpoint response shape is unchanged (CollectorTopologySnapshot)
+- analytics worker schedule is configurable via appsettings.json
 
 ## Testing Plan
 
@@ -952,6 +1069,15 @@ The rollout order should be:
 6. graph projector
 7. API read seam
 8. graph analytics refinement
+9. retire `MeshBoard.Collector`
+
+Step 9 must not happen until:
+
+- the stats projector has been running in production and its PostgreSQL output has been validated against the output of the old collector for at least one observation window
+- the graph projector has proven replay correctness
+- all compose and deployment references to `MeshBoard.Collector` have been replaced
+
+Until step 9 is complete, `MeshBoard.Collector` and the new ingress worker must not both be connected to the same MQTT broker at the same time in production. Running both simultaneously will cause double-writes to PostgreSQL. Use the feature flag described in the rollback plan to gate the switchover.
 
 Do not cut over topology reads to Neo4j before:
 
@@ -988,6 +1114,6 @@ The following decisions still require explicit resolution during implementation:
 
 - exact Kafka broker target for local and production environments
 - whether the first normalized event surface is one topic or several
-- whether the graph analytics pass is query-time or scheduled
+- ~~whether the graph analytics pass is query-time or scheduled~~ RESOLVED: scheduled GDS write-back via MeshBoard.Collector.TopologyAnalyst (see Phase 10)
 - when to move from current rollup tables to Timescale hypertables / continuous aggregates
 - whether the topology API should cut over all at once or behind a per-endpoint feature flag
