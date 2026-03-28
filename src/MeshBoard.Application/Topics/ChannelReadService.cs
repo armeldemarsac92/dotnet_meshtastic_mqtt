@@ -3,7 +3,7 @@ using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Topics;
 
 public interface IChannelReadService
 {

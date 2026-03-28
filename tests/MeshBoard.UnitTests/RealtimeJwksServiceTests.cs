@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Realtime;
 using MeshBoard.Contracts.Configuration;
 using Microsoft.Extensions.Options;
 

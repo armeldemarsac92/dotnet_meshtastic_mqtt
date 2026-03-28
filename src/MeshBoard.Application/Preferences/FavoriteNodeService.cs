@@ -4,7 +4,7 @@ using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Favorites;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Preferences;
 
 public interface IFavoriteNodeService
 {

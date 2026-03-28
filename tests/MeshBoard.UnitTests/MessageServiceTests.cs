@@ -1,5 +1,5 @@
 using MeshBoard.Application.Abstractions.Persistence;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Messages;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging.Abstractions;

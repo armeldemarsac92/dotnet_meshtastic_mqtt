@@ -1,11 +1,12 @@
 using System.Text.RegularExpressions;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Authentication;
+using MeshBoard.Application.Workspaces;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Exceptions;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Authentication;
 
 public interface IUserAccountService
 {

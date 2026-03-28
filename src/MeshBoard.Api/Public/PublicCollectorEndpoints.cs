@@ -1,4 +1,4 @@
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Collector;
 using MeshBoard.Contracts.Api;
 using MeshBoard.Contracts.Collector;
 using Microsoft.AspNetCore.Mvc;

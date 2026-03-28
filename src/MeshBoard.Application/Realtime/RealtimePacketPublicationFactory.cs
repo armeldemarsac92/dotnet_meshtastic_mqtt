@@ -3,7 +3,7 @@ using MeshBoard.Contracts.Realtime;
 using System.Text;
 using System.Text.Json;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Realtime;
 
 public sealed class RealtimePacketPublicationFactory : IRealtimePacketPublicationFactory
 {

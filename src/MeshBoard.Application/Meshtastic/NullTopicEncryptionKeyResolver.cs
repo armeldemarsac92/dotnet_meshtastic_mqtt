@@ -1,7 +1,7 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Contracts.Topics;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Meshtastic;
 
 internal sealed class NullTopicEncryptionKeyResolver : ITopicEncryptionKeyResolver
 {

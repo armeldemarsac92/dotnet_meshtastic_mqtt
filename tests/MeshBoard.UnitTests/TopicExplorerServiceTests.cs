@@ -1,4 +1,4 @@
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Topics;
 
 namespace MeshBoard.UnitTests;
 

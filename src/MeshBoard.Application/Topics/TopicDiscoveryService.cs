@@ -1,9 +1,10 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
+using MeshBoard.Application.Preferences;
 using MeshBoard.Contracts.Topics;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Topics;
 
 public interface ITopicDiscoveryService
 {

@@ -1,7 +1,7 @@
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Preferences;
 
 public interface IProductBrokerPreferenceService
 {

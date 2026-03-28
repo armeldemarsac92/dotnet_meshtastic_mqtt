@@ -4,7 +4,7 @@ using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Exceptions;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Preferences;
 
 public interface IBrokerServerProfileService
 {

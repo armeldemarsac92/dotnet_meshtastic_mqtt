@@ -3,7 +3,7 @@ using MeshBoard.Contracts.Configuration;
 using MeshBoard.Contracts.Realtime;
 using Microsoft.Extensions.Options;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Realtime;
 
 public interface IRealtimeJwksService
 {

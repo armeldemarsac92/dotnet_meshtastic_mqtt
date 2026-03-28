@@ -1,5 +1,5 @@
 using MeshBoard.Application.Abstractions.Meshtastic;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Meshtastic;
 using MeshBoard.Contracts.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

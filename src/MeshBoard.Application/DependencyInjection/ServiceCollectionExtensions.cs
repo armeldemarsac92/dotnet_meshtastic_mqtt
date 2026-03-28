@@ -7,7 +7,9 @@ using MeshBoard.Application.Authentication;
 using MeshBoard.Application.Caching;
 using MeshBoard.Application.Collector;
 using MeshBoard.Application.Observability;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Preferences;
+using MeshBoard.Application.Realtime;
+using MeshBoard.Application.Topics;
 using MeshBoard.Application.Workspaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -64,7 +66,6 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddCollectorReadApplicationServices(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddScoped<ITopologyReadAdapter, PostgresTopologyReadAdapter>();
         services.AddScoped<ICollectorReadService, CollectorReadService>();
 
         return services;

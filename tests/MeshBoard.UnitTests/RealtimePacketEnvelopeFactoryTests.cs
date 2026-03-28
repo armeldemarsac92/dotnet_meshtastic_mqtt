@@ -1,4 +1,4 @@
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Realtime;
 using MeshBoard.Contracts.Meshtastic;
 
 namespace MeshBoard.UnitTests;

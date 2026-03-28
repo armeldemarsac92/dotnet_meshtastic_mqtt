@@ -2,7 +2,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Nodes;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Nodes;
 
 public interface INodeService
 {

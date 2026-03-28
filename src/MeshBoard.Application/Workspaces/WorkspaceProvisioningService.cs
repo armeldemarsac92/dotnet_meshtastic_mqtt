@@ -4,7 +4,7 @@ using MeshBoard.Contracts.Workspaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Workspaces;
 
 public interface IWorkspaceProvisioningService
 {

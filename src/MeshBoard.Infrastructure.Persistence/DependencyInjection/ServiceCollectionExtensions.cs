@@ -1,3 +1,4 @@
+using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Configuration;
@@ -92,6 +93,7 @@ public static class ServiceCollectionExtensions
     private static void RegisterCollectorReadRepositories(IServiceCollection services)
     {
         services.AddScoped<ICollectorReadRepository, CollectorReadRepository>();
+        services.TryAddScoped<ITopologyReadAdapter, PostgresTopologyReadAdapter>();
     }
 
     private static void EnsureSharedPostgreSqlInfrastructure(IServiceCollection services)

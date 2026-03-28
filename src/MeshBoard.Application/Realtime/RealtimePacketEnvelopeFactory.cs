@@ -2,7 +2,7 @@ using MeshBoard.Application.Abstractions.Realtime;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Realtime;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Realtime;
 
 public sealed class RealtimePacketEnvelopeFactory : IRealtimePacketEnvelopeFactory
 {

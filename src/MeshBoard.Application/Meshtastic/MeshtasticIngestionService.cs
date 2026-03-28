@@ -1,5 +1,6 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Collector;
+using MeshBoard.Application.Topics;
 using MeshBoard.Contracts.Messages;
 using MeshBoard.Contracts.Meshtastic;
 using MeshBoard.Contracts.Nodes;
@@ -7,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Meshtastic;
 
 public interface IMeshtasticIngestionService
 {

@@ -1,6 +1,6 @@
 using MeshBoard.Contracts.Configuration;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Realtime;
 
 internal static class RealtimeSigningKeyMaterialResolver
 {

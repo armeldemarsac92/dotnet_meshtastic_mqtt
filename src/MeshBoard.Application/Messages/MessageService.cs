@@ -2,7 +2,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Messages;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Messages;
 
 public interface IMessageService
 {

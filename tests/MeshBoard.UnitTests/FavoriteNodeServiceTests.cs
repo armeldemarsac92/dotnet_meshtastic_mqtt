@@ -1,6 +1,6 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Preferences;
 using MeshBoard.Contracts.Exceptions;
 using MeshBoard.Contracts.Favorites;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -6,7 +6,7 @@ using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Authentication;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Realtime;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Neo4j.DependencyInjection;

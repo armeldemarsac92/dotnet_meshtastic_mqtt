@@ -4,7 +4,7 @@ using MeshBoard.Contracts.Collector;
 using MeshBoard.Contracts.Workspaces;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Collector;
 
 public interface ICollectorReadService
 {

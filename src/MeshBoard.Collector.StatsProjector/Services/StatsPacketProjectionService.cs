@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using MeshBoard.Application.Abstractions.Persistence;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Topics;
 using MeshBoard.Collector.StatsProjector.Observability;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
 using MeshBoard.Contracts.Messages;

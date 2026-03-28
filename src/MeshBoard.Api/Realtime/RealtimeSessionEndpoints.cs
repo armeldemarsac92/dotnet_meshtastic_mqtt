@@ -1,5 +1,5 @@
 using MeshBoard.Api.Middlewares.Validation;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Realtime;
 using MeshBoard.Contracts.Api;
 using MeshBoard.Contracts.Realtime;
 

@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using MeshBoard.Api.Middlewares.Validation;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Authentication;
 using MeshBoard.Contracts.Api;
 using MeshBoard.Contracts.Authentication;
 using Microsoft.AspNetCore.Antiforgery;

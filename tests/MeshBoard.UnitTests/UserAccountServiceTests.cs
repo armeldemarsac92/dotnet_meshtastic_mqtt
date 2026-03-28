@@ -1,6 +1,6 @@
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Authentication;
-using MeshBoard.Application.Services;
+using MeshBoard.Application.Workspaces;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;

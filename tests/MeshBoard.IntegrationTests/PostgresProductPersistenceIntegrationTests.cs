@@ -5,7 +5,6 @@ using MeshBoard.Application.Authentication;
 using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Application.Abstractions.Workspaces;
 using MeshBoard.Application.DependencyInjection;
-using MeshBoard.Application.Services;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.Extensions.Configuration;

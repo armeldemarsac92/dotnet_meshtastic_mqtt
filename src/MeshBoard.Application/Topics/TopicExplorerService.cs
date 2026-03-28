@@ -1,6 +1,6 @@
 using MeshBoard.Contracts.Topics;
 
-namespace MeshBoard.Application.Services;
+namespace MeshBoard.Application.Topics;
 
 public interface ITopicExplorerService
 {
