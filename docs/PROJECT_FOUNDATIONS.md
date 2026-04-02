@@ -5,7 +5,7 @@ This document is the current architecture reference for the repository after the
 For the historical migration plan, see [ARCHITECTURE_REFACTOR_ROADMAP.md](./ARCHITECTURE_REFACTOR_ROADMAP.md).
 For the current cleanup sequence, see [CLIENT_FIRST_CLEANUP_PLAN.md](./CLIENT_FIRST_CLEANUP_PLAN.md).
 
-- Latest verification: 2026-03-21
+- Latest verification: 2026-04-02
 
 ## Active Product Architecture
 
@@ -43,11 +43,21 @@ It runs:
 - `meshboard-realtime-bridge`
 - `meshboard-vernemq`
 - `meshboard-postgres`
+- `meshboard-kafka`
+- `meshboard-neo4j`
+
+Optional collector profile `collector-v2` adds:
+
+- `meshboard-collector-ingress`
+- `meshboard-collector-normalizer`
+- `meshboard-collector-stats-projector`
+- `meshboard-collector-graph-projector`
+- `meshboard-collector-topology-analyst`
 
 It does not run:
 
 - `MeshBoard.Web`
-- `MeshBoard.Collector`
+- the retired legacy `MeshBoard.Collector` host
 
 `meshboard-client` is the edge container. It serves the published WebAssembly app and proxies same-origin `/api/*`, `/.well-known/*`, and `/mqtt` traffic.
 
@@ -74,11 +84,17 @@ src/
   MeshBoard.RealtimeBridge/
   MeshBoard.Contracts/
   MeshBoard.Application/
+  MeshBoard.Infrastructure.Eventing/
+  MeshBoard.Infrastructure.Neo4j/
   MeshBoard.Infrastructure.Persistence/
   MeshBoard.Infrastructure.Meshtastic/
+  MeshBoard.Collector.Ingress/
+  MeshBoard.Collector.Normalizer/
+  MeshBoard.Collector.StatsProjector/
+  MeshBoard.Collector.GraphProjector/
+  MeshBoard.Collector.TopologyAnalyst/
   MeshBoard.ProductMigrationTool/
   MeshBoard.RealtimeLoadTests/
-  MeshBoard.Collector/
 tests/
   MeshBoard.UnitTests/
   MeshBoard.IntegrationTests/
@@ -86,8 +102,8 @@ tests/
 
 Important note:
 
-- `MeshBoard.Collector` is not part of the active product runtime.
-- It is the explicit public collector candidate and owns the normalized PostgreSQL traffic schema work.
+- the legacy `MeshBoard.Collector` host has been retired
+- the collector pipeline now exists only through the `MeshBoard.Collector.*` worker family
 
 ## Styling And Frontend Build
 
@@ -129,8 +145,10 @@ Product persistence:
 
 Collector persistence:
 
-- owned by `MeshBoard.Collector`
-- PostgreSQL-backed
+- owned by the `MeshBoard.Collector.*` worker family
+- Kafka-backed between ingress and projectors
+- PostgreSQL/Timescale-backed for stats and relational collector read models
+- Neo4j-backed for topology graph reads and analytics write-back
 - normalized around `collector_servers -> collector_channels -> collector_nodes`
 - includes hourly packet rollups for collector-side analytics
 - does not persist per-message history
@@ -144,7 +162,8 @@ Removed legacy persistence surfaces:
 
 - the queued runtime-command branch is gone
 - the old SQLite runtime/store implementation is gone from active runtime code
-- product and collector hosts now assume PostgreSQL explicitly
+- the legacy standalone collector host is gone
+- product hosts and collector projectors now assume PostgreSQL explicitly where relational persistence is required
 
 Remaining SQLite usage is limited to migration tooling that can read old databases and emit PostgreSQL backfill scripts.
 

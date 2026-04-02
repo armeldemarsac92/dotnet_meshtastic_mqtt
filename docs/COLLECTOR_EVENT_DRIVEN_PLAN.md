@@ -1,6 +1,6 @@
 # Collector Event-Driven Pipeline Plan
 
-- Status: Proposed
+- Status: In progress
 - Date: 2026-03-26
 - Scope: Refactor the current collector into an event-driven collector pipeline with dedicated ingress, normalization, stats projection, and graph projection workers.
 
@@ -38,11 +38,11 @@ This plan is constrained by the existing architecture and documentation:
 
 The current extraction seams already exist:
 
-- `src/MeshBoard.Collector/Program.cs`
 - `src/MeshBoard.Infrastructure.Meshtastic/Hosted/MeshtasticInboundProcessingHostedService.cs`
-- `src/MeshBoard.Application/Services/MeshtasticIngestionService.cs`
+- `src/MeshBoard.Application/Meshtastic/MeshtasticIngestionService.cs`
+- `src/MeshBoard.Collector.Normalizer/Services/PacketNormalizationService.cs`
 
-Those files show the current monolithic collector flow and should be treated as the main source to split rather than rewrite from scratch.
+The legacy `MeshBoard.Collector` host has already been retired. These remaining seams show the decode, ingress, and projection logic that still need to be refined without rewriting the pipeline from scratch.
 
 ## Resolved Design Decisions
 
@@ -60,6 +60,7 @@ The following decisions are fixed for this plan unless a later ADR changes them:
 - Kafka retention is an operational replay window, not product message history.
 - The stats and graph projectors are independent workers with separate consumer groups.
 - The normalizer decrypts only collector-owned traffic. It must not use browser-only user vault keys.
+- The legacy `MeshBoard.Collector` host is retired. The worker family is the only collector surface.
 
 ## Non-Negotiable Constraints
 
@@ -1069,15 +1070,13 @@ The rollout order should be:
 6. graph projector
 7. API read seam
 8. graph analytics refinement
-9. retire `MeshBoard.Collector`
+9. worker-only operational validation after legacy-host retirement
 
-Step 9 must not happen until:
+Step 9 assumes the legacy `MeshBoard.Collector` host is already retired and focuses on stabilizing the worker-only collector path:
 
-- the stats projector has been running in production and its PostgreSQL output has been validated against the output of the old collector for at least one observation window
+- the stats projector output is validated over at least one observation window
 - the graph projector has proven replay correctness
-- all compose and deployment references to `MeshBoard.Collector` have been replaced
-
-Until step 9 is complete, `MeshBoard.Collector` and the new ingress worker must not both be connected to the same MQTT broker at the same time in production. Running both simultaneously will cause double-writes to PostgreSQL. Use the feature flag described in the rollback plan to gate the switchover.
+- all compose and deployment references point only to the worker family
 
 Do not cut over topology reads to Neo4j before:
 
@@ -1091,8 +1090,8 @@ Rollback must remain possible per stage.
 
 Examples:
 
-- if ingress publish fails, revert traffic back to the current direct collector path
-- if normalizer is unstable, keep raw topic publishing behind a feature flag and leave current collector persistence active
+- if ingress publish fails, roll back or disable the ingress worker and stop collector-v2 ingestion until a fixed build is available
+- if normalizer is unstable, pause downstream consumer groups, fix the normalizer, and replay retained raw events from Kafka
 - if stats projector diverges, switch the public collector read path back to current PostgreSQL-fed logic
 - if Neo4j projection is unstable, keep topology backed by the current application-side analysis until graph parity is proven
 

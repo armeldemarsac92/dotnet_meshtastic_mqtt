@@ -120,7 +120,6 @@ The solution should present these families:
   - `MeshBoard.Infrastructure.Meshtastic`
   - `MeshBoard.Infrastructure.Eventing`
 - `Collector`
-  - `MeshBoard.Collector`
   - `MeshBoard.Collector.Ingress`
   - `MeshBoard.Collector.Normalizer`
   - `MeshBoard.Collector.StatsProjector`
@@ -355,21 +354,15 @@ Those would make the migration much riskier than necessary.
 - `MeshBoard.Collector.Ingress`
 - `MeshBoard.Collector.TopologyAnalyst`
 
-**Open design question:**
+**Resolved decision:**
 
-Decide what `MeshBoard.Collector` itself is:
-
-- the public collector host
-- a legacy compatibility host
-- a future orchestration shell
-- or a project to retire once the worker family is complete
-
-Do not start physical moves in this phase until that decision is explicit.
+- the `MeshBoard.Collector.*` worker family is the only collector surface
+- the legacy root `MeshBoard.Collector` host has been retired
 
 **Acceptance criteria:**
 
 - collector workers use one recognizable host topology
-- the role of root `MeshBoard.Collector` is explicitly documented
+- no legacy root `MeshBoard.Collector` executable remains in the solution
 - solution folders reflect the collector family clearly
 
 ## Phase 5: Separate Tools From Product Runtime
@@ -452,7 +445,7 @@ After each phase:
 
 Before phase 3 or 4 starts, explicitly resolve these questions:
 
-1. Should `MeshBoard.Collector` remain a first-class executable, or should the worker family become the only collector surface?
+1. ~~Should `MeshBoard.Collector` remain a first-class executable, or should the worker family become the only collector surface?~~ Resolved on 2026-04-02: the worker family is the only collector surface and the legacy host is retired.
 2. Should `MeshBoard.RealtimeLoadTests` stay under `src/` as a support project, or move under a dedicated load/perf family later?
 3. Is a physical folder move desired for support tools, or is solution-folder separation enough for the near term?
 4. Do we want one canonical `Application` namespace root per feature now, or preserve mixed namespaces until after the collector work lands?

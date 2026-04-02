@@ -15,7 +15,6 @@
     <Project Path="src/MeshBoard.Infrastructure.Persistence/MeshBoard.Infrastructure.Persistence.csproj" />
   </Folder>
   <Folder Name="/Collector/">
-    <Project Path="src/MeshBoard.Collector/MeshBoard.Collector.csproj" />
     <Project Path="src/MeshBoard.Collector.Ingress/MeshBoard.Collector.Ingress.csproj" />
     <Project Path="src/MeshBoard.Collector.Normalizer/MeshBoard.Collector.Normalizer.csproj" />
     <Project Path="src/MeshBoard.Collector.StatsProjector/MeshBoard.Collector.StatsProjector.csproj" />

@@ -297,7 +297,7 @@ tests/
 Notes:
 
 - `MeshBoard.Web` is transitional and will be deleted after cutover.
-- `MeshBoard.Collector` is the explicit starting point for future collector and traffic-history work.
+- the `MeshBoard.Collector.*` worker family is now the explicit starting point for collector and traffic-history work.
 - `MeshBoard.Infrastructure.Meshtastic` should be split into reusable upstream transport pieces and deprecated server-side decode/ingest pieces.
 - `MeshBoard.Api.SDK` owns Refit endpoint contracts under `API/` and registration under `DI/`.
 

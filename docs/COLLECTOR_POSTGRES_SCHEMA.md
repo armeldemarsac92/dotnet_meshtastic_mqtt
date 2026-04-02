@@ -2,7 +2,7 @@
 
 - Status: Drafted and partially implemented
 - Date: 2026-03-21
-- Scope: `MeshBoard.Collector` traffic persistence
+- Scope: collector pipeline traffic persistence
 
 ## Purpose
 

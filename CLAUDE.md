@@ -151,4 +151,4 @@ Phases are defined in `docs/COLLECTOR_EVENT_DRIVEN_PLAN.md`. Record completion h
 | Phase 8: Build graph projector | pending | — | |
 | Phase 9: Add Neo4j read seam | pending | — | |
 | Phase 10: Topology analytics refinement | pending | — | |
-| Retire MeshBoard.Collector | pending | — | Only after Phase 5 parity is proven |
+| Retire MeshBoard.Collector | completed | `refactor/assembly-topology-unification` | Retired on 2026-04-02 in favor of the `MeshBoard.Collector.*` worker family |

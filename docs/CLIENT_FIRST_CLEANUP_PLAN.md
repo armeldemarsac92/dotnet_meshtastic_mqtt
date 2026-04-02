@@ -4,6 +4,10 @@
 - Date: 2026-03-21
 - Scope: Remove server-rendered-era residue and make the active browser-first architecture obvious in code, tooling, and docs
 
+Historical note:
+
+- the legacy `MeshBoard.Collector` host was retired on 2026-04-02 in favor of the `MeshBoard.Collector.*` worker family
+
 ## Purpose
 
 The broad migration plan in [ARCHITECTURE_REFACTOR_ROADMAP.md](./ARCHITECTURE_REFACTOR_ROADMAP.md) established the target architecture.
@@ -63,7 +67,7 @@ The active local stack in `ops/local/compose.yaml` runs:
 - `postgres`
 
 It does not run `MeshBoard.Web`.
-It does not run `MeshBoard.Collector`.
+It does not run the retired legacy `MeshBoard.Collector` host.
 
 ## What Is Still Confusing
 
@@ -76,7 +80,7 @@ The remaining confusion is narrower now:
 At the same time, not all leftover code is equal:
 
 - `MeshBoard.Web` is transitional and removable.
-- `MeshBoard.Collector` is not part of the active product path, but it is also not dead UI legacy. It is the explicit future collector/public-map pipeline and should stay isolated from product persistence.
+- the retired `MeshBoard.Collector` host is no longer part of the active product path. Collector/public-map work now continues only through the `MeshBoard.Collector.*` worker family and should stay isolated from product persistence.
 
 ## Keep / Remove / Refactor
 
@@ -108,7 +112,7 @@ These are transitional or misleading and should be deleted once the cleanup star
 
 These should not stay in their current shape:
 
-- `src/MeshBoard.Collector`
+- the collector worker family and its public-map boundaries
 - collector-facing public-map read APIs
 - collector rollup/analytics schema beyond current normalized ingest tables
 - migration tooling that still references old SQLite product databases
@@ -225,22 +229,23 @@ Progress:
 - initial hourly packet rollups are in place
 - longer-term history policy is still pending
 
-### Phase 4: Narrow `MeshBoard.Collector`
+### Phase 4: Retire Legacy `MeshBoard.Collector`
 
 Outcome:
 
-- the future public-map collector path is explicit, PostgreSQL-backed, and no longer confused with the removed server-rendered host
+- the legacy standalone collector host is deleted and no longer competes with the worker-based collector pipeline
 
 Tasks:
 
-- keep `MeshBoard.Collector` out of the default local product compose stack unless intentionally enabled
-- finish removing remaining SQLite assumptions from its runtime, tests, and docs
+- delete `src/MeshBoard.Collector`
+- remove solution and docs references that still describe the root collector host as a current runtime surface
+- keep the worker-based collector pipeline out of the default local product compose stack unless intentionally enabled
 - decide whether collector-owned read models should stay query-compatible with product contracts or split into collector-only APIs
 - define retention/aggregation policy for public map history
 
 Acceptance criteria:
 
-- there is no ambiguous project whose name and registrations suggest both "legacy worker" and "future collector"
+- there is no remaining source project named `MeshBoard.Collector`
 - the collector path is clearly Postgres-backed and modeled around normalized server/channel ownership
 - initial read-only collector queries do not depend on product-only repository contracts
 
@@ -311,7 +316,8 @@ Acceptance criteria:
 - `src/MeshBoard.Infrastructure.Persistence/DependencyInjection/ServiceCollectionExtensions.cs`
 - `src/MeshBoard.Infrastructure.Meshtastic/DependencyInjection/ServiceCollectionExtensions.cs`
 - `src/MeshBoard.RealtimeBridge/Program.cs`
-- `src/MeshBoard.Collector/Program.cs`
+- `src/MeshBoard.Collector.Ingress/Program.cs`
+- `src/MeshBoard.Collector.Normalizer/Program.cs`
 
 ## Architecture Decisions Needed Before Destructive Deletion
 
@@ -327,7 +333,7 @@ These decisions should be made explicitly before deeper cleanup:
 1. Remove `MeshBoard.Web` from the solution, docs, and root tooling.
 2. Rewrite the README and local entrypoints so the active stack is the default story.
 3. Split DI registrations by runtime role.
-4. Narrow `MeshBoard.Collector` around the Postgres-backed public collector decision.
+4. Retire the legacy `MeshBoard.Collector` host in favor of the worker-based collector pipeline.
 5. Remove runtime-command and server-read-model leftovers that are no longer justified.
 6. Finish with test and documentation cleanup.
 
