@@ -14,5 +14,6 @@
     <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
     <ProjectReference Include="..\MeshBoard.Infrastructure.Eventing\MeshBoard.Infrastructure.Eventing.csproj" />
     <ProjectReference Include="..\MeshBoard.Infrastructure.Neo4j\MeshBoard.Infrastructure.Neo4j.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Persistence\MeshBoard.Infrastructure.Persistence.csproj" />
   </ItemGroup>
 </Project>

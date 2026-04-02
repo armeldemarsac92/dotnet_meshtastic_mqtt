@@ -1,7 +1,7 @@
 using MeshBoard.Contracts.CollectorEvents;
 using Neo4j.Driver;
 
-namespace MeshBoard.Infrastructure.Neo4j.Persistence;
+namespace MeshBoard.Infrastructure.Persistence.Repositories.Neo4j;
 
 public sealed class GraphTopologyRepository : IGraphTopologyRepository
 {

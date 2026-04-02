@@ -1,6 +1,6 @@
 using MeshBoard.Contracts.CollectorEvents.Normalized;
 using MeshBoard.Collector.GraphProjector.Observability;
-using MeshBoard.Infrastructure.Neo4j.Persistence;
+using MeshBoard.Infrastructure.Persistence.Repositories.Neo4j;
 
 namespace MeshBoard.Collector.GraphProjector.Services;
 

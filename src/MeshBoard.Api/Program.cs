@@ -10,7 +10,7 @@ using MeshBoard.Application.Realtime;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Configuration;
 using MeshBoard.Infrastructure.Neo4j.DependencyInjection;
-using MeshBoard.Infrastructure.Neo4j.Persistence;
+using MeshBoard.Infrastructure.Persistence.Repositories.Neo4j;
 using MeshBoard.Infrastructure.Persistence.DependencyInjection;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;

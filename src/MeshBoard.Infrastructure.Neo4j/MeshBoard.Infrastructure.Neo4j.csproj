@@ -3,6 +3,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\MeshBoard.Application\MeshBoard.Application.csproj" />
     <ProjectReference Include="..\MeshBoard.Contracts\MeshBoard.Contracts.csproj" />
+    <ProjectReference Include="..\MeshBoard.Infrastructure.Persistence\MeshBoard.Infrastructure.Persistence.csproj" />
   </ItemGroup>
 
   <ItemGroup>
