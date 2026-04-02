@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using MeshBoard.Collector.GraphProjector.Observability;
 using MeshBoard.Contracts.CollectorEvents.Normalized;
-using MeshBoard.Infrastructure.Neo4j.Repositories;
+using MeshBoard.Infrastructure.Neo4j.Persistence;
 
 namespace MeshBoard.Collector.GraphProjector.Services;
 

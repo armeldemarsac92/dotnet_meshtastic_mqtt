@@ -1,5 +1,5 @@
 using MeshBoard.Infrastructure.Neo4j.Configuration;
-using MeshBoard.Infrastructure.Neo4j.Repositories;
+using MeshBoard.Infrastructure.Neo4j.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

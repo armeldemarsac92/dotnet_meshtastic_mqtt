@@ -1,4 +1,4 @@
-namespace MeshBoard.Infrastructure.Neo4j.Repositories;
+namespace MeshBoard.Infrastructure.Neo4j.Persistence;
 
 public interface IGraphTopologyRepository
 {

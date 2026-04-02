@@ -1,7 +1,7 @@
 using System.Globalization;
 using Neo4j.Driver;
 
-namespace MeshBoard.Infrastructure.Neo4j.Repositories;
+namespace MeshBoard.Infrastructure.Neo4j.Persistence;
 
 public sealed class Neo4jTopologyAnalyticsReadRepository : ITopologyAnalyticsReadRepository
 {
