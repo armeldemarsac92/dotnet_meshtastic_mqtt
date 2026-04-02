@@ -9,7 +9,7 @@ using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
-namespace MeshBoard.Infrastructure.Persistence.Repositories;
+namespace MeshBoard.Infrastructure.Persistence.Repositories.Authentication;
 
 internal sealed class UserAccountRepository : IUserAccountRepository
 {

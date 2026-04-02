@@ -1,7 +1,7 @@
 using MeshBoard.Infrastructure.Persistence.Context;
 using MeshBoard.Infrastructure.Persistence.SQL;
 
-namespace MeshBoard.Infrastructure.Persistence.Repositories;
+namespace MeshBoard.Infrastructure.Persistence.Repositories.Collector;
 
 internal sealed class CollectorChannelResolver
 {

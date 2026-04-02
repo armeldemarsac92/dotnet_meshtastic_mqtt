@@ -7,7 +7,7 @@ using MeshBoard.Infrastructure.Persistence.Mapping;
 using MeshBoard.Infrastructure.Persistence.SQL.Responses;
 using Microsoft.Extensions.Logging;
 
-namespace MeshBoard.Infrastructure.Persistence.Repositories;
+namespace MeshBoard.Infrastructure.Persistence.Repositories.Collector;
 
 internal sealed class CollectorNodeRepository : INodeRepository
 {

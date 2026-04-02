@@ -2,7 +2,7 @@ using MeshBoard.Application.Abstractions.Persistence;
 using MeshBoard.Contracts.Collector;
 using MeshBoard.Infrastructure.Persistence.Context;
 
-namespace MeshBoard.Infrastructure.Persistence.Repositories;
+namespace MeshBoard.Infrastructure.Persistence.Repositories.Collector;
 
 internal sealed class CollectorPacketRollupRepository : ICollectorPacketRollupRepository
 {

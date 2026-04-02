@@ -4,7 +4,7 @@ using MeshBoard.Contracts.Collector;
 using MeshBoard.Contracts.Nodes;
 using MeshBoard.Contracts.Workspaces;
 
-namespace MeshBoard.Infrastructure.Persistence.Repositories;
+namespace MeshBoard.Infrastructure.Persistence.Repositories.Collector;
 
 public sealed class PostgresTopologyReadAdapter : ITopologyReadAdapter
 {

@@ -4,7 +4,7 @@ using MeshBoard.Application.Abstractions.Collector;
 using MeshBoard.Application.Abstractions.Meshtastic;
 using MeshBoard.Contracts.Authentication;
 using MeshBoard.Contracts.Meshtastic;
-using MeshBoard.Infrastructure.Persistence.Repositories;
+using MeshBoard.Infrastructure.Persistence.Repositories.Collector;
 using MeshBoard.Contracts.Topics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

@@ -4,7 +4,7 @@ using MeshBoard.Contracts.Workspaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace MeshBoard.Infrastructure.Persistence.Repositories;
+namespace MeshBoard.Infrastructure.Persistence.Repositories.Collector;
 
 internal sealed class CollectorBrokerServerProfileRepository : IBrokerServerProfileRepository
 {
